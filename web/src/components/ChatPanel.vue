@@ -67,7 +67,7 @@ function showOriginal(msg: ChatMessage) {
 }
 
 function openMenu(e: MouseEvent, msg: ChatMessage) {
-  e.preventDefault()
+  e.preventDefault?.()
   if (!canModerate.value && msg.senderId !== auth.user?.id) return
   menu.value = { x: e.clientX, y: e.clientY, msg }
 }
@@ -110,7 +110,7 @@ function onKeydown(e: KeyboardEvent) {
         :msg="m"
         :my-id="auth.user?.id || 0"
         :can-moderate="canModerate"
-        @contextmenu="openMenu"
+        @contextmenu="(e) => openMenu(e, m)"
       />
       <p v-if="messages.length === 0" class="muted empty">Сообщений пока нет</p>
     </div>

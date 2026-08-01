@@ -19,6 +19,14 @@ const channels = useChannelsStore()
 const isMine = computed(() => props.msg.senderId === props.myId)
 const member = computed(() => channels.members.find((m) => m.user_id === props.msg.senderId))
 const role = computed(() => member.value?.role || 'user')
+
+// Кнопка «⋯» открывает то же меню, что и правая кнопка мыши
+// (работает и на мобильных устройствах).
+function openMore(e: MouseEvent) {
+  const el = e.currentTarget as HTMLElement
+  const rect = el.getBoundingClientRect()
+  emit('contextmenu', { clientX: rect.right, clientY: rect.bottom } as MouseEvent)
+}
 </script>
 
 <template>
@@ -38,6 +46,7 @@ const role = computed(() => member.value?.role || 'user')
       <p v-else-if="msg.deleted" class="deleted-text">Сообщение удалено</p>
       <p v-else class="text">{{ msg.text }}</p>
     </div>
+    <button class="more-btn" title="Действия с сообщением" @click.stop="openMore($event)">⋯</button>
   </div>
 </template>
 
@@ -70,5 +79,22 @@ const role = computed(() => member.value?.role || 'user')
 .deleted-text {
   color: var(--text-dim);
   font-style: italic;
+}
+.more-btn {
+  visibility: hidden;
+  align-self: center;
+  background: transparent;
+  padding: 2px 8px;
+  color: var(--text-dim);
+  font-size: 16px;
+  border-radius: 6px;
+}
+.msg:hover .more-btn,
+.more-btn:focus {
+  visibility: visible;
+}
+.more-btn:hover {
+  background: var(--bg4);
+  color: var(--text);
 }
 </style>
