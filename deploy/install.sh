@@ -31,6 +31,20 @@ log()  { echo -e "\033[1;32m[golosloom]\033[0m $*"; }
 warn() { echo -e "\033[1;33m[golosloom]\033[0m $*"; }
 die()  { echo -e "\033[1;31m[golosloom]\033[0m $*" >&2; exit 1; }
 
+# Чтение ввода: при запуске через `curl | bash` stdin занят пайпом,
+# поэтому вопросы читаем из /dev/tty. Если терминала нет — возвращаем пусто,
+# а скрипт выдаст понятную ошибку (а не упадёт молча из-за set -e).
+prompt_read() {
+  local var="$1" prompt="$2" value=""
+  if [ -t 0 ]; then
+    read -r -p "$prompt" value || true
+  elif [ -c /dev/tty ]; then
+    printf "%s" "$prompt"
+    value="$( (read -r line < /dev/tty && printf '%s' "$line") 2>/dev/null || true )"
+  fi
+  eval "$var=\$value"
+}
+
 # -----------------------------------------------------------------------------
 # Проверка ОС: только Debian 13 и Ubuntu 24+.
 # -----------------------------------------------------------------------------
@@ -84,12 +98,12 @@ install_deps() {
 # -----------------------------------------------------------------------------
 ask_params() {
   if [ -z "${DOMAIN:-}" ]; then
-    read -r -p "Введите домен для сервера (обязательно, например chat.example.com): " DOMAIN
+    prompt_read DOMAIN "Введите домен для сервера (обязательно, например chat.example.com): "
   fi
-  [ -n "$DOMAIN" ] || die "Домен обязателен: без него Caddy не выпустит SSL-сертификат"
+  [ -n "$DOMAIN" ] || die "Домен обязателен: задайте его переменной окружения DOMAIN или введите при запросе (без него Caddy не выпустит SSL-сертификат)"
 
   if [ -z "${SSH_PORT:-}" ]; then
-    read -r -p "Введите порт SSH (по умолчанию 22): " SSH_PORT
+    prompt_read SSH_PORT "Введите порт SSH (по умолчанию 22): "
   fi
   SSH_PORT="${SSH_PORT:-22}"
   case "$SSH_PORT" in
@@ -306,7 +320,7 @@ main() {
         echo "  2) Обновить (скачать последние изменения, без изменения баз данных и портов)"
         echo "  3) Полное удаление с сервера"
         echo "  4) Выйти"
-        read -r -p "Ваш выбор [1-4]: " choice
+        prompt_read choice "Ваш выбор [1-4]: "
         case "$choice" in
           1) do_reinstall ;;
           2) do_update ;;
