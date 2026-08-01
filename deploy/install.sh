@@ -45,6 +45,12 @@ prompt_read() {
   eval "$var=\$value"
 }
 
+# Чтение значения из файла состояния (файл нельзя подключать через source —
+# значения портов содержат символы, которые bash воспринимает как команды).
+state_get() {
+  sed -n "s/^$1=//p" "$STATE_FILE" 2>/dev/null | head -1
+}
+
 # -----------------------------------------------------------------------------
 # Проверка ОС: только Debian 13 и Ubuntu 24+.
 # -----------------------------------------------------------------------------
@@ -272,8 +278,9 @@ do_reinstall() {
 do_update() {
   [ -f "$STATE_FILE" ] || die "Установка не найдена. Запустите install.sh (без аргументов) для установки."
   check_os
-  . "$STATE_FILE"
-  DOMAIN="$domain"; SSH_PORT="$ssh_port"; GOLOSLOOM_REPO="$repo"
+  DOMAIN="$(state_get domain)"
+  SSH_PORT="$(state_get ssh_port)"
+  GOLOSLOOM_REPO="$(state_get repo)"
   cd "$REPO_DIR"
   log "Скачиваю последние изменения с GitHub..."
   git pull --ff-only
@@ -295,8 +302,7 @@ do_uninstall() {
 
 do_certs() {
   [ -f "$STATE_FILE" ] || die "Установка не найдена."
-  . "$STATE_FILE"
-  DOMAIN="$domain"
+  DOMAIN="$(state_get domain)"
   refresh_certs
 }
 
