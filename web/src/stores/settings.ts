@@ -27,6 +27,11 @@ function defaultSettings(): ClientSettings {
 }
 
 function defaultServerUrl(): string {
+  // В Tauri origin вебвью — tauri://localhost, это не адрес сервера:
+  // оставляем пустым, чтобы при первом запуске показать окно настройки.
+  if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
+    return ''
+  }
   if (typeof window !== 'undefined' && window.location && window.location.origin !== 'null') {
     return window.location.origin
   }

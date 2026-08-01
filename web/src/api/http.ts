@@ -27,11 +27,16 @@ export class ApiClient {
     const headers: Record<string, string> = {}
     if (body !== undefined) headers['Content-Type'] = 'application/json'
     if (this.token) headers['Authorization'] = `Bearer ${this.token}`
-    const res = await fetch(this.baseUrl + path, {
-      method,
-      headers,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    })
+    let res: Response
+    try {
+      res = await fetch(this.baseUrl + path, {
+        method,
+        headers,
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+      })
+    } catch (e: any) {
+      throw new Error(`Не удалось подключиться к серверу (${this.baseUrl || 'адрес не задан'})`)
+    }
     const text = await res.text()
     let data: any = null
     if (text) {
@@ -47,6 +52,12 @@ export class ApiClient {
         message: (data && data.error) || `Ошибка ${res.status}`,
       }
       throw err
+    }
+    if (!text) {
+      throw new Error('Пустой ответ сервера — проверьте адрес сервера')
+    }
+    if (data === null) {
+      throw new Error('Некорректный ответ сервера — проверьте адрес сервера')
     }
     return data
   }

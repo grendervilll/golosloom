@@ -21,6 +21,9 @@ export const useAuthStore = defineStore('auth', {
     async login(nick: string, password: string): Promise<void> {
       const settings = useSettingsStore()
       const res = await settings.api.login(nick, password)
+      if (!res || typeof res.token !== 'string') {
+        throw new Error('Некорректный ответ сервера — проверьте адрес сервера')
+      }
       this.token = res.token
       localStorage.setItem(TOKEN_KEY, this.token)
       settings.api.setToken(this.token)
@@ -30,6 +33,9 @@ export const useAuthStore = defineStore('auth', {
     async register(nick: string, password: string): Promise<void> {
       const settings = useSettingsStore()
       const res = await settings.api.register(nick, password)
+      if (!res || typeof res.token !== 'string') {
+        throw new Error('Некорректный ответ сервера — проверьте адрес сервера')
+      }
       this.token = res.token
       localStorage.setItem(TOKEN_KEY, this.token)
       settings.api.setToken(this.token)

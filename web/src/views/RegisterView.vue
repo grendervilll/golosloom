@@ -4,22 +4,31 @@ import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { useChannelsStore } from '../stores/channels'
+import { useSettingsStore } from '../stores/settings'
 import { validatePassword, PASSWORD_HINT } from '../utils/password'
+import ServerUrlModal from '../components/ServerUrlModal.vue'
 
 const router = useRouter()
 const auth = useAuthStore()
 const channels = useChannelsStore()
+const settings = useSettingsStore()
 
 const nick = ref('')
 const password = ref('')
 const confirm = ref('')
 const error = ref('')
 const busy = ref(false)
+const showServerUrl = ref(!settings.hasServer)
 
 const passwordProblem = computed(() => (password.value ? validatePassword(password.value) : null))
 
 async function submit() {
   error.value = ''
+  if (!settings.hasServer) {
+    error.value = 'Сначала укажите адрес сервера'
+    showServerUrl.value = true
+    return
+  }
   if (!nick.value.trim()) {
     error.value = 'Введите ник'
     return
@@ -67,10 +76,15 @@ async function submit() {
       </div>
       <div v-if="error" class="error-text">{{ error }}</div>
       <button class="primary" type="submit" :disabled="busy">Зарегистрироваться</button>
+      <button type="button" class="server-btn" @click="showServerUrl = true">
+        ⚙️ Адрес сервера: <span class="muted">{{ settings.serverUrl || 'не указан' }}</span>
+      </button>
       <p class="hint-text">
         Уже есть аккаунт? <RouterLink to="/login">Войти</RouterLink>
       </p>
     </form>
+
+    <ServerUrlModal v-if="showServerUrl" @close="showServerUrl = false" />
   </div>
 </template>
 
@@ -92,5 +106,15 @@ async function submit() {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+.server-btn {
+  background: transparent;
+  border: 1px dashed var(--border);
+  font-size: 13px;
+  color: var(--text);
+  text-align: left;
+}
+.server-btn:hover {
+  background: var(--bg3);
 }
 </style>

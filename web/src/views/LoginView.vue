@@ -1,21 +1,30 @@
-// Вход в систему.
+// Вход в систему (с настройкой адреса сервера — для Tauri при первом запуске).
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { useChannelsStore } from '../stores/channels'
+import { useSettingsStore } from '../stores/settings'
+import ServerUrlModal from '../components/ServerUrlModal.vue'
 
 const router = useRouter()
 const auth = useAuthStore()
 const channels = useChannelsStore()
+const settings = useSettingsStore()
 
 const nick = ref('')
 const password = ref('')
 const error = ref('')
 const busy = ref(false)
+const showServerUrl = ref(!settings.hasServer)
 
 async function submit() {
   error.value = ''
+  if (!settings.hasServer) {
+    error.value = 'Сначала укажите адрес сервера'
+    showServerUrl.value = true
+    return
+  }
   busy.value = true
   try {
     await auth.login(nick.value.trim(), password.value)
@@ -44,10 +53,15 @@ async function submit() {
       </div>
       <div v-if="error" class="error-text">{{ error }}</div>
       <button class="primary" type="submit" :disabled="busy">Войти</button>
+      <button type="button" class="server-btn" @click="showServerUrl = true">
+        ⚙️ Адрес сервера: <span class="muted">{{ settings.serverUrl || 'не указан' }}</span>
+      </button>
       <p class="hint-text">
         Нет аккаунта? <RouterLink to="/register">Зарегистрироваться</RouterLink>
       </p>
     </form>
+
+    <ServerUrlModal v-if="showServerUrl" @close="showServerUrl = false" />
   </div>
 </template>
 
@@ -72,5 +86,15 @@ async function submit() {
 }
 .auth-card h1 {
   font-size: 24px;
+}
+.server-btn {
+  background: transparent;
+  border: 1px dashed var(--border);
+  font-size: 13px;
+  color: var(--text);
+  text-align: left;
+}
+.server-btn:hover {
+  background: var(--bg3);
 }
 </style>
