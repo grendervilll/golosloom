@@ -218,9 +218,8 @@ rtc:
   port_range_start: 50000
   port_range_end: 50100
   use_external_ip: true
-  enable_tcp_loopback: true
-stun_servers:
-  - stun:stun.l.google.com:19302
+  stun_servers:
+    - stun:stun.l.google.com:19302
 keys:
   ${api_key}: ${api_secret}
 logging:
