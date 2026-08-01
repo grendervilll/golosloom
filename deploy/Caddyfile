@@ -4,12 +4,10 @@
 {$DOMAIN} {
 	encode zstd gzip
 
-	# Сигналинг LiveKit через публичный WSS (медиа идёт напрямую по UDP).
-	# livekit работает на host-сети и не виден по имени в docker-сети,
-	# поэтому проксируем через host-gateway. Префикс /livekit срезается:
-	# LiveKit ожидает пути от корня (/rtc/v1/...).
-	handle /livekit/* {
-		uri strip_prefix /livekit
+	# Сигналинг LiveKit: клиент подключается к wss://домен/rtc/... напрямую
+	# (путь /rtc/* свободен, префикс резать не нужно). livekit работает на
+	# host-сети и не виден по имени в docker-сети — проксируем через host-gateway.
+	handle /rtc/* {
 		reverse_proxy host.docker.internal:7880
 	}
 

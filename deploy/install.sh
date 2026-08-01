@@ -420,6 +420,9 @@ do_update() {
   gen_certs
   log "Пересобираю контейнеры (база данных и порты не изменяются)..."
   docker compose -f "$DEPLOY_DIR/docker-compose.yml" up -d --build
+  # Caddyfile монтируется bind-mount'ом: контейнер читает его при старте,
+  # а up -d не перезапускает уже работающие контейнеры — перезапускаем явно.
+  docker compose -f "$DEPLOY_DIR/docker-compose.yml" restart caddy
   log "Обновление завершено. База данных сохранена."
 }
 
