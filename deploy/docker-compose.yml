@@ -43,8 +43,6 @@ services:
     network_mode: host
     volumes:
       - ${LIVEKIT_CONFIG}:/etc/livekit.yaml:ro
-    environment:
-      - LIVEKIT_KEYS=${LIVEKIT_API_KEY}:${LIVEKIT_API_SECRET}
 
   coturn:
     image: coturn/coturn:4.6

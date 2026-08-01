@@ -206,8 +206,11 @@ ensure_env_var() {
 # Конфигурация LiveKit (генерируется с реальными значениями, вне репозитория).
 # -----------------------------------------------------------------------------
 gen_livekit_config() {
-  # Внутренний TURN LiveKit не используется: ретрансляция через отдельный coturn,
-  # клиенты получают его адреса из /api/config и передают в Room как iceServers.
+  # Ключи LiveKit — строго в формате YAML "key: secret" (с пробелом), поэтому
+  # они пишутся в конфиг, а не в env LIVEKIT_KEYS.
+  local api_key api_secret
+  api_key="$(grep '^LIVEKIT_API_KEY=' "$DEPLOY_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2-)"
+  api_secret="$(grep '^LIVEKIT_API_SECRET=' "$DEPLOY_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2-)"
   cat > "$LIVEKIT_CONFIG" <<EOF
 port: 7880
 rtc:
@@ -218,6 +221,8 @@ rtc:
   enable_tcp_loopback: true
 stun_servers:
   - stun:stun.l.google.com:19302
+keys:
+  ${api_key}: ${api_secret}
 logging:
   level: info
 EOF

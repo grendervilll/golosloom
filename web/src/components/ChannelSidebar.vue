@@ -85,6 +85,9 @@ async function declineInvite(id: number) {
     </div>
 
     <div class="channel-list">
+      <button class="create-channel-btn" @click="showCreate = true">
+        <span>➕</span> Создать канал
+      </button>
       <div v-for="ch in sortedChannels" :key="ch.id" class="frame channel-item" :class="{ active: ch.id === channels.currentId }" @click="select(ch.id)">
         <span class="channel-icon">{{ ch.private ? '🔒' : '#' }}</span>
         <span class="channel-name">{{ ch.name }}</span>
@@ -186,6 +189,20 @@ async function declineInvite(id: number) {
 .empty {
   padding: 12px;
   text-align: center;
+}
+.create-channel-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 4px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+.create-channel-btn:hover {
+  background: var(--accent-hover);
 }
 .invites {
   padding: 8px;
