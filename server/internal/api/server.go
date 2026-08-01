@@ -32,6 +32,9 @@ type bucket struct {
 }
 
 func New(cfg config.Config, st *store.Store) *Server {
+	// Завершаем звонки, оставшиеся «активными» после предыдущего запуска
+	// (например, при падении или перезапуске сервера).
+	_ = st.EndAllActiveCalls()
 	return &Server{
 		Cfg:       cfg,
 		Store:     st,

@@ -959,6 +959,15 @@ func (s *Store) UpdateCallStatus(id int64, status string) error {
 	return err
 }
 
+// EndAllActiveCalls завершает все активные звонки (при перезапуске сервера:
+// медиа-сервер тоже перезапускается, а «зависшие» звонки иначе навсегда
+// заблокировали бы инициаторам новые вызовы).
+func (s *Store) EndAllActiveCalls() error {
+	_, err := s.db.Exec(`UPDATE calls SET status = ?, ended_at = ? WHERE status != ?`,
+		models.CallEnded, now(), models.CallEnded)
+	return err
+}
+
 func (s *Store) EndCall(id int64) error {
 	_, err := s.db.Exec(`UPDATE calls SET status = ?, ended_at = ? WHERE id = ?`, models.CallEnded, now(), id)
 	return err
