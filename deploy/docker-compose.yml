@@ -36,7 +36,9 @@ services:
       - golosloom
 
   livekit:
-    image: livekit/livekit-server:v1.8
+    # v1.8 не поддерживает новый путь сигналинга /rtc/v1 (SDK: "v1 RTC path
+    # not found"); v1.13 — актуальная стабильная версия.
+    image: livekit/livekit-server:v1.13.5
     container_name: golosloom-livekit
     restart: unless-stopped
     command: --config /etc/livekit.yaml

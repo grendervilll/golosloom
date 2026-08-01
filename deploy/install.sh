@@ -458,6 +458,11 @@ do_lockdown() {
     ufw allow "$p" >/dev/null
   done
   ufw --force enable
+  # ufw reset сносит iptables-правила Docker (цепочки FORWARD), и контейнеры
+  # перестают ходить к хосту (host.docker.internal) и друг к другу.
+  # Перезапуск Docker восстанавливает его правила.
+  systemctl restart docker
+  sleep 5
   log "Открыты только: SSH($SSH_PORT) + $NEEDED_PORTS"
   log "Проверка: ufw status numbered"
 }
