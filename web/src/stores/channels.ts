@@ -49,7 +49,13 @@ export const useChannelsStore = defineStore('channels', {
       await this.refresh()
       await this.refreshInvites()
       auth.refreshUsers()
-      if (this.currentId) await this.openChannel(this.currentId)
+      if (this.currentId) {
+        try {
+          await this.openChannel(this.currentId)
+        } catch {
+          // Канал откроется при клике на него; вход не должен падать.
+        }
+      }
     },
     async refresh() {
       const settings = useSettingsStore()
@@ -83,11 +89,18 @@ export const useChannelsStore = defineStore('channels', {
       await this.refresh()
       await this.openChannel(channelId)
     },
-    // Открытие канала: загрузка участников, истории, синхронизация ключей.
+    // Открытие канала: вступление в публичный канал при необходимости,
+    // загрузка участников, истории, синхронизация ключей.
     async openChannel(channelId: number) {
       const settings = useSettingsStore()
       const chat = useChatStore()
       this.currentId = channelId
+      const ch = this.channels.find((c) => c.id === channelId)
+      // Публичный канал виден всем, но участником нужно стать явно.
+      if (ch && !ch.is_member && !ch.private) {
+        await settings.api.joinChannel(channelId)
+        await this.refresh()
+      }
       this.members = await settings.api.listMembers(channelId)
       await chat.loadHistory(channelId)
       await this.syncKeys(channelId)

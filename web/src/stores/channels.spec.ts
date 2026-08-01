@@ -83,6 +83,39 @@ describe('каналы и ключи', () => {
     expect(channels.currentId).toBe(10)
   })
 
+  it('открытие публичного канала автоматически вступает в него', async () => {
+    const { api } = setup()
+    api.listChannels.mockResolvedValue([
+      { id: 10, name: 'общий', private: false, creator_id: 1, created_at: '', is_member: false, role: 'user' },
+    ])
+    const channels = useChannelsStore()
+    channels.currentId = 0
+    await channels.refresh()
+    expect(channels.currentId).toBe(10)
+    await channels.openChannel(10)
+    expect(api.joinChannel).toHaveBeenCalledWith(10)
+    expect(api.listMembers).toHaveBeenCalledWith(10)
+    expect(api.listMessages).toHaveBeenCalledWith(10)
+  })
+
+  it('открытие приватного канала не пытается вступить (участник уже есть)', async () => {
+    const { api } = setup()
+    const channels = useChannelsStore()
+    channels.channels = [
+      { id: 10, name: 'секрет', private: true, creator_id: 1, created_at: '', is_member: true, role: 'user' },
+    ] as any
+    channels.currentId = 10
+    await channels.openChannel(10)
+    expect(api.joinChannel).not.toHaveBeenCalled()
+  })
+
+  it('инициализация не падает, если открыть канал нельзя', async () => {
+    const { api } = setup()
+    api.listMembers.mockRejectedValue({ status: 403, message: 'нет доступа к каналу' })
+    const channels = useChannelsStore()
+    await expect(channels.init()).resolves.toBeUndefined()
+  })
+
   it('создатель канала создаёт и сохраняет ключ канала', async () => {
     setup()
     const channels = useChannelsStore()

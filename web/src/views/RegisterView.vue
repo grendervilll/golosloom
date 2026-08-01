@@ -36,8 +36,8 @@ async function submit() {
   busy.value = true
   try {
     await auth.register(nick.value.trim(), password.value)
-    await channels.init()
     router.push('/')
+    await channels.init().catch(() => undefined)
   } catch (e: any) {
     error.value = e.message || 'Ошибка регистрации'
   } finally {

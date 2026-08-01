@@ -83,10 +83,11 @@ onMounted(async () => {
       await auth.fetchMe()
       auth.connectWs()
       wireWs()
-      await channels.init()
     } catch {
       auth.logout()
+      return
     }
+    await channels.init().catch(() => undefined)
   }
 })
 
