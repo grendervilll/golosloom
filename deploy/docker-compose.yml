@@ -53,6 +53,10 @@ services:
     image: coturn/coturn:4.6
     container_name: golosloom-coturn
     restart: unless-stopped
+    # Встроенный entrypoint образа при первом старте генерирует RSA-ключ и
+    # dhparam (очень долго на слабых VPS). Запускаем turnserver напрямую:
+    # сертификаты появляются позже, после выпуска их Caddy (cron перезапускает coturn).
+    entrypoint: ["/usr/bin/turnserver"]
     command:
       - -n
       - --log-file=stdout

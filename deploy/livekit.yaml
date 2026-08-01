@@ -20,5 +20,5 @@ turn:
   dh_file: /certs/dhparam.pem
 logging:
   level: info
-keys:
-  ${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}
+# Ключи задаются переменной окружения LIVEKIT_KEYS (см. docker-compose.yml) —
+# это штатный механизм LiveKit, без подстановок в YAML.

@@ -235,6 +235,41 @@ remove_cron() {
 }
 
 # -----------------------------------------------------------------------------
+# Настройка Docker и сети для медиа-сервисов.
+# userland-proxy выключен: иначе Docker создаёт отдельный процесс docker-proxy
+# на каждый из 10 000 UDP-портов LiveKit — старт зависает, сервер тормозит.
+# -----------------------------------------------------------------------------
+configure_docker() {
+  if [ ! -f /etc/docker/daemon.json ]; then
+    echo '{"userland-proxy": false}' > /etc/docker/daemon.json
+    systemctl restart docker
+    log "userland-proxy отключён (Docker перезапущен)"
+  elif ! grep -q '"userland-proxy"' /etc/docker/daemon.json 2>/dev/null; then
+    cp /etc/docker/daemon.json /etc/docker/daemon.json.bak
+    python3 - <<'EOF'
+import json
+p = "/etc/docker/daemon.json"
+with open(p) as f:
+    cfg = json.load(f)
+cfg["userland-proxy"] = False
+with open(p, "w") as f:
+    json.dump(cfg, f, indent=2)
+EOF
+    systemctl restart docker
+    log "userland-proxy отключён (Docker перезапущен)"
+  fi
+
+  # Буферы сокетов для WebRTC (рекомендации LiveKit).
+  cat > /etc/sysctl.d/99-golosloom.conf <<'EOF'
+net.core.rmem_max = 2500000
+net.core.wmem_max = 2500000
+net.ipv4.udp_mem = 65536 131072 262144
+EOF
+  sysctl --system >/dev/null 2>&1 || true
+  log "Сетевые буферы для WebRTC настроены"
+}
+
+# -----------------------------------------------------------------------------
 # Режимы работы.
 # -----------------------------------------------------------------------------
 clone_repo() {
@@ -247,6 +282,7 @@ clone_repo() {
 install_fresh() {
   check_os
   install_deps
+  configure_docker
   ask_params
   mkdir -p "$INSTALL_DIR" "$DATA_DIR"
   clone_repo
@@ -278,6 +314,7 @@ do_reinstall() {
 do_update() {
   [ -f "$STATE_FILE" ] || die "Установка не найдена. Запустите install.sh (без аргументов) для установки."
   check_os
+  configure_docker
   DOMAIN="$(state_get domain)"
   SSH_PORT="$(state_get ssh_port)"
   GOLOSLOOM_REPO="$(state_get repo)"
