@@ -88,17 +88,6 @@ async function declineInvite(id: number) {
       <button class="create-channel-btn" @click="showCreate = true">
         <span>➕</span> Создать канал
       </button>
-      <button
-        v-if="channels.current?.private && channels.current?.is_member"
-        class="invite-btn"
-        title="Пригласить пользователя в приватный канал"
-        @click="emit('open-invite')"
-      >
-        <span>🔗</span> Пригласить в канал
-      </button>
-      <button class="call-btn" title="Позвонить участникам канала" @click="emit('open-call')">
-        <span>📞</span> Позвонить
-      </button>
       <div v-for="ch in sortedChannels" :key="ch.id" class="frame channel-item" :class="{ active: ch.id === channels.currentId }" @click="select(ch.id)">
         <span class="channel-icon">{{ ch.private ? '🔒' : '#' }}</span>
         <span class="channel-name">{{ ch.name }}</span>
@@ -215,35 +204,6 @@ async function declineInvite(id: number) {
 .create-channel-btn:hover {
   background: var(--accent-hover);
 }
-.invite-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  width: 100%;
-  margin-bottom: 4px;
-  background: transparent;
-  border: 1px solid var(--accent);
-  color: var(--text);
-  font-weight: 600;
-}
-.invite-btn:hover {
-  background: var(--bg4);
-}
-.call-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  width: 100%;
-  margin-bottom: 4px;
-  background: var(--green);
-  color: #fff;
-  font-weight: 600;
-}
-.call-btn:hover {
-  background: #1f8f4d;
-}
 
 @media (max-width: 1200px) {
   .sidebar {
@@ -287,9 +247,7 @@ async function declineInvite(id: number) {
     flex: 0 0 auto;
     white-space: nowrap;
   }
-  .create-channel-btn,
-  .invite-btn,
-  .call-btn {
+  .create-channel-btn {
     width: auto;
     flex: 0 0 auto;
     margin-bottom: 0;

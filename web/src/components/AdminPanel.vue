@@ -18,6 +18,30 @@ const registrationEnabled = ref(true)
 const tab = ref<'users' | 'channels'>('users')
 const bannedByChannel = ref<Record<number, any[]>>({})
 const bannedOpen = ref<Record<number, boolean>>({})
+const permsOpen = ref<Record<number, boolean>>({})
+const perms = ref<Record<number, any>>({})
+
+const ROLES = [
+  { id: 'user', label: 'Пользователь' },
+  { id: 'channel_moderator', label: 'Модератор' },
+  { id: 'channel_admin', label: 'Админ канала' },
+]
+const ALL_PERMS = [
+  { id: 'create_channel', label: 'Создавать каналы' },
+  { id: 'send_message', label: 'Писать сообщения' },
+  { id: 'delete_message', label: 'Удалять сообщения' },
+  { id: 'ban', label: 'Банить' },
+  { id: 'kick', label: 'Кикать' },
+  { id: 'invite', label: 'Приглашать' },
+  { id: 'delete_channel', label: 'Удалять канал' },
+  { id: 'manage_members', label: 'Управлять участниками' },
+]
+// Права по умолчанию (как в бэкенде).
+const PERM_DEFAULTS: Record<string, string[]> = {
+  user: ['create_channel', 'send_message'],
+  channel_moderator: ['send_message', 'delete_message', 'ban', 'kick', 'invite'],
+  channel_admin: ['send_message', 'delete_message', 'ban', 'kick', 'invite', 'delete_channel', 'manage_members'],
+}
 
 const newNick = ref('')
 const newPass = ref('')
@@ -42,6 +66,36 @@ async function loadBanned(channelId: number) {
 async function toggleBanned(channelId: number) {
   bannedOpen.value[channelId] = !bannedOpen.value[channelId]
   if (bannedOpen.value[channelId]) await loadBanned(channelId)
+}
+
+async function loadPerms(channelId: number) {
+  try {
+    perms.value[channelId] = await settings.api.getPermissions(channelId)
+  } catch {
+    perms.value[channelId] = {}
+  }
+}
+
+async function togglePerms(channelId: number) {
+  permsOpen.value[channelId] = !permsOpen.value[channelId]
+  if (permsOpen.value[channelId]) await loadPerms(channelId)
+}
+
+function permAllowed(channelId: number, role: string, perm: string): boolean {
+  const overrides = perms.value[channelId] || {}
+  if (overrides[role] && perm in overrides[role]) return overrides[role][perm]
+  return (PERM_DEFAULTS[role] || []).includes(perm)
+}
+
+async function togglePerm(channelId: number, role: string, perm: string) {
+  const current = permAllowed(channelId, role, perm)
+  try {
+    await settings.api.setPermission(channelId, role, perm, !current)
+    toasts.push({ kind: 'info', text: 'Права обновлены' })
+    await loadPerms(channelId)
+  } catch (e: any) {
+    toasts.push({ kind: 'error', text: e.message })
+  }
 }
 
 async function unbanInChannel(channelId: number, userId: number, nick: string) {
@@ -182,7 +236,20 @@ function copyId(u: any) {
               <button class="tiny" @click="toggleBanned(c.id)">
                 Забаненные ({{ bannedByChannel[c.id]?.length ?? 0 }})
               </button>
+              <button class="tiny" @click="togglePerms(c.id)">Права групп</button>
               <button class="tiny danger" @click="deleteChannel(c.id, c.name)">Удалить канал</button>
+            </div>
+            <div v-if="permsOpen[c.id]" class="perms-box">
+              <p class="section-title">Права групп в канале</p>
+              <div v-for="r in ROLES" :key="r.id" class="perm-role">
+                <b>{{ r.label }}</b>
+                <div class="perm-grid">
+                  <label v-for="p in ALL_PERMS" :key="r.id + p.id" class="perm-item">
+                    <input type="checkbox" :checked="permAllowed(c.id, r.id, p.id)" @change="togglePerm(c.id, r.id, p.id)" />
+                    <span>{{ p.label }}</span>
+                  </label>
+                </div>
+              </div>
             </div>
             <div v-if="bannedOpen[c.id]" class="banned-list">
               <div v-for="b in bannedByChannel[c.id] || []" :key="b.user_id" class="banned-row">
@@ -301,6 +368,34 @@ function copyId(u: any) {
 }
 .banned-row .small {
   flex: 1;
+}
+.perms-box {
+  width: 100%;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.perm-role {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.perm-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 4px 10px;
+}
+.perm-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text);
+}
+.perm-item input {
+  width: auto;
 }
 .end {
   justify-content: flex-end;

@@ -103,7 +103,7 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.Hub.SendToChannel(channelID, hub.NewEvent("message.new", s.messageJSON(*m, false)))
+	s.Hub.SendToChannel(channelID, hub.NewEvent("message.new", s.messageJSON(*m, true)))
 	writeJSON(w, http.StatusCreated, s.messageJSON(*m, false))
 }
 
@@ -143,7 +143,7 @@ func (s *Server) handleEditMessage(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.Hub.SendToChannel(channelID, hub.NewEvent("message.edited", s.messageJSON(*edited, false)))
+	s.Hub.SendToChannel(channelID, hub.NewEvent("message.edited", s.messageJSON(*edited, true)))
 	writeJSON(w, http.StatusOK, s.messageJSON(*edited, false))
 }
 

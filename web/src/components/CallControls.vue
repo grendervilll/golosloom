@@ -1,6 +1,7 @@
-// Управление звонком: микрофон, камера, демонстрация экрана, общий звук.
+// Управление звонком: микрофон (с выбором устройства), шумоподавление,
+// камера, демонстрация экрана, общий звук.
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useCallStore } from '../stores/calls'
 import { useSettingsStore } from '../stores/settings'
 
@@ -8,7 +9,29 @@ const calls = useCallStore()
 const settings = useSettingsStore()
 
 const showQuality = ref(false)
+const showAudio = ref(false)
+const micDevices = ref<MediaDeviceInfo[]>([])
 const qualities = ['1080p60', '1080p30', '720p60', '720p30', '480p30']
+
+async function loadMics() {
+  try {
+    const devs = await navigator.mediaDevices.enumerateDevices()
+    micDevices.value = devs.filter((d) => d.kind === 'audioinput')
+  } catch {
+    micDevices.value = []
+  }
+}
+
+onMounted(loadMics)
+
+async function onMicChange(e: Event) {
+  const id = (e.target as HTMLSelectElement).value
+  await calls.setMicDevice(id)
+}
+
+async function onNoiseChange(e: Event) {
+  settings.setNoiseSuppression((e.target as HTMLSelectElement).value as any)
+}
 
 async function leave() {
   await calls.leave()
@@ -27,7 +50,8 @@ async function leave() {
       <button :class="{ active: calls.screenOn }" title="Демонстрация экрана" @click="showQuality = !showQuality">
         🖥️ Экран {{ calls.screenOn ? 'вкл' : 'выкл' }}
       </button>
-      <div v-if="showQuality" class="quality-menu">
+      <div v-if="showQuality" class="popup">
+        <p class="popup-title">Качество демонстрации</p>
         <button v-for="q in qualities" :key="q" :class="{ active: settings.screenQuality === q }" @click="settings.setScreenQuality(q); calls.toggleScreen(q); showQuality = false">
           {{ q }}
         </button>
@@ -35,6 +59,25 @@ async function leave() {
       <button :class="{ active: !settings.mutedOthers }" title="Звук от других пользователей" @click="settings.setMutedOthers(!settings.mutedOthers)">
         🔇 {{ settings.mutedOthers ? 'Звук выкл' : 'Звук вкл' }}
       </button>
+      <button :class="{ active: showAudio }" title="Микрофон и шумоподавление" @click="showAudio = !showAudio">
+        🎛️ Аудио
+      </button>
+      <div v-if="showAudio" class="popup">
+        <p class="popup-title">Микрофон</p>
+        <select v-if="micDevices.length > 1" @change="onMicChange">
+          <option v-for="d in micDevices" :key="d.deviceId" :value="d.deviceId">
+            {{ d.label || 'Микрофон ' + d.deviceId.slice(0, 4) }}
+          </option>
+        </select>
+        <p v-else class="muted small">Устройства появятся после выдачи разрешения</p>
+        <p class="popup-title">Шумоподавление</p>
+        <select :value="settings.noiseSuppression" @change="onNoiseChange">
+          <option value="off">Выключено</option>
+          <option value="low">Лёгкое (по умолчанию)</option>
+          <option value="medium">Среднее</option>
+          <option value="high">Сильное</option>
+        </select>
+      </div>
     </div>
     <button class="danger leave" @click="leave">Завершить звонок</button>
   </div>
@@ -60,17 +103,28 @@ async function leave() {
 button.active {
   border: 1px solid var(--accent);
 }
-.quality-menu {
+.popup {
   position: absolute;
   bottom: 100%;
   left: 14px;
   background: var(--bg3);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 6px;
+  padding: 10px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   z-index: 40;
+  min-width: 220px;
+}
+.popup-title {
+  font-size: 12px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  font-weight: 700;
+  margin-top: 6px;
+}
+.popup-title:first-child {
+  margin-top: 0;
 }
 </style>

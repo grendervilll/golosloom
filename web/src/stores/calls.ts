@@ -1,5 +1,6 @@
 // Звонки: инициация, приём/отклонение, LiveKit-комната, участники, пинок.
 import { defineStore } from 'pinia'
+import { markRaw } from 'vue'
 import { useSettingsStore } from './settings'
 import { useAuthStore } from './auth'
 import { useChannelsStore } from './channels'
@@ -172,13 +173,19 @@ export const useCallStore = defineStore('calls', {
         videoCaptureDefaults: { resolution: { width: 1280, height: 720 } },
       })
       // Обработчики треков регистрируем ДО connect, чтобы не пропустить ранние.
+      // В момент события у трека может не быть participant — защищаемся.
       const attachAudio = (track: any) => {
-        const p = track.participant
-        const vol = (settings.volumes[Number(p.identity)] ?? 100) / 100
-        if (track.kind === Track.Kind.Audio) {
-          track.attach()
-          const el = track.attachedElements[0] as HTMLMediaElement
-          if (el) el.volume = settings.mutedOthers ? 0 : vol
+        try {
+          const p = track.participant
+          if (!p) return
+          const vol = (settings.volumes[Number(p.identity)] ?? 100) / 100
+          if (track.kind === Track.Kind.Audio) {
+            track.attach()
+            const el = track.attachedElements[0] as HTMLMediaElement
+            if (el) el.volume = settings.mutedOthers ? 0 : vol
+          }
+        } catch {
+          /* не фатально */
         }
       }
       room.on(RoomEvent.TrackSubscribed, attachAudio)
@@ -189,7 +196,9 @@ export const useCallStore = defineStore('calls', {
           if (pub.isSubscribed && pub.track) attachAudio(pub.track)
         }
       }
-      this.room = room
+      // markRaw: Room (и его объекты) не должны оборачиваться в реактивные
+      // Proxy — иначе SDK ломается (DataCloneError при structuredClone).
+      this.room = markRaw(room)
       this.connectedCallId = callId
       // Микрофон включается автоматически при вызове, камера — нет.
       // Отказ микрофона (нет разрешения) НЕ должен обрывать звонок.
@@ -213,25 +222,52 @@ export const useCallStore = defineStore('calls', {
     async toggleMic() {
       if (!this.room) return
       this.micOn = !this.micOn
-      await this.room.localParticipant.setMicrophoneEnabled(this.micOn)
+      try {
+        await this.room.localParticipant.setMicrophoneEnabled(this.micOn)
+      } catch {
+        this.micOn = !this.micOn
+        const toasts = useToasts()
+        toasts.push({ kind: 'warning', text: 'Микрофон недоступен — проверьте разрешения браузера' })
+      }
     },
     async toggleCam() {
       if (!this.room) return
       this.camOn = !this.camOn
-      await this.room.localParticipant.setCameraEnabled(this.camOn)
+      try {
+        await this.room.localParticipant.setCameraEnabled(this.camOn)
+      } catch {
+        this.camOn = !this.camOn
+        const toasts = useToasts()
+        toasts.push({ kind: 'warning', text: 'Веб-камера недоступна — проверьте разрешения браузера' })
+      }
+    },
+    // Переключение микрофона на выбранное устройство.
+    async setMicDevice(deviceId: string) {
+      if (!this.room) return
+      try {
+        await this.room.switchActiveDevice('audioinput', deviceId)
+      } catch {
+        const toasts = useToasts()
+        toasts.push({ kind: 'warning', text: 'Не удалось переключить микрофон' })
+      }
     },
     async toggleScreen(quality: string) {
       if (!this.room) return
-      if (this.screenOn) {
-        await this.room.localParticipant.setScreenShareEnabled(false)
-        this.screenOn = false
-        return
+      try {
+        if (this.screenOn) {
+          await this.room.localParticipant.setScreenShareEnabled(false)
+          this.screenOn = false
+          return
+        }
+        const [w, h, fps] = parseQuality(quality)
+        await this.room.localParticipant.setScreenShareEnabled(true, {
+          video: { resolution: { width: w, height: h }, frameRate: fps },
+        })
+        this.screenOn = true
+      } catch {
+        const toasts = useToasts()
+        toasts.push({ kind: 'warning', text: 'Не удалось запустить демонстрацию экрана' })
       }
-      const [w, h, fps] = parseQuality(quality)
-      await this.room.localParticipant.setScreenShareEnabled(true, {
-        video: { resolution: { width: w, height: h }, frameRate: fps },
-      })
-      this.screenOn = true
     },
     async punch(targetUserId: number) {
       const now = Date.now()

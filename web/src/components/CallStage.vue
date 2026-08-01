@@ -102,6 +102,16 @@ function chooseScreen(id: string) {
   focusedScreen.value = screens.value.find((s) => s.identity === id) || null
 }
 
+// Полноэкранный режим демонстрации экрана.
+function toggleFullscreen() {
+  const el = document.querySelector('.screen-main')
+  if (document.fullscreenElement) {
+    void document.exitFullscreen()
+  } else if (el) {
+    void el.requestFullscreen?.()
+  }
+}
+
 let rescanTimer: number | null = null
 
 watch(() => calls.connectedCallId, startWatching, { immediate: true })
@@ -124,6 +134,7 @@ const stageMembers = computed(() => channels.members.filter((m) => callParticipa
     <div v-if="focusedScreen" class="screen-main">
       <video v-track="focusedScreen" class="screen-video" autoplay playsinline />
       <span class="screen-nick">🖥️ Демонстрация: {{ focusedScreen.nick }}</span>
+      <button class="fullscreen-btn" title="На весь экран" @click="toggleFullscreen">⛶</button>
     </div>
     <div v-else class="screen-empty">
       <p class="muted">Демонстраций экрана нет</p>
@@ -185,6 +196,18 @@ const stageMembers = computed(() => channels.members.filter((m) => callParticipa
   padding: 4px 10px;
   border-radius: 6px;
   font-size: 13px;
+}
+.fullscreen-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: rgba(0, 0, 0, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  padding: 4px 10px;
+  font-size: 14px;
+}
+.fullscreen-btn:hover {
+  background: rgba(0, 0, 0, 0.9);
 }
 .screen-empty {
   flex: 1;
