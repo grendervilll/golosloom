@@ -201,6 +201,41 @@ func TestBannedListAndUnban(t *testing.T) {
 	}
 }
 
+func TestCallEndsWhenSoleParticipantDisconnects(t *testing.T) {
+	a := newTestApp(t, func(c *config.Config) { c.RingTimeout = 5 * time.Second })
+	caller := a.register(t, "Caller")
+	u2 := a.register(t, "User2")
+	ch := a.mustChannel(t, caller.token, "Канал", false)
+	a.join(t, u2.token, ch)
+	code, body := a.do(t, http.MethodPost, "/api/calls", caller.token,
+		map[string]interface{}{"channel_id": ch, "target_ids": []int64{u2.id}})
+	if code != http.StatusCreated {
+		t.Fatalf("создание звонка: %d", code)
+	}
+	callID := int64(body["call"].(map[string]interface{})["id"].(float64))
+	// Инициатор — единственный участник; закрываем его подключение.
+	conn := dialWS(t, a, caller.token)
+	time.Sleep(100 * time.Millisecond)
+	_ = conn.Close()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		call, _ := a.srv.Store.GetCall(callID)
+		if call != nil && call.Status == "ended" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("звонок должен завершиться после отключения единственного участника")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	// Теперь инициатор может начать новый звонок.
+	code, _ = a.do(t, http.MethodPost, "/api/calls", caller.token,
+		map[string]interface{}{"channel_id": ch, "target_ids": []int64{u2.id}})
+	if code != http.StatusCreated {
+		t.Fatalf("новый звонок после отключения: %d", code)
+	}
+}
+
 func TestKeyErrorPaths(t *testing.T) {
 	a := newTestApp(t, nil)
 	user1 := a.register(t, "User1")

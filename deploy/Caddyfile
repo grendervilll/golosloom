@@ -5,8 +5,10 @@
 	encode zstd gzip
 
 	# Сигналинг LiveKit через публичный WSS (медиа идёт напрямую по UDP).
+	# livekit работает на host-сети и не виден по имени в docker-сети,
+	# поэтому проксируем через host-gateway.
 	handle /livekit/* {
-		reverse_proxy livekit:7880
+		reverse_proxy host.docker.internal:7880
 	}
 
 	handle /api/* {

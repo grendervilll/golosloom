@@ -65,7 +65,14 @@ export const useCallStore = defineStore('calls', {
         inCall: true,
       })
       sounds.playDialTone()
-      await this.connectRoom(call.id, res.token, targetIds)
+      try {
+        await this.connectRoom(call.id, res.token, targetIds)
+      } catch (e) {
+        // Не удалось подключиться к LiveKit — отменяем звонок на сервере,
+        // иначе он останется «активным» и заблокирует новый вызов.
+        await this.abortCall(call.id)
+        throw e
+      }
     },
     async accept(call: Call) {
       const settings = useSettingsStore()
@@ -73,7 +80,12 @@ export const useCallStore = defineStore('calls', {
       this.stopIncoming(call.id)
       const c = this.calls.find((x) => x.id === call.id)
       if (c) c.inCall = true
-      await this.connectRoom(call.id, res.token)
+      try {
+        await this.connectRoom(call.id, res.token)
+      } catch (e) {
+        await this.abortCall(call.id)
+        throw e
+      }
     },
     async decline(call: Call) {
       const settings = useSettingsStore()
@@ -85,7 +97,24 @@ export const useCallStore = defineStore('calls', {
       const res = await settings.api.joinCall(callId)
       const c = this.calls.find((x) => x.id === callId)
       if (c) c.inCall = true
-      await this.connectRoom(callId, res.token)
+      try {
+        await this.connectRoom(callId, res.token)
+      } catch (e) {
+        await this.abortCall(callId)
+        throw e
+      }
+    },
+    // Отмена звонка: выход на сервере, очистка состояния и звуков.
+    async abortCall(callId: number) {
+      const settings = useSettingsStore()
+      try {
+        await settings.api.leaveCall(callId)
+      } catch {
+        /* ignore */
+      }
+      this.calls = this.calls.filter((c) => c.id !== callId)
+      sounds.stopAll()
+      await this.disconnectRoom()
     },
     async leave() {
       const settings = useSettingsStore()

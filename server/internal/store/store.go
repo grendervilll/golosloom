@@ -1139,6 +1139,34 @@ func (s *Store) CallsVisibleToUser(channelID, userID int64) ([]models.Call, erro
 	return out, rows.Err()
 }
 
+// ActiveCallsForParticipant — активные звонки, где пользователь участник.
+func (s *Store) ActiveCallsForParticipant(userID int64) ([]models.Call, error) {
+	rows, err := s.db.Query(`
+		SELECT DISTINCT c.id, c.channel_id, c.initiator_id, c.status, c.created_at, c.ended_at
+		FROM calls c
+		JOIN call_participants cp ON cp.call_id = c.id AND cp.user_id = ? AND cp.left_at IS NULL
+		WHERE c.status != 'ended'`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []models.Call
+	for rows.Next() {
+		var c models.Call
+		var endedAt sql.NullString
+		var createdAt string
+		if err := rows.Scan(&c.ID, &c.ChannelID, &c.InitiatorID, &c.Status, &createdAt, &endedAt); err != nil {
+			return nil, err
+		}
+		if t, err := parseTime(createdAt); err == nil {
+			c.CreatedAt = t
+		}
+		c.EndedAt = timeOrNil(endedAt)
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
 // CountCallsByInitiator — число активных звонков, инициированных пользователем в канале.
 func (s *Store) CountCallsByInitiator(channelID, userID int64) (int, error) {
 	var n int

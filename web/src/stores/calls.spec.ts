@@ -6,9 +6,13 @@ import { useAuthStore } from './auth'
 import { useSettingsStore } from './settings'
 import type { Call } from '../api/types'
 
+const failConnect = vi.hoisted(() => ({ value: false }))
+
 vi.mock('livekit-client', () => ({
   Room: class {
-    connect = vi.fn(async () => {})
+    connect = vi.fn(async () => {
+      if (failConnect.value) throw new Error('could not establish signal connection')
+    })
     disconnect = vi.fn()
     on = vi.fn()
     localParticipant = {
@@ -187,5 +191,33 @@ describe('звонки', () => {
     expect(calls.screenOn).toBe(true)
     await calls.toggleScreen('720p30')
     expect(calls.screenOn).toBe(false)
+  })
+
+  it('при ошибке подключения к LiveKit звонок отменяется на сервере', async () => {
+    failConnect.value = true
+    try {
+      const { api } = setup()
+      const calls = useCallStore()
+      await expect(calls.initiate(10, [2])).rejects.toThrow('signal connection')
+      expect(api.leaveCall).toHaveBeenCalled()
+      expect(calls.calls).toHaveLength(0)
+      expect(calls.connectedCallId).toBe(0)
+    } finally {
+      failConnect.value = false
+    }
+  })
+
+  it('при ошибке подключения при приёме звонок отменяется', async () => {
+    failConnect.value = true
+    try {
+      const { api } = setup()
+      const calls = useCallStore()
+      calls.handleCallInvite({ call_id: 1, channel_id: 10, initiator_id: 2, initiator_nick: 'bob' })
+      await expect(calls.accept(call())).rejects.toThrow('signal connection')
+      expect(api.leaveCall).toHaveBeenCalled()
+      expect(calls.calls).toHaveLength(0)
+    } finally {
+      failConnect.value = false
+    }
   })
 })

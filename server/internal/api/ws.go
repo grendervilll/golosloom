@@ -70,6 +70,10 @@ func (s *Server) readPump(c *hub.Client, nick string) {
 				"user_id": c.UserID, "online": false, "nick": nick,
 			}))
 		}
+		// Если отключившийся пользователь был единственным участником звонка
+		// (например, инициатор закрыл браузер) — звонок завершается, иначе
+		// он навсегда остался бы «активным» и заблокировал новые вызовы.
+		s.endCallsIfSoleParticipant(c.UserID)
 	}()
 	c.Conn.SetReadLimit(4096)
 	_ = c.Conn.SetReadDeadline(time.Now().Add(90 * time.Second))
@@ -142,6 +146,25 @@ func (s *Server) writePump(c *hub.Client) {
 				return
 			}
 		}
+	}
+}
+
+// endCallsIfSoleParticipant завершает звонки, где отключившийся пользователь
+// был единственным участником.
+func (s *Server) endCallsIfSoleParticipant(userID int64) {
+	if s.Hub.IsOnline(userID) {
+		return // есть другие подключения пользователя
+	}
+	calls, err := s.Store.ActiveCallsForParticipant(userID)
+	if err != nil {
+		return
+	}
+	for _, call := range calls {
+		n, err := s.Store.CallParticipantCount(call.ID)
+		if err != nil || n != 1 {
+			continue
+		}
+		s.finishCall(call, "единственный участник отключился")
 	}
 }
 

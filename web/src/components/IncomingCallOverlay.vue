@@ -2,14 +2,20 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useCallStore } from '../stores/calls'
+import { useToasts } from '../stores/toasts'
 import type { Call } from '../api/types'
 
 const calls = useCallStore()
+const toasts = useToasts()
 
 const call = computed(() => calls.ringingCall)
 
 async function accept(c: Call) {
-  await calls.accept(c)
+  try {
+    await calls.accept(c)
+  } catch (e: any) {
+    toasts.push({ kind: 'error', text: e.message || 'Не удалось подключиться к звонку' })
+  }
 }
 async function decline(c: Call) {
   await calls.decline(c)
