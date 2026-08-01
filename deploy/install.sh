@@ -443,6 +443,25 @@ do_certs() {
   refresh_certs
 }
 
+# Полная очистка файрвола: оставить только нужные для работы порты и SSH.
+do_lockdown() {
+  check_os
+  [ -f "$STATE_FILE" ] || die "Установка не найдена."
+  SSH_PORT="$(state_get ssh_port)"
+  log "Закрываю все порты, кроме нужных для работы сервера и SSH ($SSH_PORT)..."
+  ufw --force disable
+  ufw --force reset
+  ufw default deny incoming
+  ufw default allow outgoing
+  ufw allow "$SSH_PORT/tcp" >/dev/null
+  for p in $NEEDED_PORTS; do
+    ufw allow "$p" >/dev/null
+  done
+  ufw --force enable
+  log "Открыты только: SSH($SSH_PORT) + $NEEDED_PORTS"
+  log "Проверка: ufw status numbered"
+}
+
 # -----------------------------------------------------------------------------
 # Точка входа: выбор режима при уже установленном сервере.
 # -----------------------------------------------------------------------------
@@ -456,6 +475,7 @@ main() {
     update)    do_update ;;
     uninstall) do_uninstall ;;
     certs)     do_certs ;;
+    lockdown)  do_lockdown ;;
     "")
       if [ -f "$STATE_FILE" ]; then
         echo "Golosloom уже установлен. Выберите действие:"
