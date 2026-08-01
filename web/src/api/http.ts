@@ -118,6 +118,9 @@ export class ApiClient {
   listMembers(id: number) {
     return this.get(`/api/channels/${id}/members`)
   }
+  listBannedMembers(id: number) {
+    return this.get(`/api/channels/${id}/banned`)
+  }
   setRole(channelId: number, userId: number, role: string) {
     return this.post(`/api/channels/${channelId}/members/${userId}/role`, { role })
   }

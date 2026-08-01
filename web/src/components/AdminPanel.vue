@@ -16,6 +16,8 @@ const users = ref<any[]>([])
 const channels = ref<any[]>([])
 const registrationEnabled = ref(true)
 const tab = ref<'users' | 'channels'>('users')
+const bannedByChannel = ref<Record<number, any[]>>({})
+const bannedOpen = ref<Record<number, boolean>>({})
 
 const newNick = ref('')
 const newPass = ref('')
@@ -25,14 +27,43 @@ const banReason = ref<Record<number, string>>({})
 async function load() {
   users.value = await settings.api.adminListUsers()
   channels.value = await settings.api.adminListChannels()
-  try {
-    await settings.api.adminListChannels()
-  } catch {
-    /* ignore */
-  }
 }
 
 onMounted(load)
+
+async function loadBanned(channelId: number) {
+  try {
+    bannedByChannel.value[channelId] = await settings.api.listBannedMembers(channelId)
+  } catch {
+    bannedByChannel.value[channelId] = []
+  }
+}
+
+async function toggleBanned(channelId: number) {
+  bannedOpen.value[channelId] = !bannedOpen.value[channelId]
+  if (bannedOpen.value[channelId]) await loadBanned(channelId)
+}
+
+async function unbanInChannel(channelId: number, userId: number, nick: string) {
+  try {
+    await settings.api.unbanMember(channelId, userId)
+    toasts.push({ kind: 'info', text: `${nick} разбанен в канале` })
+    await loadBanned(channelId)
+  } catch (e: any) {
+    toasts.push({ kind: 'error', text: e.message })
+  }
+}
+
+async function deleteChannel(channelId: number, name: string) {
+  if (!confirm(`Удалить канал «${name}»? Сообщения и звонки будут удалены.`)) return
+  try {
+    await settings.api.deleteChannel(channelId)
+    toasts.push({ kind: 'info', text: `Канал «${name}» удалён` })
+    await load()
+  } catch (e: any) {
+    toasts.push({ kind: 'error', text: e.message })
+  }
+}
 
 async function createUser() {
   if (!newNick.value.trim() || !newPass.value) {
@@ -147,6 +178,20 @@ function copyId(u: any) {
             <span class="channel-icon">{{ c.private ? '🔒' : '#' }}</span>
             <b>{{ c.name }}</b>
             <span class="muted small">создал: {{ c.creator_nick }} (ID {{ c.creator_id }})</span>
+            <div class="row">
+              <button class="tiny" @click="toggleBanned(c.id)">
+                Забаненные ({{ bannedByChannel[c.id]?.length ?? 0 }})
+              </button>
+              <button class="tiny danger" @click="deleteChannel(c.id, c.name)">Удалить канал</button>
+            </div>
+            <div v-if="bannedOpen[c.id]" class="banned-list">
+              <div v-for="b in bannedByChannel[c.id] || []" :key="b.user_id" class="banned-row">
+                <span>{{ b.nick }}</span>
+                <span class="muted small">{{ b.ban_reason || 'без причины' }}</span>
+                <button class="tiny success" @click="unbanInChannel(c.id, b.user_id, b.nick)">Разбанить</button>
+              </div>
+              <p v-if="!(bannedByChannel[c.id] || []).length" class="muted small">Нет забаненных</p>
+            </div>
           </div>
           <p v-if="channels.length === 0" class="muted">Каналов нет</p>
         </div>
@@ -238,6 +283,24 @@ function copyId(u: any) {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
+}
+.banned-list {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+.banned-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.banned-row .small {
+  flex: 1;
 }
 .end {
   justify-content: flex-end;

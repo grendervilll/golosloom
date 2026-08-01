@@ -20,6 +20,7 @@ export const useChannelsStore = defineStore('channels', {
     channels: [] as Channel[],
     currentId: 0,
     members: [] as ChannelMember[],
+    banned: [] as { user_id: number; nick: string; ban_reason: string }[],
     invites: [] as Invite[],
     deviceKeys: null as ReturnType<typeof generateDeviceKeys> | null,
   }),
@@ -102,8 +103,18 @@ export const useChannelsStore = defineStore('channels', {
         await this.refresh()
       }
       this.members = await settings.api.listMembers(channelId)
+      await this.loadBanned(channelId)
       await chat.loadHistory(channelId)
       await this.syncKeys(channelId)
+    },
+    // Забаненные участники канала (для разбана).
+    async loadBanned(channelId: number) {
+      const settings = useSettingsStore()
+      try {
+        this.banned = await settings.api.listBannedMembers(channelId)
+      } catch {
+        this.banned = []
+      }
     },
     async deleteChannel(channelId: number) {
       const settings = useSettingsStore()
@@ -192,10 +203,11 @@ export const useChannelsStore = defineStore('channels', {
     async unban(channelId: number, userId: number) {
       const settings = useSettingsStore()
       await settings.api.unbanMember(channelId, userId)
+      await this.openChannel(channelId)
     },
     async kick(channelId: number, userId: number, reason: string) {
       const settings = useSettingsStore()
-      await settings.api.kickMember(channelId, userId)
+      await settings.api.kickMember(channelId, userId, reason)
     },
   },
 })

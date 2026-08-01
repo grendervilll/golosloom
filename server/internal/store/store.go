@@ -590,6 +590,31 @@ func (s *Store) ListMembers(channelID int64) ([]models.ChannelMember, error) {
 	return out, rows.Err()
 }
 
+// ListBannedMembers возвращает забаненных участников канала.
+func (s *Store) ListBannedMembers(channelID int64) ([]models.ChannelMember, error) {
+	rows, err := s.db.Query(`SELECT channel_id, user_id, role, banned, ban_reason, joined_at
+		FROM channel_members WHERE channel_id = ? AND banned = 1 ORDER BY user_id`, channelID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []models.ChannelMember
+	for rows.Next() {
+		var m models.ChannelMember
+		var banned int
+		var joinedAt string
+		if err := rows.Scan(&m.ChannelID, &m.UserID, &m.Role, &banned, &m.BanReason, &joinedAt); err != nil {
+			return nil, err
+		}
+		m.Banned = banned == 1
+		if t, err := parseTime(joinedAt); err == nil {
+			m.JoinedAt = t
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) MemberChannelIDs(userID int64) ([]int64, error) {
 	rows, err := s.db.Query(`SELECT channel_id FROM channel_members WHERE user_id = ? AND banned = 0`, userID)
 	if err != nil {

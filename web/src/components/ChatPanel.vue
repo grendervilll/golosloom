@@ -4,14 +4,16 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useChannelsStore } from '../stores/channels'
 import { useChatStore, type ChatMessage } from '../stores/chat'
+import { useCallStore } from '../stores/calls'
 import { useToasts } from '../stores/toasts'
 import MessageItem from './MessageItem.vue'
 
-defineEmits<{ (e: 'toggle-participants'): void; (e: 'open-invite'): void }>()
+defineEmits<{ (e: 'toggle-participants'): void; (e: 'open-invite'): void; (e: 'open-call'): void }>()
 
 const auth = useAuthStore()
 const channels = useChannelsStore()
 const chat = useChatStore()
+const calls = useCallStore()
 const toasts = useToasts()
 
 const listEl = ref<HTMLElement | null>(null)
@@ -95,6 +97,9 @@ function onKeydown(e: KeyboardEvent) {
         @click="emit('open-invite')"
       >
         🔗 Пригласить
+      </button>
+      <button v-if="!calls.inCall" class="invite-btn" title="Позвонить участникам канала" @click="emit('open-call')">
+        📞 Позвонить
       </button>
       <button class="members-btn" title="Участники" @click="emit('toggle-participants')">👥</button>
     </div>

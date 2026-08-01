@@ -96,6 +96,9 @@ async function declineInvite(id: number) {
       >
         <span>🔗</span> Пригласить в канал
       </button>
+      <button class="call-btn" title="Позвонить участникам канала" @click="emit('open-call')">
+        <span>📞</span> Позвонить
+      </button>
       <div v-for="ch in sortedChannels" :key="ch.id" class="frame channel-item" :class="{ active: ch.id === channels.currentId }" @click="select(ch.id)">
         <span class="channel-icon">{{ ch.private ? '🔒' : '#' }}</span>
         <span class="channel-name">{{ ch.name }}</span>
@@ -226,6 +229,20 @@ async function declineInvite(id: number) {
 }
 .invite-btn:hover {
   background: var(--bg4);
+}
+.call-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 4px;
+  background: var(--green);
+  color: #fff;
+  font-weight: 600;
+}
+.call-btn:hover {
+  background: #1f8f4d;
 }
 
 @media (max-width: 1200px) {

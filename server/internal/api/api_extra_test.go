@@ -162,6 +162,45 @@ func TestMessageErrorPaths(t *testing.T) {
 	}
 }
 
+func TestBannedListAndUnban(t *testing.T) {
+	a := newTestApp(t, nil)
+	user1 := a.register(t, "User1")
+	user2 := a.register(t, "User2")
+	ch := a.mustChannel(t, user1.token, "Канал", false)
+	a.join(t, user2.token, ch)
+
+	// Бан с причиной.
+	code, _ := a.do(t, http.MethodPost, fmt.Sprintf("/api/channels/%d/members/%d/ban", ch, user2.id), user1.token,
+		map[string]string{"reason": "спам"})
+	if code != http.StatusOK {
+		t.Fatalf("бан: %d", code)
+	}
+	// Список забаненных виден с причиной.
+	_, banned := a.doList(t, http.MethodGet, fmt.Sprintf("/api/channels/%d/banned", ch), user1.token, nil)
+	if len(banned) != 1 {
+		t.Fatalf("забаненные: %v", banned)
+	}
+	b := banned[0].(map[string]interface{})
+	if b["ban_reason"] != "спам" || b["nick"] != "user2" {
+		t.Fatalf("данные забаненного: %v", b)
+	}
+	// Разбан — список пустеет.
+	code, _ = a.do(t, http.MethodDelete, fmt.Sprintf("/api/channels/%d/members/%d/ban", ch, user2.id), user1.token, nil)
+	if code != http.StatusOK {
+		t.Fatalf("разбан: %d", code)
+	}
+	_, banned = a.doList(t, http.MethodGet, fmt.Sprintf("/api/channels/%d/banned", ch), user1.token, nil)
+	if len(banned) != 0 {
+		t.Fatalf("после разбана список должен быть пуст: %v", banned)
+	}
+	// Неучастник канала не видит список забаненных.
+	user3 := a.register(t, "User3")
+	code, _ = a.do(t, http.MethodGet, fmt.Sprintf("/api/channels/%d/banned", ch), user3.token, nil)
+	if code != http.StatusForbidden {
+		t.Fatalf("список забаненных неучастнику: %d", code)
+	}
+}
+
 func TestKeyErrorPaths(t *testing.T) {
 	a := newTestApp(t, nil)
 	user1 := a.register(t, "User1")

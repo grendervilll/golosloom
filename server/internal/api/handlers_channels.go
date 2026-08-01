@@ -369,6 +369,28 @@ func (s *Server) handleListMembers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// handleListBannedMembers — забаненные участники канала (для разбана).
+func (s *Server) handleListBannedMembers(w http.ResponseWriter, r *http.Request) {
+	channelID := pathID(r, "id")
+	if _, ok := s.requireChannelMember(w, r, channelID); !ok {
+		return
+	}
+	members, err := s.Store.ListBannedMembers(channelID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	out := make([]map[string]interface{}, 0, len(members))
+	for _, m := range members {
+		out = append(out, map[string]interface{}{
+			"user_id":    m.UserID,
+			"nick":       s.nickOf(m.UserID),
+			"ban_reason": m.BanReason,
+		})
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 func (s *Server) handleSetMemberRole(w http.ResponseWriter, r *http.Request) {
 	channelID := pathID(r, "id")
 	targetID := pathID(r, "uid")

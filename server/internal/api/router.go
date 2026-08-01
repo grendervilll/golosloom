@@ -40,6 +40,7 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("DELETE /api/channels/{id}", s.requireAuth(s.handleDeleteChannel))
 	mux.HandleFunc("POST /api/channels/{id}/join", s.requireAuth(s.handleJoinChannel))
 	mux.HandleFunc("GET /api/channels/{id}/members", s.requireAuth(s.handleListMembers))
+	mux.HandleFunc("GET /api/channels/{id}/banned", s.requireAuth(s.handleListBannedMembers))
 	mux.HandleFunc("POST /api/channels/{id}/members/{uid}/role", s.requireAuth(s.handleSetMemberRole))
 	mux.HandleFunc("POST /api/channels/{id}/members/{uid}/ban", s.requireAuth(s.handleBanMember))
 	mux.HandleFunc("DELETE /api/channels/{id}/members/{uid}/ban", s.requireAuth(s.handleUnbanMember))

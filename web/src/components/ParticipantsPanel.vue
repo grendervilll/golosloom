@@ -75,6 +75,15 @@ async function ban(userId: number, nick: string) {
   modReason.value = ''
 }
 
+async function unban(userId: number, nick: string) {
+  try {
+    await channels.unban(channels.currentId, userId)
+    toasts.push({ kind: 'info', text: `${nick} разбанен` })
+  } catch (e: any) {
+    toasts.push({ kind: 'error', text: e.message })
+  }
+}
+
 function punch(userId: number) {
   void calls.punch(userId)
 }
@@ -132,6 +141,15 @@ function setVolume(userId: number, v: number) {
             <option value="channel_moderator">Модератор</option>
             <option value="channel_admin">Админ канала</option>
           </select>
+        </div>
+      </div>
+
+      <div v-if="canBan && channels.banned.length" class="banned-section">
+        <div class="banned-head">Забаненные ({{ channels.banned.length }})</div>
+        <div v-for="b in channels.banned" :key="'b' + b.user_id" class="banned-item">
+          <span class="nick">{{ b.nick }}</span>
+          <span class="muted small reason">{{ b.ban_reason || 'без причины' }}</span>
+          <button class="tiny success" @click="unban(b.user_id, b.nick)">Разбанить</button>
         </div>
       </div>
     </div>
@@ -231,6 +249,34 @@ function setVolume(userId: number, v: number) {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+.banned-section {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.banned-head {
+  font-size: 12px;
+  text-transform: uppercase;
+  color: var(--red);
+  font-weight: 700;
+}
+.banned-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--bg3);
+}
+.banned-item .reason {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 @media (max-width: 900px) {

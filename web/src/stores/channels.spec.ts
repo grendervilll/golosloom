@@ -16,6 +16,7 @@ function mockApi() {
     listUsers: vi.fn(async () => []),
     listMessages: vi.fn(async () => []),
     listMembers: vi.fn(async () => [{ user_id: 1, nick: 'me', role: 'channel_admin', online: true, joined_at: '' }]),
+    listBannedMembers: vi.fn(async () => []),
     joinChannel: vi.fn(async () => ({})),
     createChannel: vi.fn(async () => ({ id: 11, name: 'new', private: false, creator_id: 1, created_at: '', is_member: true })),
     uploadWrappedKey: vi.fn(async () => ({})),
@@ -114,6 +115,35 @@ describe('каналы и ключи', () => {
     api.listMembers.mockRejectedValue({ status: 403, message: 'нет доступа к каналу' })
     const channels = useChannelsStore()
     await expect(channels.init()).resolves.toBeUndefined()
+  })
+
+  it('кик передаёт причину на сервер', async () => {
+    const { api } = setup()
+    const channels = useChannelsStore()
+    await channels.kick(10, 2, 'плохое поведение')
+    expect(api.kickMember).toHaveBeenCalledWith(10, 2, 'плохое поведение')
+  })
+
+  it('при открытии канала загружается список забаненных', async () => {
+    const { api } = setup()
+    api.listBannedMembers = vi.fn(async () => [{ user_id: 3, nick: 'bad', ban_reason: 'спам' }])
+    const channels = useChannelsStore()
+    channels.currentId = 10
+    await channels.openChannel(10)
+    expect(channels.banned).toHaveLength(1)
+    expect(channels.banned[0].ban_reason).toBe('спам')
+  })
+
+  it('разбан снимает бан и перезагружает канал', async () => {
+    const { api } = setup()
+    const channels = useChannelsStore()
+    channels.currentId = 10
+    api.listBannedMembers = vi.fn(async () => [{ user_id: 3, nick: 'bad', ban_reason: 'спам' }])
+    await channels.openChannel(10)
+    expect(channels.banned).toHaveLength(1)
+    await channels.unban(10, 3)
+    expect(api.unbanMember).toHaveBeenCalledWith(10, 3)
+    expect(api.listBannedMembers).toHaveBeenCalled()
   })
 
   it('создатель канала создаёт и сохраняет ключ канала', async () => {

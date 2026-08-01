@@ -70,6 +70,7 @@ function toggleChat() {
         :class="{ 'in-call': inCall }"
         @toggle-participants="showParticipants = true"
         @open-invite="showInvite = true"
+        @open-call="showCallPicker = true"
       />
       <div v-else class="empty-chat muted">Чат скрыт</div>
       <JoinCallBar v-if="!inCall" />
