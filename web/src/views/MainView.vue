@@ -65,7 +65,12 @@ function toggleChat() {
       <div v-if="inCall" class="stage-wrap">
         <CallStage />
       </div>
-      <ChatPanel v-if="!chatHidden" :class="{ 'in-call': inCall }" @toggle-participants="showParticipants = true" />
+      <ChatPanel
+        v-if="!chatHidden"
+        :class="{ 'in-call': inCall }"
+        @toggle-participants="showParticipants = true"
+        @open-invite="showInvite = true"
+      />
       <div v-else class="empty-chat muted">Чат скрыт</div>
       <JoinCallBar v-if="!inCall" />
       <CallControls v-if="inCall" />

@@ -7,7 +7,7 @@ import { useChatStore, type ChatMessage } from '../stores/chat'
 import { useToasts } from '../stores/toasts'
 import MessageItem from './MessageItem.vue'
 
-defineEmits<{ (e: 'toggle-participants'): void }>()
+defineEmits<{ (e: 'toggle-participants'): void; (e: 'open-invite'): void }>()
 
 const auth = useAuthStore()
 const channels = useChannelsStore()
@@ -88,6 +88,14 @@ function onKeydown(e: KeyboardEvent) {
     <div class="chat-head">
       <h2><span class="hash">#</span> {{ channelName }}</h2>
       <span class="muted small">ID канала: {{ channels.currentId }}</span>
+      <button
+        v-if="channels.current?.private"
+        class="invite-btn"
+        title="Пригласить пользователя в приватный канал"
+        @click="emit('open-invite')"
+      >
+        🔗 Пригласить
+      </button>
       <button class="members-btn" title="Участники" @click="emit('toggle-participants')">👥</button>
     </div>
     <div ref="listEl" class="chat-list">
@@ -162,6 +170,17 @@ function onKeydown(e: KeyboardEvent) {
   margin-left: auto;
   padding: 4px 10px;
   display: none;
+}
+.invite-btn {
+  margin-left: auto;
+  padding: 5px 12px;
+  background: transparent;
+  border: 1px solid var(--accent);
+  color: var(--text);
+  font-size: 13px;
+}
+.invite-btn:hover {
+  background: var(--bg4);
 }
 .chat-list {
   flex: 1;

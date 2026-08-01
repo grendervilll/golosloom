@@ -26,6 +26,18 @@ body,
   height: 100%;
 }
 
+/* Корневой контейнер приложения всегда занимает всё окно,
+   чтобы раскладка (каналы | чат/звонок | участники) заполняла экран. */
+.app-root {
+  height: 100%;
+  display: flex;
+  min-width: 0;
+}
+.app-root > * {
+  flex: 1;
+  min-width: 0;
+}
+
 body {
   font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
   background: var(--bg);

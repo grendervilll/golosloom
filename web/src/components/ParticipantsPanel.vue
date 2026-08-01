@@ -140,8 +140,8 @@ function setVolume(userId: number, v: number) {
 
 <style scoped>
 .members-panel {
-  width: 300px;
-  min-width: 240px;
+  width: clamp(240px, 22vw, 380px);
+  min-width: 0;
   background: var(--bg2);
   border-left: 1px solid var(--border);
   display: flex;
@@ -236,6 +236,12 @@ function setVolume(userId: number, v: number) {
 @media (max-width: 900px) {
   .close-btn {
     display: block;
+  }
+}
+
+@media (min-width: 901px) and (max-width: 1200px) {
+  .members-panel {
+    width: 260px;
   }
 }
 </style>
