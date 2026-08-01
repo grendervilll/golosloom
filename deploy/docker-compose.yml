@@ -8,13 +8,15 @@ services:
     env_file: .env
     environment:
       - DB_PATH=/data/golosloom.db
-      - LIVEKIT_URL=ws://livekit:7880
+      - LIVEKIT_URL=ws://host.docker.internal:7880
       - TURN_URLS=${TURN_URLS}
       - TURN_SHARED_SECRET=${TURN_SHARED_SECRET}
       - TURN_REALM=${TURN_REALM}
-      - ALLOW_ORIGINS=https://${DOMAIN}
+      - ALLOW_ORIGINS=${ALLOW_ORIGINS}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
-      - ./data:/data
+      - ${DATA_DIR}:/data
     depends_on:
       - livekit
     networks:
@@ -36,26 +38,23 @@ services:
     container_name: golosloom-livekit
     restart: unless-stopped
     command: --config /etc/livekit.yaml
+    # Host-сеть для медиа: при bridge-сети Docker добавляет правило iptables
+    # на каждый из сотен UDP-портов — на слабых VPS старт зависает на минуты.
+    network_mode: host
     volumes:
-      - ./livekit.yaml:/etc/livekit.yaml:ro
-      - ./data/certs:/certs:ro
+      - ${LIVEKIT_CONFIG}:/etc/livekit.yaml:ro
+      - ${DATA_DIR}/certs:/certs:ro
     environment:
       - LIVEKIT_KEYS=${LIVEKIT_API_KEY}:${LIVEKIT_API_SECRET}
-    ports:
-      - "7880:7880"
-      - "7881:7881"
-      - "7882:7882"
-      - "50000-60000:50000-60000/udp"
-    networks:
-      - golosloom
 
   coturn:
     image: coturn/coturn:4.6
     container_name: golosloom-coturn
     restart: unless-stopped
-    # Встроенный entrypoint образа при первом старте генерирует RSA-ключ и
-    # dhparam (очень долго на слабых VPS). Запускаем turnserver напрямую:
-    # сертификаты появляются позже, после выпуска их Caddy (cron перезапускает coturn).
+    network_mode: host
+    # Встроенный entrypoint образа генерирует RSA/dhparam при старте (долго на
+    # слабых VPS). Запускаем turnserver напрямую; сертификаты подменяются после
+    # выпуска Caddy (cron перезапускает coturn).
     entrypoint: ["/usr/bin/turnserver"]
     command:
       - -n
@@ -73,16 +72,6 @@ services:
       - --cert=/certs/fullchain.pem
       - --pkey=/certs/privkey.pem
       - --dh-file=/certs/dhparam.pem
-    volumes:
-      - ./data/certs:/certs:ro
-    ports:
-      - "3478:3478/udp"
-      - "3478:3478/tcp"
-      - "5349:5349/udp"
-      - "5349:5349/tcp"
-      - "49160-49200:49160-49200/udp"
-    networks:
-      - golosloom
 
   caddy:
     image: caddy:2
@@ -92,14 +81,13 @@ services:
       - DOMAIN=${DOMAIN}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./data/caddy:/data
+      - ${DATA_DIR}/caddy:/data
       - web-dist:/srv:ro
     ports:
       - "80:80"
       - "443:443"
     depends_on:
       - server
-      - coturn
     networks:
       - golosloom
 

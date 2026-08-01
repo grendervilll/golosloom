@@ -8,3 +8,5 @@ RUN npm run build
 
 FROM alpine:3.21
 COPY --from=build /app/dist /srv
+# Контейнер-хранилище статики: держим процесс живым, файлы раздаёт Caddy.
+CMD ["sleep", "infinity"]

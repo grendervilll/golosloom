@@ -127,8 +127,10 @@ ask_params() {
 
 # -----------------------------------------------------------------------------
 # Порты, которые открывает скрипт (в ufw). SSH — отдельно.
+# Диапазон UDP LiveKit сужен до 100 портов (хватает на 100 одновременных
+# участников медиа) и не пересекается с эфемерными портами хоста.
 # -----------------------------------------------------------------------------
-NEEDED_PORTS="80/tcp 443/tcp 7880/tcp 7881/tcp 7882/tcp 50000:60000/udp 3478/udp 3478/tcp 5349/udp 5349/tcp 49160:49200/udp"
+NEEDED_PORTS="80/tcp 443/tcp 7880/tcp 7881/tcp 7882/tcp 50000:50100/udp 3478/udp 3478/tcp 5349/udp 5349/tcp 49160:49200/udp"
 
 open_ports() {
   ufw status >/dev/null 2>&1 || { ufw --force enable >/dev/null 2>&1 || true; }
@@ -183,13 +185,55 @@ LIVEKIT_API_SECRET=$livekit_secret
 JWT_SECRET=$jwt_secret
 TURN_URLS=turn:$DOMAIN:3478?transport=udp,turn:$DOMAIN:3478?transport=tcp
 ALLOW_ORIGINS=https://$DOMAIN,tauri://localhost,http://tauri.localhost,http://localhost:5173
+DATA_DIR=$DATA_DIR
+LIVEKIT_CONFIG=$INSTALL_DIR/livekit.yaml
 EOF
   chmod 600 "$DEPLOY_DIR/.env"
   log "Секреты сгенерированы и сохранены в $DEPLOY_DIR/.env (права 600)"
 }
 
+# Дописывает в .env отсутствующие переменные (при обновлении с более старых версий).
+ensure_env_var() {
+  local key="$1" value="$2"
+  if ! grep -q "^$key=" "$DEPLOY_DIR/.env" 2>/dev/null; then
+    echo "$key=$value" >> "$DEPLOY_DIR/.env"
+    log "В .env добавлено: $key=$value"
+  fi
+}
+
 # -----------------------------------------------------------------------------
-# Сертификаты для coturn (копируются из хранилища Caddy).
+# Конфигурация LiveKit (генерируется с реальными значениями, вне репозитория).
+# -----------------------------------------------------------------------------
+gen_livekit_config() {
+  cat > "$LIVEKIT_CONFIG" <<EOF
+port: 7880
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 50100
+  use_external_ip: true
+  enable_tcp_loopback: true
+stun_servers:
+  - stun:stun.l.google.com:19302
+turn:
+  enabled: true
+  domain: $DOMAIN
+  tls_port: 5349
+  udp_port: 3478
+  external_tls: true
+  tls_cert: /certs/fullchain.pem
+  tls_key: /certs/privkey.pem
+  dh_file: /certs/dhparam.pem
+logging:
+  level: info
+EOF
+  chmod 644 "$LIVEKIT_CONFIG"
+  log "Конфигурация LiveKit записана: $LIVEKIT_CONFIG"
+}
+
+# -----------------------------------------------------------------------------
+# Сертификаты: dhparam + запасной самоподписанный сертификат, чтобы coturn и
+# LiveKit стартовали сразу; реальные сертификаты Caddy подменят их через cron.
 # -----------------------------------------------------------------------------
 gen_certs() {
   mkdir -p "$DATA_DIR/certs"
@@ -197,6 +241,14 @@ gen_certs() {
     log "Генерирую dhparam.pem (может занять минуту)..."
     openssl dhparam -out "$DATA_DIR/certs/dhparam.pem" 2048
   fi
+  if [ ! -f "$DATA_DIR/certs/fullchain.pem" ] || [ ! -f "$DATA_DIR/certs/privkey.pem" ]; then
+    log "Генерирую запасной самоподписанный сертификат (заменится реальным после выпуска Caddy)..."
+    openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
+      -keyout "$DATA_DIR/certs/privkey.pem" \
+      -out "$DATA_DIR/certs/fullchain.pem" \
+      -subj "/CN=$DOMAIN" >/dev/null 2>&1
+  fi
+  chmod 600 "$DATA_DIR/certs/privkey.pem"
 }
 
 refresh_certs() {
@@ -287,6 +339,7 @@ install_fresh() {
   mkdir -p "$INSTALL_DIR" "$DATA_DIR"
   clone_repo
   gen_env
+  gen_livekit_config
   gen_certs
   open_ports
   setup_cron
@@ -318,9 +371,25 @@ do_update() {
   DOMAIN="$(state_get domain)"
   SSH_PORT="$(state_get ssh_port)"
   GOLOSLOOM_REPO="$(state_get repo)"
+
+  # Перенос данных из deploy/data (старая раскладка) в единый каталог данных.
+  if [ -d "$DEPLOY_DIR/data" ] && [ ! -d "$DATA_DIR" ]; then
+    log "Переношу данные из $DEPLOY_DIR/data в $DATA_DIR..."
+    mkdir -p "$DATA_DIR"
+    mv "$DEPLOY_DIR/data"/* "$DATA_DIR"/ 2>/dev/null || true
+    rm -rf "$DEPLOY_DIR/data"
+  fi
+  mkdir -p "$DATA_DIR/certs"
+
+  # Дополняем .env новыми переменными (если .env с более старой версии).
+  ensure_env_var "DATA_DIR" "$DATA_DIR"
+  ensure_env_var "LIVEKIT_CONFIG" "$INSTALL_DIR/livekit.yaml"
+
   cd "$REPO_DIR"
   log "Скачиваю последние изменения с GitHub..."
   git pull --ff-only
+  gen_livekit_config
+  gen_certs
   log "Пересобираю контейнеры (база данных и порты не изменяются)..."
   docker compose -f "$DEPLOY_DIR/docker-compose.yml" up -d --build
   log "Обновление завершено. База данных сохранена."
