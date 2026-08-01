@@ -8,7 +8,9 @@ services:
     env_file: .env
     environment:
       - DB_PATH=/data/golosloom.db
-      - LIVEKIT_URL=ws://host.docker.internal:7880
+      # Публичный адрес LiveKit: клиенты подключаются через Caddy (WSS),
+      # а не к внутреннему адресу контейнера.
+      - LIVEKIT_URL=wss://${DOMAIN}/livekit
       - TURN_URLS=${TURN_URLS}
       - TURN_SHARED_SECRET=${TURN_SHARED_SECRET}
       - TURN_REALM=${TURN_REALM}

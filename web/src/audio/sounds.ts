@@ -20,6 +20,13 @@ class SoundManager {
     return this.ctx
   }
 
+  // Браузер блокирует аудио без жеста пользователя: вызывается при первом
+  // клике/нажатии клавиши, чтобы звук входящего звонка мог заиграть по WS.
+  unlock(): void {
+    const ctx = this.getCtx()
+    if (ctx && ctx.state === 'suspended') void ctx.resume()
+  }
+
   private beep(freq: number, duration: number, gain = 0.05, type: OscillatorType = 'sine', delay = 0): void {
     const ctx = this.getCtx()
     if (!ctx) return

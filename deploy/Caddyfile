@@ -4,6 +4,11 @@
 {$DOMAIN} {
 	encode zstd gzip
 
+	# Сигналинг LiveKit через публичный WSS (медиа идёт напрямую по UDP).
+	handle /livekit/* {
+		reverse_proxy livekit:7880
+	}
+
 	handle /api/* {
 		reverse_proxy server:8080
 	}

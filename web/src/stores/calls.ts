@@ -25,6 +25,7 @@ export const useCallStore = defineStore('calls', {
     lastPunch: 0,
   }),
   getters: {
+    inCall: (s) => s.connectedCallId > 0,
     currentCall(): ActiveCall | undefined {
       return this.calls.find((c) => c.id === this.connectedCallId)
     },
