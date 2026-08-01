@@ -217,9 +217,10 @@ rtc:
   tcp_port: 7881
   port_range_start: 50000
   port_range_end: 50100
-  use_external_ip: true
-  stun_servers:
-    - stun.l.google.com:19302
+  # LiveKit работает на host-сети: его локальный IP и есть публичный IP сервера,
+  # поэтому внешний STUN-поиск не нужен (на многих VPS исходящий UDP к
+  # публичным STUN-серверам заблокирован, и livekit не стартует).
+  use_external_ip: false
 keys:
   ${api_key}: ${api_secret}
 logging:
