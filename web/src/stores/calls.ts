@@ -174,14 +174,17 @@ export const useCallStore = defineStore('calls', {
         videoCaptureDefaults: { resolution: { width: 1280, height: 720 } },
       })
       // Обработчики треков регистрируем ДО connect, чтобы не пропустить ранние.
-      // ВАЖНО: в событии TrackSubscribed (single peer connection) у трека может
-      // не быть participant — прикрепляем аудио по самому треку, не завися от него.
+      // ВАЖНО: track.attach() без аргумента в этой версии SDK НЕ вставляет
+      // элемент в DOM — создаём <audio> сами и прикрепляем трек к нему.
       const attachAudio = (track: any) => {
         try {
           if (track.kind !== Track.Kind.Audio) return
-          track.attach()
-          const el = track.attachedElements[0] as HTMLMediaElement
-          if (el) el.volume = settings.mutedOthers ? 0 : 1
+          const el = document.createElement('audio')
+          el.autoplay = true
+          el.style.display = 'none'
+          document.body.appendChild(el)
+          track.attach(el)
+          el.volume = settings.mutedOthers ? 0 : 1
         } catch {
           /* не фатально */
         }
@@ -189,7 +192,7 @@ export const useCallStore = defineStore('calls', {
       room.on(RoomEvent.TrackSubscribed, attachAudio)
       room.on(RoomEvent.TrackUnsubscribed, (track: any) => {
         try {
-          track?.detach?.()
+          for (const el of track?.attachedElements || []) track.detach(el)
         } catch {
           /* ignore */
         }
