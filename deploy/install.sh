@@ -162,6 +162,7 @@ LIVEKIT_API_KEY=$livekit_key
 LIVEKIT_API_SECRET=$livekit_secret
 JWT_SECRET=$jwt_secret
 TURN_URLS=turn:$DOMAIN:3478?transport=udp,turn:$DOMAIN:3478?transport=tcp
+ALLOW_ORIGINS=https://$DOMAIN,tauri://localhost,http://tauri.localhost,http://localhost:5173
 EOF
   chmod 600 "$DEPLOY_DIR/.env"
   log "Секреты сгенерированы и сохранены в $DEPLOY_DIR/.env (права 600)"
