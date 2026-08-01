@@ -1,0 +1,20 @@
+# Caddy: HTTPS для веб-клиента и API, WebSocket, а также выпуск сертификатов
+# для coturn (TURN over TLS). Сертификаты автоматически перевыпускаются Caddy.
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	handle /api/* {
+		reverse_proxy server:8080
+	}
+
+	handle /ws {
+		reverse_proxy server:8080
+	}
+
+	handle {
+		root * /srv
+		file_server
+		try_files {path} /index.html
+	}
+}

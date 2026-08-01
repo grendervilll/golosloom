@@ -1,0 +1,172 @@
+:root {
+  --bg: #1e1f22;
+  --bg2: #2b2d31;
+  --bg3: #313338;
+  --bg4: #383a40;
+  --text: #dbdee1;
+  --text-dim: #949ba4;
+  --accent: #5865f2;
+  --accent-hover: #4752c4;
+  --green: #23a55a;
+  --red: #da373c;
+  --yellow: #f0b232;
+  --border: #26282c;
+  --radius: 8px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 15px;
+  overflow: hidden;
+}
+
+button {
+  font: inherit;
+  border: none;
+  background: var(--bg4);
+  color: var(--text);
+  padding: 8px 14px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+button:hover:not(:disabled) {
+  background: #43454d;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+button.primary {
+  background: var(--accent);
+  color: #fff;
+}
+button.primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+button.danger {
+  background: var(--red);
+  color: #fff;
+}
+button.success {
+  background: var(--green);
+  color: #fff;
+}
+
+input,
+textarea,
+select {
+  font: inherit;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 9px 12px;
+  outline: none;
+  width: 100%;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  border-color: var(--accent);
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal {
+  background: var(--bg2);
+  border-radius: 12px;
+  padding: 20px;
+  width: 460px;
+  max-width: 94vw;
+  max-height: 86vh;
+  overflow-y: auto;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
+}
+
+.modal h2 {
+  margin-bottom: 14px;
+  font-size: 20px;
+}
+
+.field {
+  margin-bottom: 12px;
+}
+.field label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--text-dim);
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.error-text {
+  color: var(--red);
+  font-size: 13px;
+  margin-top: 8px;
+}
+
+.hint-text {
+  color: var(--text-dim);
+  font-size: 13px;
+  margin-top: 8px;
+}
+
+.muted {
+  color: var(--text-dim);
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.role-icon {
+  display: inline-block;
+  margin-right: 6px;
+  font-size: 14px;
+  vertical-align: middle;
+}
+
+.frame {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--bg4);
+  border-radius: 4px;
+}

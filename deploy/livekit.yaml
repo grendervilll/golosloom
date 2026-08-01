@@ -1,0 +1,24 @@
+# Конфигурация LiveKit (SFU).
+port: 7880
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 60000
+  use_external_ip: true
+  enable_tcp_loopback: true
+  force_tcp: false
+  # Все вызовы идут через coturn (TURN), без прямого подключения.
+  stun_servers: []
+turn:
+  enabled: true
+  domain: ${TURN_REALM}
+  tls_port: 5349
+  udp_port: 3478
+  external_tls: true
+  tls_cert: /certs/fullchain.pem
+  tls_key: /certs/privkey.pem
+  dh_file: /certs/dhparam.pem
+logging:
+  level: info
+keys:
+  ${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}

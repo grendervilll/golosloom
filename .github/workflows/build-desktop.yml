@@ -1,0 +1,103 @@
+name: build-desktop
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+      - run: npm ci
+        working-directory: web
+      - run: npm ci
+        working-directory: desktop
+      - run: npm run tauri build
+        working-directory: desktop
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ''
+      - uses: actions/upload-artifact@v4
+        with:
+          name: golosloom-macos-aarch64
+          path: |
+            desktop/src-tauri/target/release/bundle/dmg/*.dmg
+            desktop/src-tauri/target/release/bundle/macos/*.app
+          if-no-files-found: error
+
+  build-windows:
+    strategy:
+      matrix:
+        arch: [x86_64, aarch64]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.arch == 'aarch64' && 'aarch64-pc-windows-msvc' || 'x86_64-pc-windows-msvc' }}
+      - run: npm ci
+        working-directory: web
+      - run: npm ci
+        working-directory: desktop
+      - name: Build for ${{ matrix.arch }}
+        run: npm run tauri build -- --target ${{ matrix.arch == 'aarch64' && 'aarch64-pc-windows-msvc' || 'x86_64-pc-windows-msvc' }} --bundles nsis,msi
+        working-directory: desktop
+      - uses: actions/upload-artifact@v4
+        with:
+          name: golosloom-windows-${{ matrix.arch }}
+          path: |
+            desktop/src-tauri/target/${{ matrix.arch == 'aarch64' && 'aarch64-pc-windows-msvc' || 'x86_64-pc-windows-msvc' }}/release/bundle/nsis/*.exe
+            desktop/src-tauri/target/${{ matrix.arch == 'aarch64' && 'aarch64-pc-windows-msvc' || 'x86_64-pc-windows-msvc' }}/release/bundle/msi/*.msi
+          if-no-files-found: error
+
+  build-linux:
+    strategy:
+      matrix:
+        arch: [x86_64, aarch64]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.arch == 'aarch64' && 'aarch64-unknown-linux-gnu' || 'x86_64-unknown-linux-gnu' }}
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libgtk-3-dev
+          if [ "${{ matrix.arch }}" = "aarch64" ]; then
+            sudo apt-get install -y gcc-aarch64-linux-gnu libwebkit2gtk-4.1-dev:arm64 libgtk-3-dev:arm64
+          fi
+      - run: npm ci
+        working-directory: web
+      - run: npm ci
+        working-directory: desktop
+      - name: Build for ${{ matrix.arch }}
+        run: |
+          if [ "${{ matrix.arch }}" = "x86_64" ]; then
+            npm run tauri build
+          else
+            cargo install --locked cross
+            cross build --release --target aarch64-unknown-linux-gnu --manifest-path src-tauri/Cargo.toml
+          fi
+        working-directory: desktop
+      - uses: actions/upload-artifact@v4
+        with:
+          name: golosloom-linux-${{ matrix.arch }}
+          path: |
+            desktop/src-tauri/target/release/bundle/**/*
+            desktop/src-tauri/target/aarch64-unknown-linux-gnu/release/golosloom
+          if-no-files-found: warn

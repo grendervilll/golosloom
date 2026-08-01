@@ -1,0 +1,243 @@
+// Звонки: инициация, приём/отклонение, LiveKit-комната, участники, пинок.
+import { defineStore } from 'pinia'
+import { useSettingsStore } from './settings'
+import { useAuthStore } from './auth'
+import { useToasts } from './toasts'
+import { sounds } from '../audio/sounds'
+import type { Call } from '../api/types'
+import { Room, RoomEvent, Track } from 'livekit-client'
+
+export interface ActiveCall extends Call {
+  incoming: boolean // мне звонят
+  ringing: boolean // я звоню
+  inCall: boolean // я в звонке
+}
+
+export const useCallStore = defineStore('calls', {
+  state: () => ({
+    calls: [] as ActiveCall[],
+    room: null as Room | null,
+    connectedCallId: 0,
+    micOn: false,
+    camOn: false,
+    screenOn: false,
+    punchCooldown: 0 as number,
+    lastPunch: 0,
+  }),
+  getters: {
+    currentCall(): ActiveCall | undefined {
+      return this.calls.find((c) => c.id === this.connectedCallId)
+    },
+    ringingCall(): ActiveCall | undefined {
+      return this.calls.find((c) => c.incoming)
+    },
+    canJoinCall(): boolean {
+      return this.calls.some((c) => c.status !== 'ended' && !c.inCall && !c.incoming)
+    },
+  },
+  actions: {
+    async refresh(channelId: number) {
+      const settings = useSettingsStore()
+      const auth = useAuthStore()
+      const calls: Call[] = await settings.api.listCalls(channelId)
+      const merged: ActiveCall[] = []
+      for (const c of calls) {
+        const prev = this.calls.find((x) => x.id === c.id)
+        merged.push({
+          ...c,
+          incoming: prev?.incoming ?? false,
+          ringing: prev?.ringing ?? false,
+          inCall: c.participants.includes(auth.user!.id),
+        })
+      }
+      this.calls = merged
+    },
+    async initiate(channelId: number, targetIds: number[]) {
+      const settings = useSettingsStore()
+      const auth = useAuthStore()
+      const res = await settings.api.createCall(channelId, targetIds)
+      const call = res.call as Call
+      this.calls.push({
+        ...call,
+        incoming: false,
+        ringing: true,
+        inCall: true,
+      })
+      sounds.playDialTone()
+      await this.connectRoom(call.id, res.token, targetIds)
+    },
+    async accept(call: Call) {
+      const settings = useSettingsStore()
+      const res = await settings.api.acceptCall(call.id)
+      this.stopIncoming(call.id)
+      const c = this.calls.find((x) => x.id === call.id)
+      if (c) c.inCall = true
+      await this.connectRoom(call.id, res.token)
+    },
+    async decline(call: Call) {
+      const settings = useSettingsStore()
+      await settings.api.declineCall(call.id)
+      this.stopIncoming(call.id)
+    },
+    async join(callId: number) {
+      const settings = useSettingsStore()
+      const res = await settings.api.joinCall(callId)
+      const c = this.calls.find((x) => x.id === callId)
+      if (c) c.inCall = true
+      await this.connectRoom(callId, res.token)
+    },
+    async leave() {
+      const settings = useSettingsStore()
+      const call = this.currentCall
+      if (call) {
+        await settings.api.leaveCall(call.id)
+      }
+      await this.disconnectRoom()
+      this.micOn = false
+      this.camOn = false
+      this.screenOn = false
+    },
+    stopIncoming(callId: number) {
+      const c = this.calls.find((x) => x.id === callId)
+      if (c) c.incoming = false
+      sounds.stopRing()
+    },
+    endAllInChannel(channelId: number) {
+      this.calls = this.calls.filter((c) => c.channel_id !== channelId)
+      sounds.stopAll()
+      void this.disconnectRoom()
+    },
+    // ---------- LiveKit ----------
+    async connectRoom(callId: number, token: string) {
+      const settings = useSettingsStore()
+      await this.disconnectRoom()
+      const room = new Room({
+        adaptiveStream: true,
+        dynacast: true,
+        audioCaptureDefaults: { noiseSuppression: settings.noiseSuppression !== 'off' },
+        videoCaptureDefaults: { resolution: { width: 1280, height: 720 } },
+      })
+      await room.connect(settings.serverConfig!.livekit_url, token)
+      this.room = room
+      this.connectedCallId = callId
+      room.on(RoomEvent.TrackSubscribed, (track) => {
+        const p = track.participant
+        const vol = settings.volumes[p.identity] ?? 1
+        if (track.kind === Track.Kind.Audio) {
+          track.attach()
+          const el = track.attachedElements[0] as HTMLMediaElement
+          el.volume = settings.mutedOthers ? 0 : vol
+        }
+      })
+      // Микрофон включается автоматически при вызове, камера — нет.
+      if (this.micOn) await this.toggleMic()
+      this.micOn = false
+      await room.localParticipant.setMicrophoneEnabled(true)
+      this.micOn = true
+    },
+    async disconnectRoom() {
+      if (this.room) {
+        this.room.disconnect()
+        this.room = null
+      }
+      this.connectedCallId = 0
+    },
+    async toggleMic() {
+      if (!this.room) return
+      this.micOn = !this.micOn
+      await this.room.localParticipant.setMicrophoneEnabled(this.micOn)
+    },
+    async toggleCam() {
+      if (!this.room) return
+      this.camOn = !this.camOn
+      await this.room.localParticipant.setCameraEnabled(this.camOn)
+    },
+    async toggleScreen(quality: string) {
+      if (!this.room) return
+      if (this.screenOn) {
+        await this.room.localParticipant.setScreenShareEnabled(false)
+        this.screenOn = false
+        return
+      }
+      const [w, h, fps] = parseQuality(quality)
+      await this.room.localParticipant.setScreenShareEnabled(true, {
+        video: { resolution: { width: w, height: h }, frameRate: fps },
+      })
+      this.screenOn = true
+    },
+    async punch(targetUserId: number) {
+      const now = Date.now()
+      if (now - this.lastPunch < 10000) return
+      this.lastPunch = now
+      const auth = useAuthStore()
+      const call = this.currentCall
+      if (!call) return
+      auth.ws.send('call.punch', { call_id: call.id, target_user_id: targetUserId })
+    },
+    // ---------- Обработка WS-событий ----------
+    handleCallInvite(data: { call_id: number; channel_id: number; initiator_id: number; initiator_nick: string }) {
+      // Не даём двум вызовам звучать одновременно: если звонок уже идёт —
+      // только уведомление с коротким звуком.
+      const exists = this.calls.find((c) => c.id === data.call_id)
+      if (exists) return
+      this.calls.push({
+        id: data.call_id,
+        channel_id: data.channel_id,
+        initiator_id: data.initiator_id,
+        status: 'ringing',
+        created_at: '',
+        participants: [],
+        incoming: true,
+        ringing: false,
+        inCall: false,
+      })
+      const toasts = useToasts()
+      toasts.push({ kind: 'call', text: `Вас вызывает ${data.initiator_nick}` })
+      if (!this.ringingCall && !this.currentCall) {
+        sounds.playRing()
+      } else {
+        sounds.message()
+      }
+    },
+    handleCallStarted(callId: number) {
+      const c = this.calls.find((x) => x.id === callId)
+      if (c) c.status = 'active'
+      sounds.stopDialTone()
+      sounds.stopRing()
+    },
+    handleCallEnded(data: { call_id: number }) {
+      this.calls = this.calls.filter((c) => c.id !== data.call_id)
+      sounds.stopAll()
+      if (this.connectedCallId === data.call_id) void this.disconnectRoom()
+    },
+    handleCallCreated(data: { call: Call }) {
+      const exists = this.calls.find((c) => c.id === data.call.id)
+      if (!exists && data.call.initiator_id !== useAuthStore().user?.id) {
+        // Звонок создан кем-то, но меня не пригласили — не показываем.
+        return
+      }
+    },
+    handlePunch(data: { by_nick: string }) {
+      const toasts = useToasts()
+      toasts.push({ kind: 'punch', text: `Вас пнул ${data.by_nick}` })
+      sounds.punched()
+    },
+  },
+})
+
+function parseQuality(q: string): [number, number, number] {
+  switch (q) {
+    case '1080p60':
+      return [1920, 1080, 60]
+    case '1080p30':
+      return [1920, 1080, 30]
+    case '720p60':
+      return [1280, 720, 60]
+    case '720p30':
+      return [1280, 720, 30]
+    case '480p30':
+      return [854, 480, 30]
+    default:
+      return [1920, 1080, 60]
+  }
+}
