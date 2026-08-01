@@ -7,6 +7,11 @@
 	# Сигналинг LiveKit: клиент подключается к wss://домен/rtc/... напрямую
 	# (путь /rtc/* свободен, префикс резать не нужно). livekit работает на
 	# host-сети и не виден по имени в docker-сети — проксируем через host-gateway.
+	# Точный /rtc тоже обязателен: старые клиенты/инструменты используют
+	# фолбэк-путь /rtc (без /v1).
+	handle /rtc {
+		reverse_proxy host.docker.internal:7880
+	}
 	handle /rtc/* {
 		reverse_proxy host.docker.internal:7880
 	}
