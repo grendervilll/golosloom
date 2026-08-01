@@ -1,12 +1,13 @@
-// Панель чата: история, отправка, редактирование, контекстное меню.
+// Панель чата — главное содержимое центра: история, отправка, редактирование.
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useChannelsStore } from '../stores/channels'
 import { useChatStore, type ChatMessage } from '../stores/chat'
 import { useToasts } from '../stores/toasts'
-import { roleIcon } from '../utils/roles'
 import MessageItem from './MessageItem.vue'
+
+defineEmits<{ (e: 'toggle-participants'): void }>()
 
 const auth = useAuthStore()
 const channels = useChannelsStore()
@@ -58,7 +59,6 @@ async function remove(msg: ChatMessage) {
 
 function showOriginal(msg: ChatMessage) {
   if (!canModerate.value || !msg.original) return
-  msg.encrypted = false
   const t = msg.text
   msg.text = msg.original
   msg.original = t
@@ -86,8 +86,9 @@ function onKeydown(e: KeyboardEvent) {
 <template>
   <div class="chat-panel" @click="closeMenu">
     <div class="chat-head">
-      <h2># {{ channelName }}</h2>
+      <h2><span class="hash">#</span> {{ channelName }}</h2>
       <span class="muted small">ID канала: {{ channels.currentId }}</span>
+      <button class="members-btn" title="Участники" @click="emit('toggle-participants')">👥</button>
     </div>
     <div ref="listEl" class="chat-list">
       <MessageItem
@@ -127,23 +128,40 @@ function onKeydown(e: KeyboardEvent) {
 <style scoped>
 .chat-panel {
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  min-height: 0;
   position: relative;
+  background: var(--bg);
+}
+.chat-panel.in-call {
+  flex: 0 0 300px;
+  border-top: 1px solid var(--border);
 }
 .chat-head {
   padding: 12px 16px;
   border-bottom: 1px solid var(--border);
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 10px;
+  background: var(--bg2);
 }
 .chat-head h2 {
   font-size: 16px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.hash {
+  color: var(--text-dim);
 }
 .small {
   font-size: 12px;
+}
+.members-btn {
+  margin-left: auto;
+  padding: 4px 10px;
+  display: none;
 }
 .chat-list {
   flex: 1;
@@ -160,12 +178,14 @@ function onKeydown(e: KeyboardEvent) {
 .chat-input {
   padding: 10px 16px;
   border-top: 1px solid var(--border);
+  background: var(--bg2);
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 .chat-input textarea {
   resize: none;
+  background: var(--bg);
 }
 .input-row {
   display: flex;
@@ -190,5 +210,11 @@ function onKeydown(e: KeyboardEvent) {
 }
 .ctx-menu button:hover {
   background: var(--bg4);
+}
+
+@media (max-width: 900px) {
+  .members-btn {
+    display: block;
+  }
 }
 </style>

@@ -137,7 +137,7 @@ export const useCallStore = defineStore('calls', {
       this.connectedCallId = callId
       room.on(RoomEvent.TrackSubscribed, (track) => {
         const p = track.participant
-        const vol = settings.volumes[p.identity] ?? 1
+        const vol = (settings.volumes[Number(p.identity)] ?? 100) / 100
         if (track.kind === Track.Kind.Audio) {
           track.attach()
           const el = track.attachedElements[0] as HTMLMediaElement
@@ -188,6 +188,19 @@ export const useCallStore = defineStore('calls', {
       const call = this.currentCall
       if (!call) return
       auth.ws.send('call.punch', { call_id: call.id, target_user_id: targetUserId })
+    },
+    // Громкость конкретного участника (сохраняется и применяется к его трекам).
+    async setParticipantVolume(userId: number, volume: number) {
+      const settings = useSettingsStore()
+      settings.setVolume(userId, volume)
+      if (!this.room) return
+      const p = this.room.remoteParticipants.get(String(userId))
+      if (!p) return
+      for (const pub of p.audioTrackPublications.values()) {
+        if (pub.track && typeof (pub.track as any).setVolume === 'function') {
+          ;(pub.track as any).setVolume(settings.mutedOthers ? 0 : volume / 100)
+        }
+      }
     },
     // ---------- Обработка WS-событий ----------
     handleCallInvite(data: { call_id: number; channel_id: number; initiator_id: number; initiator_nick: string }) {

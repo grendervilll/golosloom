@@ -1,6 +1,6 @@
-// Главный экран: каналы, чат, звонки, участники.
+// Главный экран: каналы слева, чат и звонок в центре, участники справа.
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { useChannelsStore } from '../stores/channels'
@@ -30,9 +30,10 @@ const showSettings = ref(false)
 const showInvite = ref(false)
 const showCallPicker = ref(false)
 const showServerUrl = ref(false)
+const showParticipants = ref(false)
 
-const chatHidden = computed(() => settings.chatHidden)
 const inCall = computed(() => calls.connectedCallId > 0)
+const chatHidden = computed(() => settings.chatHidden)
 
 onMounted(() => {
   if (!auth.token) router.push('/login')
@@ -61,21 +62,22 @@ function toggleChat() {
     />
 
     <div class="center-col">
-      <CallStage v-if="inCall" />
-      <div v-else class="empty-stage">
-        <p class="muted">Выберите канал и участников, чтобы начать звонок</p>
+      <div v-if="inCall" class="stage-wrap">
+        <CallStage />
       </div>
+      <ChatPanel v-if="!chatHidden" :class="{ 'in-call': inCall }" @toggle-participants="showParticipants = true" />
+      <div v-else class="empty-chat muted">Чат скрыт</div>
       <JoinCallBar v-if="!inCall" />
+      <CallControls v-if="inCall" />
     </div>
 
-    <div v-if="!chatHidden" class="right-col">
-      <ChatPanel />
-      <ParticipantsPanel />
-    </div>
+    <ParticipantsPanel
+      class="right-col"
+      :class="{ open: showParticipants }"
+      @close="showParticipants = false"
+    />
 
     <IncomingCallOverlay />
-    <CallControls v-if="inCall" />
-
     <AdminPanel v-if="showAdmin" @close="showAdmin = false" />
     <SettingsModal v-if="showSettings" @close="showSettings = false" />
     <InviteModal v-if="showInvite" @close="showInvite = false" />
@@ -92,38 +94,36 @@ function toggleChat() {
 }
 .center-col {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  min-width: 0;
-  position: relative;
+  background: var(--bg);
 }
-.empty-stage {
+.stage-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  border-bottom: 1px solid var(--border);
+}
+.empty-chat {
   flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg);
-}
-.right-col {
-  width: 380px;
-  min-width: 280px;
-  display: flex;
-  flex-direction: column;
-  background: var(--bg2);
-  border-left: 1px solid var(--border);
 }
 
-@media (max-width: 800px) {
+@media (max-width: 900px) {
   .right-col {
-    position: absolute;
+    display: none;
+  }
+  .right-col.open {
+    display: flex;
+    position: fixed;
     right: 0;
     top: 0;
     bottom: 0;
     width: 100%;
-    z-index: 50;
-  }
-  .center-col {
-    display: none;
+    z-index: 80;
   }
 }
 </style>

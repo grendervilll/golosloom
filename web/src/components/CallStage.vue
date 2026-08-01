@@ -2,14 +2,12 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useCallStore } from '../stores/calls'
-import { useSettingsStore } from '../stores/settings'
 import { useChannelsStore } from '../stores/channels'
 import { useAuthStore } from '../stores/auth'
 import { RoomEvent, Track } from 'livekit-client'
 import { roleIcon } from '../utils/roles'
 
 const calls = useCallStore()
-const settings = useSettingsStore()
 const channels = useChannelsStore()
 const auth = useAuthStore()
 
@@ -109,6 +107,8 @@ onBeforeUnmount(() => {
 })
 
 const cameras = computed(() => tiles.value.filter((t) => t.kind === 'camera'))
+const callParticipants = computed(() => calls.currentCall?.participants ?? [])
+const stageMembers = computed(() => channels.members.filter((m) => callParticipants.value.includes(m.user_id)))
 </script>
 
 <template>
@@ -126,7 +126,8 @@ const cameras = computed(() => tiles.value.filter((t) => t.kind === 'camera'))
         <video v-track="t" class="cam-video" autoplay playsinline />
         <span class="cam-nick">{{ roleIcon(auth.user) }}{{ t.nick }}</span>
       </div>
-      <p v-if="cameras.length === 0" class="muted">Камеры участников выключены</p>
+      <div v-if="cameras.length === 0 && stageMembers.length === 0" class="muted">В звонке пока только вы</div>
+      <div v-if="cameras.length === 0 && stageMembers.length > 0" class="muted">Камеры участников выключены</div>
     </div>
 
     <div v-if="screens.length > 1" class="screen-thumbs">
@@ -147,6 +148,7 @@ const cameras = computed(() => tiles.value.filter((t) => t.kind === 'camera'))
 <style scoped>
 .stage {
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -155,12 +157,12 @@ const cameras = computed(() => tiles.value.filter((t) => t.kind === 'camera'))
   background: var(--bg);
 }
 .screen-main {
+  flex: 1;
+  min-height: 100px;
   position: relative;
   background: #000;
   border-radius: 10px;
   overflow: hidden;
-  min-height: 200px;
-  height: 60%;
 }
 .screen-video {
   width: 100%;
@@ -177,8 +179,8 @@ const cameras = computed(() => tiles.value.filter((t) => t.kind === 'camera'))
   font-size: 13px;
 }
 .screen-empty {
-  height: 60%;
-  min-height: 200px;
+  flex: 1;
+  min-height: 100px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -193,8 +195,8 @@ const cameras = computed(() => tiles.value.filter((t) => t.kind === 'camera'))
 }
 .cam-tile {
   position: relative;
-  width: 240px;
-  height: 150px;
+  width: 200px;
+  height: 130px;
   background: #000;
   overflow: hidden;
 }
@@ -218,8 +220,8 @@ const cameras = computed(() => tiles.value.filter((t) => t.kind === 'camera'))
   flex-wrap: wrap;
 }
 .thumb {
-  width: 160px;
-  height: 90px;
+  width: 140px;
+  height: 80px;
   background: #000;
   cursor: pointer;
   overflow: hidden;

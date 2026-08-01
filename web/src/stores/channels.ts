@@ -65,8 +65,12 @@ export const useChannelsStore = defineStore('channels', {
     async createChannel(name: string, isPrivate: boolean): Promise<Channel> {
       const settings = useSettingsStore()
       const ch = await settings.api.createChannel(name, isPrivate)
-      await this.enterChannel(ch.id)
+      // Создатель уже участник канала — «вход» по приглашению не нужен
+      // (для приватного канала joinChannel вернул бы 403).
+      await this.refresh()
+      this.currentId = ch.id
       await this.initChannelKey(ch.id)
+      await this.openChannel(ch.id)
       return ch
     },
     async enterChannel(channelId: number) {

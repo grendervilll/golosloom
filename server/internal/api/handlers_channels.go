@@ -36,8 +36,17 @@ func (s *Server) handleCreateChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Приватный канал виден только его участникам; публичный — всем.
+	// Создатель уже является участником (и админом канала).
 	s.Hub.SendToChannel(c.ID, hub.NewEvent("channel.created", c))
-	writeJSON(w, http.StatusCreated, c)
+	writeJSON(w, http.StatusCreated, map[string]interface{}{
+		"id":         c.ID,
+		"name":       c.Name,
+		"private":    c.Private,
+		"creator_id": c.CreatorID,
+		"created_at": c.CreatedAt,
+		"is_member":  true,
+		"role":       models.RoleChannelAdmin,
+	})
 }
 
 func (s *Server) handleListChannels(w http.ResponseWriter, r *http.Request) {
