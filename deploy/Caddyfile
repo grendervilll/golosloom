@@ -6,9 +6,10 @@
 
 	# Сигналинг LiveKit через публичный WSS (медиа идёт напрямую по UDP).
 	# livekit работает на host-сети и не виден по имени в docker-сети,
-	# поэтому проксируем через host-gateway. handle_path срезает префикс
-	# /livekit: LiveKit ожидает пути от корня (/rtc/v1/...).
-	handle_path /livekit/* {
+	# поэтому проксируем через host-gateway. Префикс /livekit срезается:
+	# LiveKit ожидает пути от корня (/rtc/v1/...).
+	handle /livekit/* {
+		uri strip_prefix /livekit
 		reverse_proxy host.docker.internal:7880
 	}
 
