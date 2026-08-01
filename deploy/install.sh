@@ -221,6 +221,11 @@ rtc:
   # поэтому внешний STUN-поиск не нужен (на многих VPS исходящий UDP к
   # публичным STUN-серверам заблокирован, и livekit не стартует).
   use_external_ip: false
+  # На слабых VPS (1 CPU) контроль перегрузки сильно урезает канал
+  # (до ~45 кбит/с) и медиа практически замирает — отключаем его.
+  congestion_control:
+    enabled: false
+  allow_tcp_fallback: true
 keys:
   ${api_key}: ${api_secret}
 logging:

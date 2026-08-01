@@ -93,6 +93,8 @@ function startWatching() {
   room.on(RoomEvent.TrackUnsubscribed, () => updateTiles())
   room.on(RoomEvent.ParticipantDisconnected, () => updateTiles())
   updateTiles()
+  // Периодический повторный скан: подхватываем треки, если события были пропущены.
+  rescanTimer = window.setInterval(updateTiles, 2500)
 }
 
 function chooseScreen(id: string) {
@@ -100,10 +102,16 @@ function chooseScreen(id: string) {
   focusedScreen.value = screens.value.find((s) => s.identity === id) || null
 }
 
+let rescanTimer: number | null = null
+
 watch(() => calls.connectedCallId, startWatching, { immediate: true })
 watch(() => calls.screenOn, () => setTimeout(updateTiles, 300))
 onBeforeUnmount(() => {
   watching = false
+  if (rescanTimer !== null) {
+    clearInterval(rescanTimer)
+    rescanTimer = null
+  }
 })
 
 const cameras = computed(() => tiles.value.filter((t) => t.kind === 'camera'))

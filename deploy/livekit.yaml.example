@@ -4,12 +4,16 @@
 # Внутренний TURN LiveKit отключён: ретрансляция идёт через отдельный coturn,
 # адреса которого клиенты получают из /api/config и передают в Room как iceServers.
 # use_external_ip: false — при host-сети локальный IP LiveKit и есть публичный.
+# congestion_control отключён: на слабых VPS он урезает канал до ~45 кбит/с.
 port: 7880
 rtc:
   tcp_port: 7881
   port_range_start: 50000
   port_range_end: 50100
   use_external_ip: false
+  congestion_control:
+    enabled: false
+  allow_tcp_fallback: true
 keys:
   api-key: api-secret
 logging:

@@ -11,6 +11,7 @@ function unlockAudio() {
   sounds.unlock()
 }
 window.addEventListener('pointerdown', unlockAudio)
+window.addEventListener('touchstart', unlockAudio)
 window.addEventListener('keydown', unlockAudio)
 
 const app = createApp(App)

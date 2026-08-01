@@ -27,33 +27,35 @@ class SoundManager {
     if (ctx && ctx.state === 'suspended') void ctx.resume()
   }
 
-  private beep(freq: number, duration: number, gain = 0.05, type: OscillatorType = 'sine', delay = 0): void {
+  private beep(freq: number, duration: number, gain = 0.05, type: OscillatorType = 'sine'): void {
     const ctx = this.getCtx()
-    if (!ctx) return
+    if (!ctx || ctx.state === 'suspended') return
+    const t = ctx.currentTime
     const osc = ctx.createOscillator()
     const g = ctx.createGain()
     osc.type = type
     osc.frequency.value = freq
-    g.gain.setValueAtTime(0, ctx.currentTime + delay)
-    g.gain.linearRampToValueAtTime(gain, ctx.currentTime + delay + 0.01)
-    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + delay + duration)
+    g.gain.setValueAtTime(0.0001, t)
+    g.gain.exponentialRampToValueAtTime(gain, t + 0.02)
+    g.gain.exponentialRampToValueAtTime(0.0001, t + duration)
     osc.connect(g).connect(ctx.destination)
-    osc.start(ctx.currentTime + delay)
-    osc.stop(ctx.currentTime + delay + duration + 0.05)
+    osc.start(t)
+    osc.stop(t + duration + 0.05)
   }
 
   // Звук входящего вызова (повторяющийся), максимум 20 секунд.
+  // Контекст разблокируется на каждом тике, чтобы звук не обрывался
+  // из-за политики автозапуска браузера.
   playRing(): void {
     if (this.ringTimer !== null) return // не даём двум вызовам звучать одновременно
-    const ctx = this.getCtx()
-    if (!ctx) return
     const schedule = () => {
       if (this.ringTimer === null) return
-      this.beep(800, 0.35, 0.06, 'sine')
-      this.beep(1000, 0.35, 0.06, 'sine', 0.4)
+      this.unlock()
+      this.beep(800, 0.3, 0.08, 'sine')
+      window.setTimeout(() => this.beep(1000, 0.3, 0.08, 'sine'), 350)
     }
     schedule()
-    this.ringTimer = window.setInterval(schedule, 900)
+    this.ringTimer = window.setInterval(schedule, 850)
     window.setTimeout(() => this.stopRing(), 20000)
   }
 
@@ -67,14 +69,13 @@ class SoundManager {
   // Звук дозвона у звонящего — пока звонок не принят.
   playDialTone(): void {
     if (this.dialTimer !== null) return
-    const ctx = this.getCtx()
-    if (!ctx) return
     const schedule = () => {
       if (this.dialTimer === null) return
-      this.beep(425, 0.5, 0.04, 'sine')
+      this.unlock()
+      this.beep(425, 0.5, 0.05, 'sine')
     }
     schedule()
-    this.dialTimer = window.setInterval(schedule, 900)
+    this.dialTimer = window.setInterval(schedule, 850)
   }
 
   stopDialTone(): void {

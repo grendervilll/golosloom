@@ -156,29 +156,45 @@ export const useCallStore = defineStore('calls', {
           }
         : undefined
       const room = new Room({
-        adaptiveStream: true,
-        dynacast: true,
+        // На слабых серверах adaptiveStream/dynacast (смена слоёв по перегрузке)
+        // могут останавливать медиа — отключаем, получаем полный поток всегда.
+        adaptiveStream: false,
+        dynacast: false,
         rtcConfig,
         audioCaptureDefaults: { noiseSuppression: settings.noiseSuppression !== 'off' },
         videoCaptureDefaults: { resolution: { width: 1280, height: 720 } },
       })
-      await room.connect(settings.serverConfig!.livekit_url, token)
-      this.room = room
-      this.connectedCallId = callId
-      room.on(RoomEvent.TrackSubscribed, (track) => {
+      // Обработчики треков регистрируем ДО connect, чтобы не пропустить ранние.
+      const attachAudio = (track: any) => {
         const p = track.participant
         const vol = (settings.volumes[Number(p.identity)] ?? 100) / 100
         if (track.kind === Track.Kind.Audio) {
           track.attach()
           const el = track.attachedElements[0] as HTMLMediaElement
-          el.volume = settings.mutedOthers ? 0 : vol
+          if (el) el.volume = settings.mutedOthers ? 0 : vol
         }
-      })
+      }
+      room.on(RoomEvent.TrackSubscribed, attachAudio)
+      await room.connect(settings.serverConfig!.livekit_url, token)
+      // Сканируем уже подписанные аудио-треки (на случай пропущенных событий).
+      for (const p of room.remoteParticipants.values()) {
+        for (const pub of p.audioTrackPublications.values()) {
+          if (pub.isSubscribed && pub.track) attachAudio(pub.track)
+        }
+      }
+      this.room = room
+      this.connectedCallId = callId
       // Микрофон включается автоматически при вызове, камера — нет.
-      if (this.micOn) await this.toggleMic()
+      // Отказ микрофона (нет разрешения) НЕ должен обрывать звонок.
       this.micOn = false
-      await room.localParticipant.setMicrophoneEnabled(true)
-      this.micOn = true
+      try {
+        await room.localParticipant.setMicrophoneEnabled(true)
+        this.micOn = true
+      } catch {
+        this.micOn = false
+        const toasts = useToasts()
+        toasts.push({ kind: 'warning', text: 'Микрофон недоступен — проверьте разрешения браузера' })
+      }
     },
     async disconnectRoom() {
       if (this.room) {
