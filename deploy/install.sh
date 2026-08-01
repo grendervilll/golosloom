@@ -21,7 +21,8 @@ set -euo pipefail
 
 INSTALL_DIR="${INSTALL_DIR:-/opt/golosloom}"
 REPO_DIR="$INSTALL_DIR/repo"
-DATA_DIR="$INSTALL_DIR/data"
+DATA_DIR="${DATA_DIR:-$INSTALL_DIR/data}"
+LIVEKIT_CONFIG="${LIVEKIT_CONFIG:-$INSTALL_DIR/livekit.yaml}"
 STATE_FILE="$INSTALL_DIR/.state"
 DEPLOY_DIR="$REPO_DIR/deploy"
 GOLOSLOOM_REPO="${GOLOSLOOM_REPO:-}"
@@ -186,7 +187,7 @@ JWT_SECRET=$jwt_secret
 TURN_URLS=turn:$DOMAIN:3478?transport=udp,turn:$DOMAIN:3478?transport=tcp
 ALLOW_ORIGINS=https://$DOMAIN,tauri://localhost,http://tauri.localhost,http://localhost:5173
 DATA_DIR=$DATA_DIR
-LIVEKIT_CONFIG=$INSTALL_DIR/livekit.yaml
+LIVEKIT_CONFIG=$LIVEKIT_CONFIG
 EOF
   chmod 600 "$DEPLOY_DIR/.env"
   log "Секреты сгенерированы и сохранены в $DEPLOY_DIR/.env (права 600)"
