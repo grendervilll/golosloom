@@ -1,9 +1,10 @@
 // Выбор пользователей для звонка: конкретный, несколько, "Выбрать всех", "Снять всех".
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useChannelsStore } from '../stores/channels'
 import { useCallStore } from '../stores/calls'
 import { useToasts } from '../stores/toasts'
+import { useSettingsStore } from '../stores/settings'
 import { roleIcon } from '../utils/roles'
 import { useAuthStore } from '../stores/auth'
 
@@ -12,10 +13,22 @@ const emit = defineEmits<{ (e: 'close'): void }>()
 const channels = useChannelsStore()
 const calls = useCallStore()
 const auth = useAuthStore()
+const settings = useSettingsStore()
 const toasts = useToasts()
 
 const selected = ref<number[]>([])
 const busy = ref(false)
+
+// Список участников канала всегда актуален: обновляем при открытии окна.
+onMounted(async () => {
+  if (channels.currentId) {
+    try {
+      channels.members = await settings.api.listMembers(channels.currentId)
+    } catch {
+      /* ignore */
+    }
+  }
+})
 
 const candidates = computed(() => channels.members.filter((m) => m.user_id !== auth.user?.id))
 

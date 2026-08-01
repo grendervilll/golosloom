@@ -1,6 +1,6 @@
 // Участники канала: статусы, роли, ID; во время звонка — громкость и «Пнуть».
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useChannelsStore } from '../stores/channels'
 import { useSettingsStore } from '../stores/settings'
@@ -18,6 +18,18 @@ const calls = useCallStore()
 const toasts = useToasts()
 
 const showMembers = ref(true)
+
+// Список участников всегда актуален при открытии панели.
+onMounted(async () => {
+  if (channels.currentId) {
+    try {
+      channels.members = await settings.api.listMembers(channels.currentId)
+      await channels.loadBanned(channels.currentId)
+    } catch {
+      /* ignore */
+    }
+  }
+})
 const modTarget = ref(0)
 const modReason = ref('')
 const canKick = computed(() => hasPerm('kick'))
