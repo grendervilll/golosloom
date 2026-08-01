@@ -250,6 +250,67 @@ async function declineInvite(id: number) {
     width: 200px;
   }
 }
+
+/* Мобильный режим: сайдбар — верхняя панель, каналы — горизонтальный список. */
+@media (max-width: 900px) {
+  .sidebar {
+    position: relative;
+    width: 100%;
+    min-width: 0;
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 6px 10px;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+  .server-head {
+    padding: 6px 10px;
+    flex: 0 0 auto;
+  }
+  .server-menu {
+    position: absolute;
+    top: 100%;
+    left: 8px;
+    right: 8px;
+    z-index: 95;
+  }
+  .channel-list {
+    flex: 1;
+    flex-direction: row;
+    overflow-x: auto;
+    padding: 0;
+    min-width: 0;
+  }
+  .channel-item {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+  .create-channel-btn,
+  .invite-btn,
+  .call-btn {
+    width: auto;
+    flex: 0 0 auto;
+    margin-bottom: 0;
+    padding: 6px 10px;
+  }
+  .invites {
+    flex-direction: row;
+    overflow-x: auto;
+    border-top: none;
+    padding: 0;
+  }
+  .invite-card {
+    flex: 0 0 auto;
+  }
+  .sidebar-footer {
+    display: none;
+  }
+  .empty {
+    display: none;
+  }
+}
 .invites {
   padding: 8px;
   display: flex;

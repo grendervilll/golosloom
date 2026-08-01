@@ -119,15 +119,20 @@ function toggleChat() {
 }
 
 @media (max-width: 900px) {
+  .main-layout {
+    flex-direction: column;
+  }
+  .center-col {
+    flex: 1;
+    min-height: 0;
+  }
   .right-col {
     display: none;
   }
   .right-col.open {
     display: flex;
     position: fixed;
-    right: 0;
-    top: 0;
-    bottom: 0;
+    inset: 0;
     width: 100%;
     z-index: 80;
   }

@@ -26,6 +26,10 @@ func TestTokenClaims(t *testing.T) {
 	if claims["iss"] != "api-key" || claims["identity"] != "user-42" {
 		t.Fatalf("некорректные claims: %v", claims)
 	}
+	// identity участника LiveKit берёт из sub (стандарт livekit-server-sdk).
+	if claims["sub"] != "user-42" {
+		t.Fatalf("sub должен быть identity, получили: %v", claims["sub"])
+	}
 	video, ok := claims["video"].(map[string]interface{})
 	if !ok {
 		t.Fatal("нет video grant")
