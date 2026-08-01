@@ -173,22 +173,26 @@ export const useCallStore = defineStore('calls', {
         videoCaptureDefaults: { resolution: { width: 1280, height: 720 } },
       })
       // Обработчики треков регистрируем ДО connect, чтобы не пропустить ранние.
-      // В момент события у трека может не быть participant — защищаемся.
+      // ВАЖНО: в событии TrackSubscribed (single peer connection) у трека может
+      // не быть participant — прикрепляем аудио по самому треку, не завися от него.
       const attachAudio = (track: any) => {
         try {
-          const p = track.participant
-          if (!p) return
-          const vol = (settings.volumes[Number(p.identity)] ?? 100) / 100
-          if (track.kind === Track.Kind.Audio) {
-            track.attach()
-            const el = track.attachedElements[0] as HTMLMediaElement
-            if (el) el.volume = settings.mutedOthers ? 0 : vol
-          }
+          if (track.kind !== Track.Kind.Audio) return
+          track.attach()
+          const el = track.attachedElements[0] as HTMLMediaElement
+          if (el) el.volume = settings.mutedOthers ? 0 : 1
         } catch {
           /* не фатально */
         }
       }
       room.on(RoomEvent.TrackSubscribed, attachAudio)
+      room.on(RoomEvent.TrackUnsubscribed, (track: any) => {
+        try {
+          track?.detach?.()
+        } catch {
+          /* ignore */
+        }
+      })
       await room.connect(settings.serverConfig!.livekit_url, token)
       // Сканируем уже подписанные аудио-треки (на случай пропущенных событий).
       for (const p of room.remoteParticipants.values()) {
