@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -107,7 +108,7 @@ func (s *Server) handleCreateCall(w http.ResponseWriter, r *http.Request) {
 	}))
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
 		"call": call,
-		"token": s.livekitToken(call, userIDFrom(r)),
+		"token": s.livekitToken(call, userIDFrom(r), deviceIDFromRequest(r)),
 	})
 }
 
@@ -144,10 +145,10 @@ func (s *Server) autoDeclineRinging(callID int64) {
 	}
 }
 
-func (s *Server) livekitToken(call *models.Call, userID int64) string {
+func (s *Server) livekitToken(call *models.Call, userID int64, deviceID string) string {
 	token, err := livekit.Token(
 		s.Cfg.LiveKitAPIKey, s.Cfg.LiveKitAPISecret,
-		callIdentity(userID), s.callRoom(call.ID), time.Hour,
+		callIdentity(userID, deviceID), s.nickOf(userID), s.callRoom(call.ID), time.Hour,
 	)
 	if err != nil {
 		return ""
@@ -155,8 +156,26 @@ func (s *Server) livekitToken(call *models.Call, userID int64) string {
 	return token
 }
 
-func callIdentity(userID int64) string  { return itoa(userID) }
+// callIdentity — identity участника в комнате LiveKit. Обязательно уникален
+// на устройство: два устройства одного пользователя не должны конфликтовать
+// (иначе LiveKit выкидывает второе как DUPLICATE_IDENTITY).
+func callIdentity(userID int64, deviceID string) string {
+	if deviceID == "" {
+		deviceID = "dev"
+	}
+	return fmt.Sprintf("%d:%s", userID, deviceID)
+}
+
 func (s *Server) callRoom(callID int64) string { return "call-" + itoa(callID) }
+
+// deviceIDFromRequest достаёт device_id из тела запроса (может отсутствовать).
+func deviceIDFromRequest(r *http.Request) string {
+	var req struct {
+		DeviceID string `json:"device_id"`
+	}
+	_ = readJSON(r, &req)
+	return req.DeviceID
+}
 
 func (s *Server) handleListCalls(w http.ResponseWriter, r *http.Request) {
 	channelID := pathID(r, "id")
@@ -226,7 +245,7 @@ func (s *Server) handleAcceptCall(w http.ResponseWriter, r *http.Request) {
 	s.broadcastParticipants(callID)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"call":  call,
-		"token": s.livekitToken(call, userIDFrom(r)),
+		"token": s.livekitToken(call, userIDFrom(r), deviceIDFromRequest(r)),
 	})
 }
 
@@ -299,7 +318,7 @@ func (s *Server) handleJoinCall(w http.ResponseWriter, r *http.Request) {
 	s.broadcastParticipants(callID)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"call":  call,
-		"token": s.livekitToken(call, userIDFrom(r)),
+		"token": s.livekitToken(call, userIDFrom(r), deviceIDFromRequest(r)),
 	})
 }
 

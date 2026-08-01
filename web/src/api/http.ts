@@ -190,20 +190,20 @@ export class ApiClient {
   }
 
   // --- Звонки ---
-  createCall(channelId: number, targetIds: number[]) {
-    return this.post('/api/calls', { channel_id: channelId, target_ids: targetIds })
+  createCall(channelId: number, targetIds: number[], deviceId = '') {
+    return this.post('/api/calls', { channel_id: channelId, target_ids: targetIds, device_id: deviceId })
   }
   listCalls(channelId: number) {
     return this.get(`/api/channels/${channelId}/calls`)
   }
-  acceptCall(callId: number) {
-    return this.post(`/api/calls/${callId}/accept`)
+  acceptCall(callId: number, deviceId = '') {
+    return this.post(`/api/calls/${callId}/accept`, { device_id: deviceId })
   }
   declineCall(callId: number) {
     return this.post(`/api/calls/${callId}/decline`)
   }
-  joinCall(callId: number) {
-    return this.post(`/api/calls/${callId}/join`)
+  joinCall(callId: number, deviceId = '') {
+    return this.post(`/api/calls/${callId}/join`, { device_id: deviceId })
   }
   leaveCall(callId: number) {
     return this.post(`/api/calls/${callId}/leave`)

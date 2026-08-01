@@ -12,7 +12,7 @@ import (
 )
 
 func TestTokenClaims(t *testing.T) {
-	token, err := Token("api-key", "api-secret", "user-42", "call-7", time.Hour)
+	token, err := Token("api-key", "api-secret", "user-42:dev-1", "User 42", "call-7", time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -23,12 +23,16 @@ func TestTokenClaims(t *testing.T) {
 		t.Fatalf("токен не парсится: %v", err)
 	}
 	claims := parsed.Claims.(jwt.MapClaims)
-	if claims["iss"] != "api-key" || claims["identity"] != "user-42" {
+	if claims["iss"] != "api-key" || claims["identity"] != "user-42:dev-1" {
 		t.Fatalf("некорректные claims: %v", claims)
 	}
 	// identity участника LiveKit берёт из sub (стандарт livekit-server-sdk).
-	if claims["sub"] != "user-42" {
+	if claims["sub"] != "user-42:dev-1" {
 		t.Fatalf("sub должен быть identity, получили: %v", claims["sub"])
+	}
+	// name — отображаемый ник.
+	if claims["name"] != "User 42" {
+		t.Fatalf("name должен быть ником: %v", claims["name"])
 	}
 	video, ok := claims["video"].(map[string]interface{})
 	if !ok {

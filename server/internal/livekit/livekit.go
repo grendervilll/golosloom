@@ -19,10 +19,10 @@ type VideoGrant struct {
 
 // Token создаёт JWT-токен LiveKit для входа в комнату звонка.
 // Важно: identity участника LiveKit берёт из claim "sub" (стандарт
-// livekit-server-sdk: sub = identity). Если в sub положить API-ключ,
-// все участники получат одинаковый identity и сервер выкинет их как
-// DUPLICATE_IDENTITY.
-func Token(apiKey, apiSecret, identity, room string, ttl time.Duration) (string, error) {
+// livekit-server-sdk: sub = identity). Identity должен быть уникален на
+// УСТРОЙСТВО (userID:deviceID): если два устройства входят с одним
+// identity, LiveKit выкидывает второе (DUPLICATE_IDENTITY).
+func Token(apiKey, apiSecret, identity, name, room string, ttl time.Duration) (string, error) {
 	claims := jwt.MapClaims{
 		"iss": apiKey,
 		"sub": identity,
@@ -36,7 +36,7 @@ func Token(apiKey, apiSecret, identity, room string, ttl time.Duration) (string,
 			CanSubscribe: true,
 		},
 		"identity": identity,
-		"name":     identity,
+		"name":     name,
 	}
 	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(apiSecret))
 }

@@ -85,7 +85,7 @@ describe('звонки', () => {
     const { api } = setup()
     const calls = useCallStore()
     await calls.initiate(10, [2, 3])
-    expect(api.createCall).toHaveBeenCalledWith(10, [2, 3])
+    expect(api.createCall).toHaveBeenCalledWith(10, [2, 3], expect.any(String))
     expect(calls.connectedCallId).toBe(1)
     expect(calls.micOn).toBe(true) // микрофон включается автоматически
     expect(calls.ringingCall).toBeUndefined()
@@ -106,7 +106,7 @@ describe('звонки', () => {
     const calls = useCallStore()
     calls.handleCallInvite({ call_id: 1, channel_id: 10, initiator_id: 2, initiator_nick: 'bob' })
     await calls.accept(call())
-    expect(api.acceptCall).toHaveBeenCalledWith(1)
+    expect(api.acceptCall).toHaveBeenCalledWith(1, expect.any(String))
     expect(calls.ringingCall).toBeUndefined()
     expect(calls.connectedCallId).toBe(1)
   })
@@ -127,7 +127,7 @@ describe('звонки', () => {
     await calls.decline(call())
     calls.calls[0].status = 'active'
     await calls.join(1)
-    expect(api.joinCall).toHaveBeenCalledWith(1)
+    expect(api.joinCall).toHaveBeenCalledWith(1, expect.any(String))
     expect(calls.connectedCallId).toBe(1)
   })
 

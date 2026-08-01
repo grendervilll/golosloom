@@ -2,6 +2,7 @@
 import { defineStore } from 'pinia'
 import { useSettingsStore } from './settings'
 import { useAuthStore } from './auth'
+import { useChannelsStore } from './channels'
 import { useToasts } from './toasts'
 import { sounds } from '../audio/sounds'
 import type { Call } from '../api/types'
@@ -56,7 +57,9 @@ export const useCallStore = defineStore('calls', {
     async initiate(channelId: number, targetIds: number[]) {
       const settings = useSettingsStore()
       const auth = useAuthStore()
-      const res = await settings.api.createCall(channelId, targetIds)
+      const channels = useChannelsStore()
+      const deviceId = channels.ensureDevice().deviceId
+      const res = await settings.api.createCall(channelId, targetIds, deviceId)
       const call = res.call as Call
       this.calls.push({
         ...call,
@@ -76,7 +79,9 @@ export const useCallStore = defineStore('calls', {
     },
     async accept(call: Call) {
       const settings = useSettingsStore()
-      const res = await settings.api.acceptCall(call.id)
+      const channels = useChannelsStore()
+      const deviceId = channels.ensureDevice().deviceId
+      const res = await settings.api.acceptCall(call.id, deviceId)
       this.stopIncoming(call.id)
       const c = this.calls.find((x) => x.id === call.id)
       if (c) c.inCall = true
@@ -94,7 +99,9 @@ export const useCallStore = defineStore('calls', {
     },
     async join(callId: number) {
       const settings = useSettingsStore()
-      const res = await settings.api.joinCall(callId)
+      const channels = useChannelsStore()
+      const deviceId = channels.ensureDevice().deviceId
+      const res = await settings.api.joinCall(callId, deviceId)
       const c = this.calls.find((x) => x.id === callId)
       if (c) c.inCall = true
       try {
@@ -236,13 +243,23 @@ export const useCallStore = defineStore('calls', {
       auth.ws.send('call.punch', { call_id: call.id, target_user_id: targetUserId })
     },
     // Громкость конкретного участника (сохраняется и применяется к его трекам).
+    // Identity участника в LiveKit имеет вид "userID:deviceID" — ищем по префиксу.
     async setParticipantVolume(userId: number, volume: number) {
       const settings = useSettingsStore()
       settings.setVolume(userId, volume)
       if (!this.room) return
       const p = this.room.remoteParticipants.get(String(userId))
-      if (!p) return
-      for (const pub of p.audioTrackPublications.values()) {
+      let participant = p
+      if (!participant) {
+        for (const rp of this.room.remoteParticipants.values()) {
+          if (rp.identity.split(':')[0] === String(userId)) {
+            participant = rp
+            break
+          }
+        }
+      }
+      if (!participant) return
+      for (const pub of participant.audioTrackPublications.values()) {
         if (pub.track && typeof (pub.track as any).setVolume === 'function') {
           ;(pub.track as any).setVolume(settings.mutedOthers ? 0 : volume / 100)
         }
