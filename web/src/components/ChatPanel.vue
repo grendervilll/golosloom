@@ -8,7 +8,7 @@ import { useCallStore } from '../stores/calls'
 import { useToasts } from '../stores/toasts'
 import MessageItem from './MessageItem.vue'
 
-defineEmits<{ (e: 'toggle-participants'): void; (e: 'open-invite'): void; (e: 'open-call'): void }>()
+const emit = defineEmits<{ (e: 'toggle-participants'): void; (e: 'open-invite'): void; (e: 'open-call'): void }>()
 
 const auth = useAuthStore()
 const channels = useChannelsStore()
