@@ -10,7 +10,7 @@ rtc:
   port_range_end: 50100
   use_external_ip: true
   stun_servers:
-    - stun:stun.l.google.com:19302
+    - stun.l.google.com:19302
 keys:
   api-key: api-secret
 logging:
