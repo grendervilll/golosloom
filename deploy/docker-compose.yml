@@ -43,7 +43,6 @@ services:
     network_mode: host
     volumes:
       - ${LIVEKIT_CONFIG}:/etc/livekit.yaml:ro
-      - ${DATA_DIR}/certs:/certs:ro
     environment:
       - LIVEKIT_KEYS=${LIVEKIT_API_KEY}:${LIVEKIT_API_SECRET}
 

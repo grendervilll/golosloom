@@ -111,9 +111,24 @@ export const useCallStore = defineStore('calls', {
     async connectRoom(callId: number, token: string) {
       const settings = useSettingsStore()
       await this.disconnectRoom()
+      // Все вызовы идут через coturn (TURN), без прямого подключения:
+      // сервер Go выдаёт временные учётные данные в /api/config.
+      const turn = settings.serverConfig?.turn
+      const rtcConfig = turn?.urls?.length
+        ? {
+            iceServers: [
+              {
+                urls: turn.urls,
+                username: turn.username,
+                credential: turn.credential,
+              },
+            ],
+          }
+        : undefined
       const room = new Room({
         adaptiveStream: true,
         dynacast: true,
+        rtcConfig,
         audioCaptureDefaults: { noiseSuppression: settings.noiseSuppression !== 'off' },
         videoCaptureDefaults: { resolution: { width: 1280, height: 720 } },
       })

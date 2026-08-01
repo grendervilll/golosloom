@@ -205,6 +205,8 @@ ensure_env_var() {
 # Конфигурация LiveKit (генерируется с реальными значениями, вне репозитория).
 # -----------------------------------------------------------------------------
 gen_livekit_config() {
+  # Внутренний TURN LiveKit не используется: ретрансляция через отдельный coturn,
+  # клиенты получают его адреса из /api/config и передают в Room как iceServers.
   cat > "$LIVEKIT_CONFIG" <<EOF
 port: 7880
 rtc:
@@ -215,15 +217,6 @@ rtc:
   enable_tcp_loopback: true
 stun_servers:
   - stun:stun.l.google.com:19302
-turn:
-  enabled: true
-  domain: $DOMAIN
-  tls_port: 5349
-  udp_port: 3478
-  external_tls: true
-  tls_cert: /certs/fullchain.pem
-  tls_key: /certs/privkey.pem
-  dh_file: /certs/dhparam.pem
 logging:
   level: info
 EOF
