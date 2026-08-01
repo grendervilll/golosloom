@@ -25,6 +25,7 @@ export const useCallStore = defineStore('calls', {
     screenOn: false,
     punchCooldown: 0 as number,
     lastPunch: 0,
+    audioScanTimer: null as number | null,
   }),
   getters: {
     inCall: (s) => s.connectedCallId > 0,
@@ -195,11 +196,23 @@ export const useCallStore = defineStore('calls', {
       })
       await room.connect(settings.serverConfig!.livekit_url, token)
       // Сканируем уже подписанные аудио-треки (на случай пропущенных событий).
-      for (const p of room.remoteParticipants.values()) {
-        for (const pub of p.audioTrackPublications.values()) {
-          if (pub.isSubscribed && pub.track) attachAudio(pub.track)
+      const scanAudio = () => {
+        try {
+          for (const p of room.remoteParticipants.values()) {
+            for (const pub of p.audioTrackPublications.values()) {
+              if (pub.isSubscribed && pub.track && pub.track.attachedElements.length === 0) {
+                attachAudio(pub.track)
+              }
+            }
+          }
+        } catch {
+          /* ignore */
         }
       }
+      scanAudio()
+      // Периодический скан: аудио прикрепляется надёжно, даже если события
+      // подписки не пришли (как видео в CallStage).
+      this.audioScanTimer = window.setInterval(scanAudio, 2500)
       // markRaw: Room (и его объекты) не должны оборачиваться в реактивные
       // Proxy — иначе SDK ломается (DataCloneError при structuredClone).
       this.room = markRaw(room)
@@ -217,6 +230,10 @@ export const useCallStore = defineStore('calls', {
       }
     },
     async disconnectRoom() {
+      if (this.audioScanTimer !== null) {
+        clearInterval(this.audioScanTimer)
+        this.audioScanTimer = null
+      }
       if (this.room) {
         this.room.disconnect()
         this.room = null
