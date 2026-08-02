@@ -33,6 +33,8 @@ func (s *Server) handleGifSearch(w http.ResponseWriter, r *http.Request) {
 	var out []gifResult
 	var err error
 	switch s.Cfg.GifProvider {
+	case "klipy":
+		out, err = searchKlipy(key, q, limit)
 	case "tenor":
 		out, err = searchTenor(key, q, limit)
 	default:
@@ -65,7 +67,7 @@ func searchGiphy(key, q string, limit int) ([]gifResult, error) {
 	)
 	var body struct {
 		Data []struct {
-			Title string `json:"title"`
+			Title  string `json:"title"`
 			Images struct {
 				FixedHeight struct {
 					URL string `json:"url"`
@@ -87,6 +89,54 @@ func searchGiphy(key, q string, limit int) ([]gifResult, error) {
 		out = append(out, gifResult{
 			URL:     g.Images.Downsized.URL,
 			Preview: g.Images.FixedHeight.URL,
+			Title:   g.Title,
+		})
+	}
+	return out, nil
+}
+
+// searchKlipy — Klipy: ключ в пути URL, региональный хост.
+// В чат уходит средний gif (md), в пикере — маленький (sm).
+func searchKlipy(key, q string, limit int) ([]gifResult, error) {
+	apiURL := fmt.Sprintf(
+		"https://api-us-east4.klipy.com/api/v1/%s/gifs/search?q=%s&locale=ru&page=1&per_page=%d",
+		url.PathEscape(key), url.QueryEscape(q), limit,
+	)
+	var body struct {
+		Result bool `json:"result"`
+		Data   struct {
+			Data []struct {
+				Title string `json:"title"`
+				File  struct {
+					Md struct {
+						Gif struct {
+							URL string `json:"url"`
+						} `json:"gif"`
+					} `json:"md"`
+					Sm struct {
+						Gif struct {
+							URL string `json:"url"`
+						} `json:"gif"`
+					} `json:"sm"`
+				} `json:"file"`
+			} `json:"data"`
+		} `json:"data"`
+	}
+	if err := giphyGet(apiURL, &body); err != nil {
+		return nil, err
+	}
+	out := make([]gifResult, 0, len(body.Data.Data))
+	for _, g := range body.Data.Data {
+		if g.File.Md.Gif.URL == "" {
+			continue
+		}
+		preview := g.File.Sm.Gif.URL
+		if preview == "" {
+			preview = g.File.Md.Gif.URL
+		}
+		out = append(out, gifResult{
+			URL:     g.File.Md.Gif.URL,
+			Preview: preview,
 			Title:   g.Title,
 		})
 	}
