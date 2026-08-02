@@ -1,5 +1,13 @@
 # Caddy: HTTPS для веб-клиента и API, WebSocket, а также выпуск сертификатов
 # для coturn (TURN over TLS). Сертификаты автоматически перевыпускаются Caddy.
+# Доступные логи пишутся в /data/access.log — fail2ban банит IP по 401 на
+# /api/login и /api/register.
+
+{
+	log {
+		output file /data/access.log
+	}
+}
 
 {$DOMAIN} {
 	encode zstd gzip
