@@ -1,6 +1,6 @@
 [package]
 name = "golosloom"
-version = "1.0.0"
+version = "1.2.0"
 description = "Golosloom — голосовой сервер"
 authors = ["Golosloom"]
 edition = "2021"
