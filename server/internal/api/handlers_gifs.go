@@ -1,5 +1,5 @@
-// Поиск GIF: прокси к Giphy API. Ключ хранится на сервере (GIPHY_API_KEY),
-// клиент не знает ключ. Без ключа возвращаем 501 с подсказкой.
+// Поиск GIF: прокси к Tenor или Giphy. Ключ хранится на сервере
+// (GIF_API_KEY), клиент его не знает. Без ключа — 501 с подсказкой.
 package api
 
 import (
@@ -19,7 +19,7 @@ type gifResult struct {
 func (s *Server) handleGifSearch(w http.ResponseWriter, r *http.Request) {
 	key := s.Cfg.GiphyAPIKey
 	if key == "" {
-		writeErr(w, http.StatusNotImplemented, "поиск GIF не настроен (нужен GIPHY_API_KEY)")
+		writeErr(w, http.StatusNotImplemented, "поиск GIF не настроен (нужен GIF_API_KEY — бесплатный ключ Tenor или Giphy)")
 		return
 	}
 	q := r.URL.Query().Get("q")
@@ -30,21 +30,39 @@ func (s *Server) handleGifSearch(w http.ResponseWriter, r *http.Request) {
 	if v, err := parseQueryInt(r, "limit"); err == nil && v > 0 && v <= 50 {
 		limit = v
 	}
+	var out []gifResult
+	var err error
+	switch s.Cfg.GifProvider {
+	case "tenor":
+		out, err = searchTenor(key, q, limit)
+	default:
+		out, err = searchGiphy(key, q, limit)
+	}
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"gifs": out})
+}
+
+func giphyGet(url string, out interface{}) error {
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return fmt.Errorf("не удалось обратиться к GIF-провайдеру")
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("GIF-провайдер ответил %d", resp.StatusCode)
+	}
+	return json.NewDecoder(resp.Body).Decode(out)
+}
+
+func searchGiphy(key, q string, limit int) ([]gifResult, error) {
 	apiURL := fmt.Sprintf(
 		"https://api.giphy.com/v1/gifs/search?api_key=%s&q=%s&limit=%d&rating=g&lang=ru",
 		url.QueryEscape(key), url.QueryEscape(q), limit,
 	)
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Get(apiURL)
-	if err != nil {
-		writeErr(w, http.StatusBadGateway, "не удалось обратиться к Giphy")
-		return
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		writeErr(w, http.StatusBadGateway, fmt.Sprintf("Giphy ответил %d", resp.StatusCode))
-		return
-	}
 	var body struct {
 		Data []struct {
 			Title string `json:"title"`
@@ -58,9 +76,8 @@ func (s *Server) handleGifSearch(w http.ResponseWriter, r *http.Request) {
 			} `json:"images"`
 		} `json:"data"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		writeErr(w, http.StatusBadGateway, "некорректный ответ Giphy")
-		return
+	if err := giphyGet(apiURL, &body); err != nil {
+		return nil, err
 	}
 	out := make([]gifResult, 0, len(body.Data))
 	for _, g := range body.Data {
@@ -73,5 +90,54 @@ func (s *Server) handleGifSearch(w http.ResponseWriter, r *http.Request) {
 			Title:   g.Title,
 		})
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"gifs": out})
+	return out, nil
+}
+
+// searchTenor — поиск через Tenor v2. В чат уходит mediumgif (умеренный
+// размер), в пикере — tinygif-превью.
+func searchTenor(key, q string, limit int) ([]gifResult, error) {
+	apiURL := fmt.Sprintf(
+		"https://g.tenor.com/v2/search?key=%s&q=%s&limit=%d&media_filter=minimal&locale=ru_RU",
+		url.QueryEscape(key), url.QueryEscape(q), limit,
+	)
+	var body struct {
+		Results []struct {
+			Title string `json:"title"`
+			Media []struct {
+				TinyGif struct {
+					URL     string `json:"url"`
+					Preview string `json:"preview"`
+				} `json:"tinygif"`
+				MediumGif struct {
+					URL string `json:"url"`
+				} `json:"mediumgif"`
+				Gif struct {
+					URL string `json:"url"`
+				} `json:"gif"`
+			} `json:"media"`
+		} `json:"results"`
+	}
+	if err := giphyGet(apiURL, &body); err != nil {
+		return nil, err
+	}
+	out := make([]gifResult, 0, len(body.Results))
+	for _, r := range body.Results {
+		if len(r.Media) == 0 {
+			continue
+		}
+		med := r.Media[0]
+		url := med.MediumGif.URL
+		if url == "" {
+			url = med.Gif.URL
+		}
+		if url == "" {
+			continue
+		}
+		out = append(out, gifResult{
+			URL:     url,
+			Preview: med.TinyGif.Preview,
+			Title:   r.Title,
+		})
+	}
+	return out, nil
 }

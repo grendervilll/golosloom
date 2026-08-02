@@ -20,6 +20,7 @@ type Config struct {
 	TurnRealm         string
 	AllowOrigins      []string
 	GiphyAPIKey       string
+	GifProvider       string
 	MaxMessageLen     int
 	MessageRatePerSec int
 	PunchInterval     time.Duration
@@ -39,7 +40,8 @@ func Load() Config {
 		TurnSharedSecret:  getenv("TURN_SHARED_SECRET", ""),
 		TurnRealm:         getenv("TURN_REALM", ""),
 		AllowOrigins:      splitEnv("ALLOW_ORIGINS"),
-		GiphyAPIKey:       getenv("GIPHY_API_KEY", "dc6zaTOxFJmzC"),
+		GiphyAPIKey:       getenv("GIF_API_KEY", ""),
+		GifProvider:       getenv("GIF_PROVIDER", "tenor"),
 		MaxMessageLen:     getenvInt("MAX_MESSAGE_LEN", 2000),
 		MessageRatePerSec: getenvInt("MESSAGE_RATE_PER_SEC", 10),
 		PunchInterval:     getenvDur("PUNCH_INTERVAL", 10*time.Second),
