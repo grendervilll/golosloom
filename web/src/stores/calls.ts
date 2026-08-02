@@ -381,22 +381,27 @@ export const useCallStore = defineStore('calls', {
     },
     // Применяет громкость ко всем аудио-трекам собеседников: общее
     // выключение звука + индивидуальная громкость каждого участника.
+    // Выключение делаем через el.muted (надёжный булев флаг), а не только
+    // через volume=0 — так звук гарантированно возвращается при включении.
     applySpeakersVolume() {
       if (!this.room) return
       const settings = useSettingsStore()
+      const muted = settings.mutedOthers
       for (const p of this.room.remoteParticipants.values()) {
         const uid = Number(p.identity.split(':')[0])
         const vol = settings.volumes[uid]
-        const target = settings.mutedOthers ? 0 : vol !== undefined ? vol / 100 : 1
+        const level = vol !== undefined ? Math.max(0, Math.min(2, vol / 100)) : 1
         for (const pub of p.audioTrackPublications.values()) {
           if (!pub.track) continue
           const track = pub.track as any
           try {
-            if (typeof track.setVolume === 'function') {
-              track.setVolume(target)
-            }
+            if (typeof track.setVolume === 'function') track.setVolume(muted ? 0 : level)
             for (const el of track.attachedElements || []) {
-              el.volume = target
+              el.muted = muted
+              el.volume = muted ? 0 : level
+              if (!muted && el.paused) {
+                void el.play().catch(() => {})
+              }
             }
           } catch {
             /* ignore */
