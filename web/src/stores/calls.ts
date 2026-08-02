@@ -212,9 +212,15 @@ export const useCallStore = defineStore('calls', {
           el.style.display = 'none'
           document.body.appendChild(el)
           track.attach(el)
-          // Громкость берётся из текущих настроек (общее выключение +
-          // индивидуальная громкость участника), а не фиксированная "1" —
-          // иначе при переподключении трека новый элемент звучал бы громко.
+          // ВАЖНО: в реальном браузере SDK может переключить трек на
+          // WebAudio-граф (element.muted=true + gainNode), у которого сломан
+          // возврат громкости после 0 — звук не возвращается. Отключаем
+          // WebAudio-граф и управляем громкостью через сам элемент.
+          if (track.audioContext) {
+            track.disconnectWebAudio?.()
+          }
+          el.muted = false
+          el.volume = 1
           this.applySpeakersVolume()
         } catch {
           /* не фатально */
@@ -224,6 +230,17 @@ export const useCallStore = defineStore('calls', {
       room.on(RoomEvent.TrackUnsubscribed, (track: any) => {
         try {
           for (const el of track?.attachedElements || []) track.detach(el)
+          // После detach SDK может снова собрать WebAudio-граф для
+          // оставшихся элементов — отключаем его и восстанавливаем
+          // управление громкостью через элементы.
+          if (track?.audioContext && track?.attachedElements?.length) {
+            track.disconnectWebAudio?.()
+            for (const el of track.attachedElements) {
+              el.muted = false
+              el.volume = 1
+            }
+            this.applySpeakersVolume()
+          }
         } catch {
           /* ignore */
         }
