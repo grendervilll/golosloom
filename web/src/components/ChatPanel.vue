@@ -203,7 +203,7 @@ function onKeydown(e: KeyboardEvent) {
 .members-btn {
   margin-left: auto;
   padding: 4px 10px;
-  display: none;
+  display: block;
 }
 .invite-btn {
   margin-left: auto;
@@ -276,11 +276,5 @@ function onKeydown(e: KeyboardEvent) {
 }
 .ctx-menu button:hover {
   background: var(--bg4);
-}
-
-@media (max-width: 900px) {
-  .members-btn {
-    display: block;
-  }
 }
 </style>
