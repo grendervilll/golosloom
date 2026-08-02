@@ -77,11 +77,34 @@ cd desktop && npm install && npm run tauri dev
 
 ## Сборка десктоп-клиента
 
+Локально (только для текущей ОС/архитектуры):
+
 ```bash
 cd desktop && npm run tauri build
 ```
 
-Целевые платформы: Windows x86_64 и arm64, macOS aarch64 (M-серия), Linux x86_64 и aarch64. Все установщики собираются автоматически в GitHub Actions при создании тега `v*` (`.github/workflows/build-desktop.yml`).
+### Сборка для всех платформ через GitHub Actions
+
+Установщики для **Windows (x86_64 и arm64)**, **macOS (Apple Silicon)** и **Linux (x86_64 и aarch64)** собираются автоматически в `.github/workflows/build-desktop.yml` одним из двух способов:
+
+**1. По тегу (рекомендуется)** — при создании тега `v*` сборка сама публикует **GitHub Release** со всеми установщиками:
+
+```bash
+git tag v1.1.0
+git push origin v1.1.0
+```
+
+**2. Вручную** — вкладка **Actions** репозитория → workflow **build-desktop** → кнопка **Run workflow** (без тега; результат — только артефакты, они хранятся 90 дней).
+
+### Где скачать
+
+- **GitHub Release**: страница репозитория → **Releases** → последний релиз — внизу списком лежат `.dmg` (macOS), `.exe`/`.msi` (Windows), `.deb`/`.AppImage` (Linux). Прямая ссылка: `https://github.com/grendervilll/golosloom/releases/latest`.
+- **Артефакты** (без тега): Actions → выбранный запуск → раздел **Artifacts** → скачать архив (имя вида `golosloom-windows-x86_64`).
+
+Примечания:
+- macOS-сборка не подписана — при первом запуске: правый клик по приложению → «Открыть» (или «Системные настройки → Конфиденциальность и безопасность → Открыть всё равно»).
+- Windows SmartScreen может предупредить о неизвестном издателе — «Подробнее → Выполнить в любом случае».
+- Linux: `.deb` для Debian/Ubuntu, `.AppImage` — универсальный (chmod +x и запуск), `.aarch64` — бинарник для ARM-систем.
 
 ## Тесты
 
