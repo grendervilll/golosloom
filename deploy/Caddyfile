@@ -3,14 +3,12 @@
 # Доступные логи пишутся в /data/access.log — fail2ban банит IP по 401 на
 # /api/login и /api/register.
 
-{
+{$DOMAIN} {
+	encode zstd gzip
+
 	log {
 		output file /data/access.log
 	}
-}
-
-{$DOMAIN} {
-	encode zstd gzip
 
 	# Сигналинг LiveKit: клиент подключается к wss://домен/rtc/... напрямую
 	# (путь /rtc/* свободен, префикс резать не нужно). livekit работает на
