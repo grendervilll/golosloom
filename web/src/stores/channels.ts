@@ -23,6 +23,7 @@ export const useChannelsStore = defineStore('channels', {
     banned: [] as { user_id: number; nick: string; ban_reason: string }[],
     invites: [] as Invite[],
     deviceKeys: null as ReturnType<typeof generateDeviceKeys> | null,
+    keyPollTimer: 0 as number,
   }),
   getters: {
     current(): Channel | undefined {
@@ -50,6 +51,10 @@ export const useChannelsStore = defineStore('channels', {
       await this.refresh()
       await this.refreshInvites()
       auth.refreshUsers()
+      // Ключи для всех каналов: раздаём их новым устройствам, забираем свой
+      // (первое устройство может быть выключено — таймер повторит позже).
+      this.startKeyPoll()
+      await this.syncAllKeys()
       if (this.currentId) {
         try {
           await this.openChannel(this.currentId)
@@ -106,6 +111,7 @@ export const useChannelsStore = defineStore('channels', {
       await this.loadBanned(channelId)
       await chat.loadHistory(channelId)
       await this.syncKeys(channelId)
+      this.startKeyPoll()
       // Обновляем список звонков канала (кнопка «Войти в звонок» и пр.).
       try {
         await useCallStore().refresh(channelId)
@@ -144,26 +150,60 @@ export const useChannelsStore = defineStore('channels', {
       await storage.saveChannelKey(channelId, key)
     },
     // Синхронизация ключей: получаем свой ключ, раздаём ключ новым устройствам.
+    // ВАЖНО: сервер хранит ключ канала только в обёрнутом виде и не может сам
+    // выдать его новому устройству — ключ для нового устройства оборачивает
+    // другой клиент, у которого есть ключ. Поэтому синхронизация повторяется:
+    // таймером (пока канал открыт), при старте и при регистрации устройства.
     async syncKeys(channelId: number) {
-      const storage = await getKeyStorage()
-      const settings = useSettingsStore()
-      const auth = useAuthStore()
-      const keys = this.ensureDevice()
-      if (auth.user && this.members.some((m) => m.user_id === auth.user!.id)) {
-        const res = await settings.api.getMyWrappedKey(channelId, keys.deviceId)
-        if (res.wrapped_key) {
-          const key = await unwrapChannelKey(b64ToBytes(res.wrapped_key), keys.privateKey)
-          await storage.saveChannelKey(channelId, key)
+      try {
+        const storage = await getKeyStorage()
+        const settings = useSettingsStore()
+        const auth = useAuthStore()
+        const keys = this.ensureDevice()
+        const ch = this.channels.find((c) => c.id === channelId)
+        const isMember = ch ? ch.is_member : this.members.some((m) => m.user_id === auth.user?.id)
+        if (auth.user && isMember) {
+          const res = await settings.api.getMyWrappedKey(channelId, keys.deviceId)
+          if (res.wrapped_key) {
+            const key = await unwrapChannelKey(b64ToBytes(res.wrapped_key), keys.privateKey)
+            const hadKey = await storage.loadChannelKey(channelId)
+            await storage.saveChannelKey(channelId, key)
+            if (!hadKey) {
+              // Ключ только что получен — перечитываем историю, чтобы
+              // расшифровать сообщения канала.
+              const chat = useChatStore()
+              try {
+                await chat.loadHistory(channelId)
+              } catch {
+                /* ignore */
+              }
+            }
+          }
         }
+        const myKey = await storage.loadChannelKey(channelId)
+        if (!myKey) return
+        const targets: KeyTarget[] = await settings.api.pendingKeyTargets(channelId)
+        for (const target of targets) {
+          if (target.user_id === auth.user?.id && target.device_id === keys.deviceId) continue
+          const wrapped = await wrapChannelKey(myKey, b64ToBytes(target.public_key))
+          await settings.api.uploadWrappedKey(channelId, target.user_id, target.device_id, wrapped)
+        }
+      } catch {
+        // Не критично: синхронизация повторится таймером.
       }
-      const myKey = await storage.loadChannelKey(channelId)
-      if (!myKey) return
-      const targets: KeyTarget[] = await settings.api.pendingKeyTargets(channelId)
-      for (const target of targets) {
-        if (target.user_id === auth.user!.id && target.device_id === keys.deviceId) continue
-        const wrapped = await wrapChannelKey(myKey, b64ToBytes(target.public_key))
-        await settings.api.uploadWrappedKey(channelId, target.user_id, target.device_id, wrapped)
+    },
+    // Раздача/получение ключей для всех каналов (при старте и при появлении
+    // нового устройства у того же пользователя).
+    async syncAllKeys() {
+      for (const ch of this.channels) {
+        await this.syncKeys(ch.id)
       }
+    },
+    startKeyPoll() {
+      if (this.keyPollTimer) return
+      this.keyPollTimer = window.setInterval(() => {
+        if (this.currentId) void this.syncKeys(this.currentId)
+      }, 7000)
     },
     async handleInviteEvent(invite: Invite) {
       const toasts = useToasts()

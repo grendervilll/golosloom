@@ -50,6 +50,7 @@ function wireWs() {
       toasts.push({ kind: 'info', text: 'Вызов не принят, звонок отклонён автоматически' })
     }),
     ws.on('punch', (d: any) => calls.handlePunch(d)),
+    ws.on('device.registered', () => void channels.syncAllKeys()),
     ws.on('kicked', (d: any) => {
       sounds.warning()
       toasts.push({ kind: 'warning', text: `Вас кикнули из канала: ${d.reason || 'без причины'}` })

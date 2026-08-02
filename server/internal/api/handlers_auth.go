@@ -216,6 +216,12 @@ func (s *Server) handleUploadKey(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	// Новое устройство зарегистрировано — остальные устройства пользователя
+	// должны раздать ему ключи каналов (обёрнутый ключ может создать только
+	// клиент, у которого есть открытый ключ канала).
+	s.Hub.SendToUser(userIDFrom(r), hub.NewEvent("device.registered", map[string]interface{}{
+		"device_id": req.DeviceID,
+	}))
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
