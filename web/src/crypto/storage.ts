@@ -83,6 +83,16 @@ class IndexedDBStorage implements KeyStorage {
     })
   }
 
+  // Прямой доступ по имени ключа без шифрования мастер-ключом —
+  // используется как фолбэк для Tauri, когда Keychain недоступна.
+  async rawGet(key: string): Promise<Uint8Array | null> {
+    return (await this.get(STORE, key)) as Uint8Array | null
+  }
+
+  async rawSet(key: string, value: Uint8Array): Promise<void> {
+    await this.put(STORE, key, value)
+  }
+
   private put(store: string, key: IDBValidKey, value: unknown): Promise<void> {
     return new Promise((resolve, reject) => {
       const tx = this.db!.transaction(store, 'readwrite')
@@ -94,37 +104,62 @@ class IndexedDBStorage implements KeyStorage {
 }
 
 // Tauri: Rust-команды secure_set / secure_get работают с системной Keychain.
+// Если Keychain недоступна (сбой macOS Keychain, проблема с правами) —
+// автоматически переключаемся на IndexedDB, чтобы чат и звонки продолжали
+// работать (вебвью-хранилище приложения изолировано от других программ).
 class TauriKeychainStorage implements KeyStorage {
   private masterKey: Uint8Array | null = null
+  private idb: IndexedDBStorage | null = null
 
   async init(): Promise<void> {
-    const raw = await this.get(MASTER)
+    await this.ensureIdb()
+    const raw = await this.safeGet(MASTER)
     if (raw) {
       this.masterKey = raw
     } else {
       this.masterKey = crypto.getRandomValues(new Uint8Array(32))
-      await this.set(MASTER, this.masterKey)
+      await this.safeSet(MASTER, this.masterKey)
     }
   }
 
   async saveChannelKey(channelId: number, keyBytes: Uint8Array): Promise<void> {
     const wrapped = await wrapWithMaster(keyBytes, this.masterKey!)
-    await this.set(PREFIX + channelId, wrapped)
+    await this.safeSet(PREFIX + channelId, wrapped)
   }
 
   async loadChannelKey(channelId: number): Promise<Uint8Array | null> {
-    const wrapped = await this.get(PREFIX + channelId)
+    const wrapped = await this.safeGet(PREFIX + channelId)
     if (!wrapped) return null
     return unwrapWithMaster(wrapped, this.masterKey!)
   }
 
-  private async get(key: string): Promise<Uint8Array | null> {
-    const b64: string | null = await window.__TAURI__.core.invoke('secure_get', { key })
-    return b64 ? bytesFromB64(b64) : null
+  private async ensureIdb() {
+    if (!this.idb) {
+      this.idb = new IndexedDBStorage()
+      await this.idb.init()
+    }
   }
 
-  private async set(key: string, value: Uint8Array): Promise<void> {
-    await window.__TAURI__.core.invoke('secure_set', { key, value: bytesToB64(value) })
+  // Чтение: Keychain, при ошибке — IndexedDB.
+  private async safeGet(key: string): Promise<Uint8Array | null> {
+    try {
+      const b64: string | null = await window.__TAURI__.core.invoke('secure_get', { key })
+      if (b64) return bytesFromB64(b64)
+    } catch {
+      /* Keychain недоступна — фолбэк ниже */
+    }
+    return (this.idb as any).rawGet(key)
+  }
+
+  // Запись: Keychain, при ошибке — IndexedDB.
+  private async safeSet(key: string, value: Uint8Array): Promise<void> {
+    try {
+      await window.__TAURI__.core.invoke('secure_set', { key, value: bytesToB64(value) })
+      return
+    } catch {
+      /* Keychain недоступна — фолбэк ниже */
+    }
+    await (this.idb as any).rawSet(key, value)
   }
 }
 

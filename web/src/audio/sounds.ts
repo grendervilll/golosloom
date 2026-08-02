@@ -49,13 +49,14 @@ class SoundManager {
   playRing(): void {
     if (this.ringTimer !== null) return // не даём двум вызовам звучать одновременно
     const schedule = () => {
-      if (this.ringTimer === null) return
       this.unlock()
       this.beep(800, 0.3, 0.08, 'sine')
       window.setTimeout(() => this.beep(1000, 0.3, 0.08, 'sine'), 350)
     }
-    schedule()
+    // Таймер создаём ДО первого тика, чтобы guard "ringTimer === null"
+    // не съедал первый гудок, а stopRing мог прервать цикл сразу.
     this.ringTimer = window.setInterval(schedule, 850)
+    schedule()
     window.setTimeout(() => this.stopRing(), 20000)
   }
 
@@ -70,12 +71,11 @@ class SoundManager {
   playDialTone(): void {
     if (this.dialTimer !== null) return
     const schedule = () => {
-      if (this.dialTimer === null) return
       this.unlock()
       this.beep(425, 0.5, 0.05, 'sine')
     }
-    schedule()
     this.dialTimer = window.setInterval(schedule, 850)
+    schedule()
   }
 
   stopDialTone(): void {

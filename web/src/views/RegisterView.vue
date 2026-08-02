@@ -58,7 +58,7 @@ async function submit() {
 <template>
   <div class="auth-wrap">
     <form class="auth-card" @submit.prevent="submit">
-      <img class="logo" src="/logo.jpg" alt="Golosloom" />
+      <img class="logo" src="/logo.png" alt="Golosloom" />
       <h1>Golosloom</h1>
       <p class="muted">Регистрация</p>
       <div class="field">

@@ -73,13 +73,13 @@ async function declineInvite(id: number) {
 <template>
   <aside class="sidebar">
     <div class="server-head" @click="menuOpen = !menuOpen">
-      <img class="server-logo" src="/logo.jpg" alt="Golosloom" />
+      <img class="server-logo" src="/logo.png" alt="Golosloom" />
       <span class="server-name">Golosloom</span>
       <span class="chevron">{{ menuOpen ? '▲' : '▼' }}</span>
     </div>
 
     <div v-if="menuOpen" class="server-menu">
-      <button @click="emit('open-admin')">Админ панель сервера</button>
+      <button v-if="auth.isServerAdmin" @click="emit('open-admin')">Админ панель сервера</button>
       <button @click="showCreate = true">Создать канал</button>
       <button @click="emit('open-settings')">Настройки</button>
       <button class="danger" @click="emit('logout')">Выйти</button>

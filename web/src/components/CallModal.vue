@@ -117,8 +117,19 @@ async function start() {
 .user-row.picked {
   background: var(--bg4);
 }
-.nick {
-  flex: 1;
+.user-row .nick {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.user-row .role-icon {
+  flex-shrink: 0;
+}
+.user-row .muted.small {
+  flex-shrink: 0;
+  margin-left: auto;
 }
 .row {
   display: flex;

@@ -175,7 +175,7 @@ function copyId(u: any) {
 </script>
 
 <template>
-  <div class="modal-backdrop" @click.self="emit('close')">
+  <div v-if="auth.isServerAdmin" class="modal-backdrop" @click.self="emit('close')">
     <div class="modal admin">
       <h2>Админ панель сервера</h2>
       <div class="tabs">
