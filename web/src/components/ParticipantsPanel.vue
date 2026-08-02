@@ -113,10 +113,10 @@ function setVolume(userId: number, v: number) {
     </div>
     <div class="members-list">
       <div v-for="m in channels.members" :key="m.user_id" class="member" :class="{ 'in-call': inCall && inCallIds.includes(m.user_id) }">
-        <span class="role-icon">{{ roleIcon(auth.user, m.role) }}</span>
+        <span class="role-icon">{{ roleIcon(undefined, m.is_server_admin ? 'server_admin' : m.role) }}</span>
         <div class="member-info">
           <span class="nick">{{ m.nick }}</span>
-          <span class="muted small">ID: {{ m.user_id }} · {{ roleLabel(m.role) }}</span>
+          <span class="muted small">ID: {{ m.user_id }} · {{ roleLabel(m.is_server_admin ? 'server_admin' : m.role) }}</span>
         </div>
         <span class="status" :class="{ online: m.online }">{{ m.online ? 'Онлайн' : 'Офлайн' }}</span>
 

@@ -23,7 +23,8 @@
     ],
     "security": {
       "csp": null
-    }
+    },
+    "withGlobalTauri": true
   },
   "bundle": {
     "active": true,
@@ -53,6 +54,14 @@
       "appimage": {
         "bundleMediaFramework": false
       }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDU2NjJBQzM3NURCMzZGMjYKUldRbWI3TmRONnhpVnZXRElkelBmNHcybWpJQWRYUWJsU2d5clF5ajBEMUFpUTVnM29oSFlrZmkK",
+      "endpoints": [
+        "https://github.com/grendervilll/golosloom/releases/latest/download/latest.json"
+      ]
     }
   }
 }

@@ -33,6 +33,17 @@ async function onNoiseChange(e: Event) {
   settings.setNoiseSuppression((e.target as HTMLSelectElement).value as any)
 }
 
+// Кнопка «Экран»: при активной демонстрации выключает её сразу,
+// иначе открывает выбор качества.
+function onScreenClick() {
+  if (calls.screenOn) {
+    void calls.stopScreen()
+    showQuality.value = false
+  } else {
+    showQuality.value = !showQuality.value
+  }
+}
+
 async function leave() {
   await calls.leave()
 }
@@ -47,7 +58,7 @@ async function leave() {
       <button :class="{ active: calls.camOn }" title="Веб-камера" @click="calls.toggleCam()">
         📷 {{ calls.camOn ? 'Камера вкл' : 'Камера выкл' }}
       </button>
-      <button :class="{ active: calls.screenOn }" title="Демонстрация экрана" @click="showQuality = !showQuality">
+      <button :class="{ active: calls.screenOn }" title="Демонстрация экрана" @click="onScreenClick">
         🖥️ Экран {{ calls.screenOn ? 'вкл' : 'выкл' }}
       </button>
       <div v-if="showQuality" class="popup">

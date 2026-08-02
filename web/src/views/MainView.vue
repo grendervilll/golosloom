@@ -18,6 +18,7 @@ import SettingsModal from '../components/SettingsModal.vue'
 import ServerUrlModal from '../components/ServerUrlModal.vue'
 import InviteModal from '../components/InviteModal.vue'
 import CallModal from '../components/CallModal.vue'
+import UpdateModal from '../components/UpdateModal.vue'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -89,6 +90,7 @@ function toggleChat() {
     <InviteModal v-if="showInvite" @close="showInvite = false" />
     <CallModal v-if="showCallPicker" @close="showCallPicker = false" />
     <ServerUrlModal v-if="showServerUrl" @close="showServerUrl = false" />
+    <UpdateModal />
   </div>
 </template>
 
@@ -118,6 +120,13 @@ function toggleChat() {
   justify-content: center;
 }
 
+/* Панель участников скрыта по умолчанию, открывается по кнопке 👥. */
+.right-col {
+  display: none;
+}
+.right-col.open {
+  display: flex;
+}
 @media (max-width: 900px) {
   .main-layout {
     flex-direction: column;
@@ -126,11 +135,7 @@ function toggleChat() {
     flex: 1;
     min-height: 0;
   }
-  .right-col {
-    display: none;
-  }
   .right-col.open {
-    display: flex;
     position: fixed;
     inset: 0;
     width: 100%;

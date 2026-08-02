@@ -28,6 +28,11 @@ func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
 	canSeeOriginals := s.hasViewOriginals(role, channelID)
 	out := make([]map[string]interface{}, 0, len(msgs))
 	for _, m := range msgs {
+		if m.Deleted && !canSeeOriginals {
+			// Обычные пользователи не видят удалённые сообщения вовсе;
+			// модераторы и админы видят их с оригинальным текстом.
+			continue
+		}
 		out = append(out, s.messageJSON(m, canSeeOriginals))
 	}
 	writeJSON(w, http.StatusOK, out)

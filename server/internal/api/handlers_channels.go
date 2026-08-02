@@ -358,12 +358,17 @@ func (s *Server) handleListMembers(w http.ResponseWriter, r *http.Request) {
 	out := make([]map[string]interface{}, 0, len(members))
 	for _, m := range members {
 		nick := s.nickOf(m.UserID)
+		isAdmin := false
+		if u, err := s.Store.GetUserByID(m.UserID); err == nil {
+			isAdmin = u.IsServerAdmin
+		}
 		out = append(out, map[string]interface{}{
-			"user_id":   m.UserID,
-			"nick":      nick,
-			"role":      m.Role,
-			"online":    s.Hub.IsOnline(m.UserID),
-			"joined_at": m.JoinedAt,
+			"user_id":        m.UserID,
+			"nick":           nick,
+			"role":           m.Role,
+			"is_server_admin": isAdmin,
+			"online":         s.Hub.IsOnline(m.UserID),
+			"joined_at":      m.JoinedAt,
 		})
 	}
 	writeJSON(w, http.StatusOK, out)

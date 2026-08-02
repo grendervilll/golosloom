@@ -311,8 +311,7 @@ export const useCallStore = defineStore('calls', {
       if (!this.room) return
       try {
         if (this.screenOn) {
-          await this.room.localParticipant.setScreenShareEnabled(false)
-          this.screenOn = false
+          await this.stopScreen()
           return
         }
         const [w, h, fps] = parseQuality(quality)
@@ -324,6 +323,17 @@ export const useCallStore = defineStore('calls', {
         const toasts = useToasts()
         toasts.push({ kind: 'warning', text: 'Не удалось запустить демонстрацию экрана' })
       }
+    },
+    // Выключение демонстрации: отдельное действие, чтобы кнопка «Экран»
+    // при активной демонстрации выключала её сразу, без выбора качества.
+    async stopScreen() {
+      if (!this.room) return
+      try {
+        await this.room.localParticipant.setScreenShareEnabled(false)
+      } catch {
+        /* ignore */
+      }
+      this.screenOn = false
     },
     async punch(targetUserId: number) {
       const now = Date.now()

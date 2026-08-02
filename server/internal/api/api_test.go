@@ -449,6 +449,13 @@ func TestMessagesFlow(t *testing.T) {
 	if list[0].(map[string]interface{})["deleted"] != true {
 		t.Fatal("модератор должен видеть удалённое сообщение")
 	}
+	// Простой пользователь не видит удалённое сообщение вовсе.
+	_, list = a.doList(t, http.MethodGet, fmt.Sprintf("/api/channels/%d/messages", ch), user2.token, nil)
+	for _, m := range list {
+		if m.(map[string]interface{})["id"] == float64(mid) {
+			t.Fatal("простой пользователь не должен видеть удалённое сообщение")
+		}
+	}
 	// Модератор удаляет чужое сообщение.
 	mid2 := a.sendMsg(t, user2.token, ch, "удаляй меня")
 	code, _ = a.do(t, http.MethodDelete, fmt.Sprintf("/api/channels/%d/messages/%d", ch, mid2), mod.token, nil)

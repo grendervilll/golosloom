@@ -32,6 +32,7 @@ export interface ChannelMember {
   user_id: number
   nick: string
   role: Role
+  is_server_admin?: boolean
   online: boolean
   joined_at: string
 }

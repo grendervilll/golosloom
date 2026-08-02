@@ -147,7 +147,7 @@ describe('чат', () => {
     await chat.handleNew({ id: 7, channel_id: 10, sender_id: 3, sender_nick: 'carl', ciphertext: bytesToB64(ciphertext), iv: bytesToB64(iv), created_at: '', deleted: false } as any)
     await chat.handleDeleted({ channel_id: 10, message_id: 7, deleted_by: 3 })
     let msgs = chat.messages.get(10)!
-    expect(msgs[0].deleted).toBe(true)
+    expect(msgs.length).toBe(0) // простой пользователь не видит удалённое сообщение вовсе
 
     // Модератор видит и текст удалённого, и оригинал.
     setup(1, 'channel_moderator')
@@ -172,7 +172,7 @@ describe('чат', () => {
   })
 
   it('обрабатывает редактирование и удаление через WS-события', async () => {
-    setup(1)
+    setup(1, 'channel_moderator')
     const storage = await getKeyStorage()
     const key = generateChannelKey()
     await storage.saveChannelKey(10, key)

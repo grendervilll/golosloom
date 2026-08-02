@@ -1,6 +1,6 @@
 // Главное рабочее поле звонка: видео участников и демонстрация экрана.
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useCallStore } from '../stores/calls'
 import { useChannelsStore } from '../stores/channels'
 import { useAuthStore } from '../stores/auth'
@@ -103,7 +103,28 @@ function chooseScreen(id: string) {
 }
 
 // Полноэкранный режим демонстрации экрана.
+// В Tauri браузерный Fullscreen API не работает (WKWebView/WebView2) —
+// разворачиваем само окно приложения через Tauri API и включаем режим
+// "только сцена" (остальной интерфейс скрывается).
+let fsUnlisten: (() => void) | null = null
+
+function setFsMode(fs: boolean) {
+  document.documentElement.classList.toggle('golosloom-fs', fs)
+}
+
+function tauriWindow(): any {
+  return (window as any).__TAURI__?.window?.getCurrentWindow?.() || null
+}
+
 function toggleFullscreen() {
+  const win = tauriWindow()
+  if (win) {
+    void win
+      .isFullscreen()
+      .then((fs: boolean) => win.setFullscreen(!fs))
+      .catch(() => {})
+    return
+  }
   const el = document.querySelector('.screen-main')
   if (document.fullscreenElement) {
     void document.exitFullscreen()
@@ -116,12 +137,35 @@ let rescanTimer: number | null = null
 
 watch(() => calls.connectedCallId, startWatching, { immediate: true })
 watch(() => calls.screenOn, () => setTimeout(updateTiles, 300))
+
+onMounted(() => {
+  // Следим за состоянием окна Tauri (выход из полноэкранного режима
+  // системными кнопками) и выключаем режим "только сцена".
+  const win = tauriWindow()
+  if (win) {
+    void win
+      .isFullscreen()
+      .then(setFsMode)
+      .catch(() => {})
+    win.onResized?.(() => {
+      void win
+        .isFullscreen()
+        .then(setFsMode)
+        .catch(() => {})
+    }).then((un: () => void) => {
+      fsUnlisten = un
+    })
+  }
+})
+
 onBeforeUnmount(() => {
   watching = false
   if (rescanTimer !== null) {
     clearInterval(rescanTimer)
     rescanTimer = null
   }
+  fsUnlisten?.()
+  setFsMode(false)
 })
 
 const cameras = computed(() => tiles.value.filter((t) => t.kind === 'camera'))

@@ -93,10 +93,19 @@ export const useChatStore = defineStore('chat', {
     },
     handleDeleted(data: { channel_id: number; message_id: number; deleted_by: number }) {
       const list = this.messages.get(data.channel_id) || []
-      const idx = list.findIndex((x) => x.id === data.message_id)
-      if (idx >= 0) {
-        list[idx] = { ...list[idx], deleted: true, deletedBy: data.deleted_by }
-        this.messages.set(data.channel_id, [...list])
+      if (this.canSeeDeleted()) {
+        // Модераторы/админы видят удалённое сообщение с оригиналом.
+        const idx = list.findIndex((x) => x.id === data.message_id)
+        if (idx >= 0) {
+          list[idx] = { ...list[idx], deleted: true, deletedBy: data.deleted_by }
+          this.messages.set(data.channel_id, [...list])
+        }
+      } else {
+        // Обычные пользователи не видят удалённое сообщение вовсе.
+        this.messages.set(
+          data.channel_id,
+          list.filter((x) => x.id !== data.message_id),
+        )
       }
     },
     async toChatMessage(

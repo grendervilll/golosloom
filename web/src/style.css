@@ -105,6 +105,28 @@ input[type='radio'] {
   flex-shrink: 0;
 }
 
+/* Полноэкранный режим демонстрации (Tauri: развёрнуто окно приложения) —
+   остаётся только сцена с демонстрацией, остальной интерфейс скрыт. */
+html.golosloom-fs .sidebar,
+html.golosloom-fs .right-col,
+html.golosloom-fs .chat-panel,
+html.golosloom-fs .controls,
+html.golosloom-fs .join-bar,
+html.golosloom-fs .stage-wrap .screen-thumbs,
+html.golosloom-fs .stage-wrap .cam-grid {
+  display: none !important;
+}
+html.golosloom-fs .stage {
+  padding: 0;
+}
+html.golosloom-fs .screen-main {
+  border-radius: 0;
+  min-height: 100vh;
+}
+html.golosloom-fs .screen-nick {
+  display: none;
+}
+
 input:focus,
 textarea:focus,
 select:focus {

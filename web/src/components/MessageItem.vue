@@ -2,6 +2,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { ChatMessage } from '../stores/chat'
+import type { Role } from '../api/types'
 import { roleIcon } from '../utils/roles'
 import { useAuthStore } from '../stores/auth'
 import { useChannelsStore } from '../stores/channels'
@@ -18,7 +19,11 @@ const channels = useChannelsStore()
 
 const isMine = computed(() => props.msg.senderId === props.myId)
 const member = computed(() => channels.members.find((m) => m.user_id === props.msg.senderId))
-const role = computed(() => member.value?.role || 'user')
+// Иконка роли отправителя сообщения, а не текущего пользователя.
+const role = computed<Role>(() => {
+  if (member.value?.is_server_admin) return 'server_admin'
+  return member.value?.role || 'user'
+})
 
 // Кнопка «⋯» открывает то же меню, что и правая кнопка мыши
 // (работает и на мобильных устройствах).
@@ -35,7 +40,7 @@ function openMore(e: MouseEvent) {
     :class="{ mine: isMine, deleted: msg.deleted }"
     @contextmenu.prevent="emit('contextmenu', $event)"
   >
-    <span class="role-icon" :style="{ filter: 'grayscale(0.6)' }">{{ roleIcon(auth.user, role) }}</span>
+    <span class="role-icon" :style="{ filter: 'grayscale(0.6)' }">{{ roleIcon(undefined, role) }}</span>
     <div class="body">
       <div class="head">
         <b>{{ msg.senderNick }}</b>
@@ -43,6 +48,9 @@ function openMore(e: MouseEvent) {
         <span v-if="msg.edited" class="muted small">(изменено)</span>
       </div>
       <p v-if="msg.encrypted" class="encrypted">🔒 Сообщение зашифровано (ключ канала недоступен)</p>
+      <p v-else-if="msg.deleted && canModerate" class="deleted-text">
+        🗑 {{ msg.text || 'Сообщение удалено' }}
+      </p>
       <p v-else-if="msg.deleted" class="deleted-text">Сообщение удалено</p>
       <p v-else class="text">{{ msg.text }}</p>
     </div>

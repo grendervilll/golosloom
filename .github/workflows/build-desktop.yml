@@ -35,14 +35,6 @@ jobs:
             desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
             desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app
           if-no-files-found: error
-      - name: Publish to release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
-            desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app
-          fail_on_unmatched_files: false
 
   build-windows:
     strategy:
@@ -71,14 +63,6 @@ jobs:
             desktop/src-tauri/target/${{ matrix.arch == 'aarch64' && 'aarch64-pc-windows-msvc' || 'x86_64-pc-windows-msvc' }}/release/bundle/nsis/*.exe
             desktop/src-tauri/target/${{ matrix.arch == 'aarch64' && 'aarch64-pc-windows-msvc' || 'x86_64-pc-windows-msvc' }}/release/bundle/msi/*.msi
           if-no-files-found: error
-      - name: Publish to release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            desktop/src-tauri/target/${{ matrix.arch == 'aarch64' && 'aarch64-pc-windows-msvc' || 'x86_64-pc-windows-msvc' }}/release/bundle/nsis/*.exe
-            desktop/src-tauri/target/${{ matrix.arch == 'aarch64' && 'aarch64-pc-windows-msvc' || 'x86_64-pc-windows-msvc' }}/release/bundle/msi/*.msi
-          fail_on_unmatched_files: false
 
   build-linux:
     strategy:
@@ -113,12 +97,88 @@ jobs:
           name: golosloom-linux-${{ matrix.arch }}
           path: desktop/src-tauri/target/release/bundle/**
           if-no-files-found: error
-      - name: Publish to release
-        if: startsWith(github.ref, 'refs/tags/')
+
+  # Публикация релиза и метаданных обновления: скачивает все сборки,
+  # подписывает установщики и формирует latest.json для автообновления.
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build-macos, build-windows, build-linux]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+        working-directory: desktop
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: false
+      - name: Build latest.json script
+        run: |
+          cat > /tmp/make_latest.py <<'PYEOF'
+          import base64, datetime, glob, json, os, urllib.parse
+
+          tag = os.environ['GITHUB_REF_NAME']
+          base = f'https://github.com/grendervilll/golosloom/releases/download/{tag}'
+
+          def entry(pattern):
+              paths = glob.glob('artifacts/' + pattern)
+              if not paths:
+                  return None
+              path = sorted(paths)[0]
+              sig = open(path + '.sig').read().strip()
+              return {'signature': sig, 'url': base + '/' + urllib.parse.quote(os.path.basename(path))}
+
+          platforms = {}
+          for name, pattern in [
+              ('darwin-aarch64', '*/*.dmg'),
+              ('windows-x86_64', '*x86_64*/nsis/*.exe'),
+              ('windows-aarch64', '*aarch64*/nsis/*.exe'),
+              ('linux-x86_64', '*x86_64*/appimage/*.AppImage'),
+              ('linux-aarch64', '*aarch64*/appimage/*.AppImage'),
+          ]:
+              e = entry(pattern)
+              if e:
+                  platforms[name] = e
+
+          latest = {
+              'version': tag.lstrip('v'),
+              'notes': '',
+              'pub_date': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+              'platforms': platforms,
+          }
+          with open('artifacts/latest.json', 'w') as f:
+              json.dump(latest, f, indent=2)
+          print('latest.json:', json.dumps(latest, indent=2))
+          PYEOF
+      - name: Sign installers and build latest.json
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          set -e
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "::error::Секрет TAURI_SIGNING_PRIVATE_KEY не задан. Добавьте его в Settings → Secrets (ключ от 'npx tauri signer generate')"
+            exit 1
+          fi
+          export TAURI_SIGNING_PRIVATE_KEY
+          cd artifacts
+          for f in $(find . -type f \( -name '*.dmg' -o -name '*.exe' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.msi' -o -name 'golosloom' \) ! -name '*.sig'); do
+            npx tauri signer sign "$f"
+          done
+          python3 /tmp/make_latest.py
+      - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            desktop/src-tauri/target/release/bundle/deb/*.deb
-            desktop/src-tauri/target/release/bundle/appimage/*.AppImage
-            desktop/src-tauri/target/release/golosloom
+            artifacts/*/*.dmg
+            artifacts/*/*.app
+            artifacts/*/*.exe
+            artifacts/*/*.msi
+            artifacts/*/*.deb
+            artifacts/*/*.AppImage
+            artifacts/*/*.sig
+            artifacts/latest.json
+            artifacts/*/golosloom
           fail_on_unmatched_files: false
