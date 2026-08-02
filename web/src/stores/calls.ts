@@ -231,6 +231,10 @@ export const useCallStore = defineStore('calls', {
       // markRaw: Room (и его объекты) не должны оборачиваться в реактивные
       // Proxy — иначе SDK ломается (DataCloneError при structuredClone).
       this.room = markRaw(room)
+      // Диагностический экспорт для E2E-инструментовки.
+      if (typeof window !== 'undefined') {
+        ;(window as any).__golosloomRoom = room
+      }
       this.connectedCallId = callId
       // Микрофон включается автоматически при вызове, камера — нет.
       // Отказ микрофона (нет разрешения) НЕ должен обрывать звонок.
