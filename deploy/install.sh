@@ -472,6 +472,67 @@ do_lockdown() {
   log "Проверка: ufw status numbered"
 }
 
+# Усиление безопасности: отключение парольного входа по SSH, fail2ban
+# (SSH + веб-логин/регистрация), автоматические обновления безопасности.
+do_harden() {
+  check_os
+  [ -f "$STATE_FILE" ] || die "Установка не найдена."
+  SSH_PORT="$(state_get ssh_port)"
+  log "Устанавливаю fail2ban и unattended-upgrades..."
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -qq
+  apt-get install -y -qq fail2ban unattended-upgrades >/dev/null
+
+  log "Отключаю парольный вход по SSH (только ключи)..."
+  mkdir -p /etc/ssh/sshd_config.d
+  cat > /etc/ssh/sshd_config.d/99-golosloom.conf <<CFG
+PasswordAuthentication no
+PermitRootLogin prohibit-password
+MaxAuthTries 3
+CFG
+  sshd -t && systemctl reload ssh || die "Ошибка конфигурации sshd — вход по паролю НЕ отключён"
+
+  log "Настраиваю автоматические обновления безопасности..."
+  cat > /etc/apt/apt.conf.d/20auto-upgrades <<CFG
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";
+CFG
+
+  log "Настраиваю fail2ban (SSH на порту $SSH_PORT + веб-логин)..."
+  mkdir -p /etc/fail2ban/filter.d
+  cat > /etc/fail2ban/filter.d/golosloom-web.conf <<'CFG'
+[Definition]
+failregex = ^\{"level":"info","ts":[0-9.]+,"logger":"http\.log\.access\.log0","msg":"handled request","request":\{.*"remote_ip":"<HOST>".*"uri":"/api/(login|register)".*"status":401
+ignoreregex =
+CFG
+  cat > /etc/fail2ban/jail.local <<CFG
+[DEFAULT]
+bantime = 3600
+findtime = 600
+maxretry = 5
+banaction = ufw
+backend = auto
+
+[sshd]
+enabled = true
+port = $SSH_PORT
+maxretry = 4
+
+[golosloom-web]
+enabled = true
+filter = golosloom-web
+logpath = $DATA_DIR/caddy/access.log
+maxretry = 5
+findtime = 300
+bantime = 7200
+CFG
+  rm -f /var/run/fail2ban/fail2ban.sock
+  systemctl enable fail2ban >/dev/null 2>&1
+  systemctl restart fail2ban
+  sleep 2
+  log "Готово: SSH-только-ключи, fail2ban (jail: sshd, golosloom-web), автообновления"
+}
+
 # -----------------------------------------------------------------------------
 # Точка входа: выбор режима при уже установленном сервере.
 # -----------------------------------------------------------------------------
@@ -486,18 +547,21 @@ main() {
     uninstall) do_uninstall ;;
     certs)     do_certs ;;
     lockdown)  do_lockdown ;;
+    harden)    do_harden ;;
     "")
       if [ -f "$STATE_FILE" ]; then
         echo "Golosloom уже установлен. Выберите действие:"
         echo "  1) Переустановить начисто (удалить файлы, базу данных и открытые порты кроме SSH)"
         echo "  2) Обновить (скачать последние изменения, без изменения баз данных и портов)"
         echo "  3) Полное удаление с сервера"
-        echo "  4) Выйти"
-        prompt_read choice "Ваш выбор [1-4]: "
+        echo "  4) Усилить безопасность (fail2ban, SSH только по ключам, автообновления)"
+        echo "  5) Выйти"
+        prompt_read choice "Ваш выбор [1-5]: "
         case "$choice" in
           1) do_reinstall ;;
           2) do_update ;;
           3) do_uninstall ;;
+          4) do_harden ;;
           *) echo "Выход"; exit 0 ;;
         esac
       else
@@ -505,7 +569,7 @@ main() {
       fi
       ;;
     *)
-      die "Неизвестный режим: $mode. Допустимо: install, reinstall, update, uninstall, certs"
+      die "Неизвестный режим: $mode. Допустимо: install, reinstall, update, uninstall, certs, lockdown, harden"
       ;;
   esac
 }
