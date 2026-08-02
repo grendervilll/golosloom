@@ -146,7 +146,7 @@ function onKeydown(e: KeyboardEvent) {
       ></textarea>
       <div class="input-row">
         <button v-if="chat.editingId" @click="chat.editingId = 0; chat.draft = ''">Отменить</button>
-        <button class="emoji-btn" title="Смайлики и GIF" @click="showPicker = !showPicker">😊</button>
+        <button class="emoji-btn" title="Смайлики и GIF" @click.stop="showPicker = !showPicker">😊</button>
         <button class="primary" @click="send">{{ chat.editingId ? 'Сохранить' : 'Отправить' }}</button>
       </div>
       <EmojiPicker
