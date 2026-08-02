@@ -73,6 +73,7 @@ async function declineInvite(id: number) {
 <template>
   <aside class="sidebar">
     <div class="server-head" @click="menuOpen = !menuOpen">
+      <img class="server-logo" src="/logo.jpg" alt="Golosloom" />
       <span class="server-name">Golosloom</span>
       <span class="chevron">{{ menuOpen ? '▲' : '▼' }}</span>
     </div>
@@ -150,8 +151,19 @@ async function declineInvite(id: number) {
   background: var(--bg3);
   cursor: pointer;
   display: flex;
-  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
   font-weight: 700;
+}
+.server-logo {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.server-name {
+  flex: 1;
 }
 .server-menu {
   display: flex;

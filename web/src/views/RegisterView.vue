@@ -58,6 +58,7 @@ async function submit() {
 <template>
   <div class="auth-wrap">
     <form class="auth-card" @submit.prevent="submit">
+      <img class="logo" src="/logo.jpg" alt="Golosloom" />
       <h1>Golosloom</h1>
       <p class="muted">Регистрация</p>
       <div class="field">
@@ -116,5 +117,16 @@ async function submit() {
 }
 .server-btn:hover {
   background: var(--bg3);
+}
+.logo {
+  width: 96px;
+  height: 96px;
+  border-radius: 24px;
+  object-fit: cover;
+  align-self: center;
+}
+.auth-card h1 {
+  text-align: center;
+  margin: 0;
 }
 </style>
