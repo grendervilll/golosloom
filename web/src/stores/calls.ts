@@ -212,7 +212,10 @@ export const useCallStore = defineStore('calls', {
           el.style.display = 'none'
           document.body.appendChild(el)
           track.attach(el)
-          el.volume = 1
+          // Громкость берётся из текущих настроек (общее выключение +
+          // индивидуальная громкость участника), а не фиксированная "1" —
+          // иначе при переподключении трека новый элемент звучал бы громко.
+          this.applySpeakersVolume()
         } catch {
           /* не фатально */
         }
