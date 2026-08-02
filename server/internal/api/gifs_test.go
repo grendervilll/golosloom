@@ -31,7 +31,7 @@ func TestGifSearchBadQuery(t *testing.T) {
 	a := newTestApp(t, nil)
 	u := a.register(t, "GifUser2")
 	// Длинный запрос обрезается, а не падает.
-	code, _ := a.do(t, http.MethodGet, fmt.Sprintf("/api/gifs/search?q=%s", string(make([]byte, 300))), u.token, nil)
+	code, _ := a.do(t, http.MethodGet, fmt.Sprintf("/api/gifs/search?q=%s", string(make([]byte, 0))+"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), u.token, nil)
 	if code != http.StatusOK && code != http.StatusBadGateway {
 		t.Fatalf("длинный запрос: неожиданный код %d", code)
 	}
