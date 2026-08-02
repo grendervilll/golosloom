@@ -70,10 +70,11 @@ func (s *Server) readPump(c *hub.Client, nick string) {
 				"user_id": c.UserID, "online": false, "nick": nick,
 			}))
 		}
-		// Если отключившийся пользователь был единственным участником звонка
-		// (например, инициатор закрыл браузер) — звонок завершается, иначе
-		// он навсегда остался бы «активным» и заблокировал новые вызовы.
-		s.endCallsIfSoleParticipant(c.UserID)
+		// Полное отключение пользователя (закрыл браузер, пропала связь):
+		// убираем его из активных звонков; звонок завершается, если в нём
+		// осталось меньше двух участников — иначе он навсегда остался бы
+		// «активным» и второй участник сидел бы в звонке в одиночестве.
+		s.removeUserFromCalls(c.UserID)
 	}()
 	c.Conn.SetReadLimit(4096)
 	_ = c.Conn.SetReadDeadline(time.Now().Add(90 * time.Second))
@@ -149,9 +150,10 @@ func (s *Server) writePump(c *hub.Client) {
 	}
 }
 
-// endCallsIfSoleParticipant завершает звонки, где отключившийся пользователь
-// был единственным участником.
-func (s *Server) endCallsIfSoleParticipant(userID int64) {
+// removeUserFromCalls убирает пользователя из всех активных звонков при
+// полном отключении (закрыл вкладку, потеря связи). Звонок завершается,
+// если участников осталось меньше двух, иначе участники оповещаются.
+func (s *Server) removeUserFromCalls(userID int64) {
 	if s.Hub.IsOnline(userID) {
 		return // есть другие подключения пользователя
 	}
@@ -160,11 +162,11 @@ func (s *Server) endCallsIfSoleParticipant(userID int64) {
 		return
 	}
 	for _, call := range calls {
-		n, err := s.Store.CallParticipantCount(call.ID)
-		if err != nil || n != 1 {
-			continue
+		_ = s.Store.RemoveCallParticipant(call.ID, userID)
+		s.maybeFinishSoloCall(&call)
+		if c2, err := s.Store.GetCall(call.ID); err == nil && c2.Status != models.CallEnded {
+			s.broadcastParticipants(call.ID)
 		}
-		s.finishCall(call, "единственный участник отключился")
 	}
 }
 

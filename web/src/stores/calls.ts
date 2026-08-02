@@ -7,7 +7,7 @@ import { useChannelsStore } from './channels'
 import { useToasts } from './toasts'
 import { sounds } from '../audio/sounds'
 import type { Call } from '../api/types'
-import { Room, RoomEvent, Track } from 'livekit-client'
+import { AudioPresets, Room, RoomEvent, Track } from 'livekit-client'
 
 export interface ActiveCall extends Call {
   incoming: boolean // мне звонят
@@ -170,7 +170,19 @@ export const useCallStore = defineStore('calls', {
         adaptiveStream: false,
         dynacast: false,
         rtcConfig,
-        audioCaptureDefaults: { noiseSuppression: settings.noiseSuppression !== 'off' },
+        // Микрофон: максимум качества (48 кГц — предел opus), моно,
+        // эхо-подавление и автоусиление всегда включены.
+        audioCaptureDefaults: {
+          echoCancellation: true,
+          autoGainControl: true,
+          noiseSuppression: settings.noiseSuppression !== 'off',
+          channelCount: 1,
+          sampleRate: 48000,
+        },
+        // Пресет кодирования речи: 96 кбит/с opus вместо стандартных 48 —
+        // заметно чище голос, не адаптивно (LiveKit-клиент не умеет
+        // подстраивать битрейт под микрофон).
+        publishDefaults: { audioPreset: AudioPresets.musicHighQuality },
         videoCaptureDefaults: { resolution: { width: 1280, height: 720 } },
       })
       // Обработчики треков регистрируем ДО connect, чтобы не пропустить ранние.

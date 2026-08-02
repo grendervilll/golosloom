@@ -91,7 +91,7 @@ func (s *Server) handleCreateCall(w http.ResponseWriter, r *http.Request) {
 		invited++
 	}
 
-	if invited == 0 && len(req.TargetIDs) > 0 {
+	if invited == 0 {
 		// Некому звонить — отменяем звонок.
 		s.finishCall(*call, "нет доступных получателей")
 		writeErr(w, http.StatusBadRequest, "нет доступных получателей вызова")
@@ -137,11 +137,30 @@ func (s *Server) autoDeclineRinging(callID int64) {
 	if !changed {
 		return
 	}
-	// Если в звонке никого не осталось — он завершается.
-	count, _ := s.Store.CallParticipantCount(callID)
-	ringingAfter, _ := s.Store.RingingInvites(callID)
-	if count == 0 && len(ringingAfter) == 0 {
-		s.finishCall(*call, "никого не осталось")
+	// Если в звонке остался один участник (или никого) и никто больше
+	// не звонит — звонок завершается.
+	s.maybeFinishSoloCall(call)
+}
+
+// maybeFinishSoloCall завершает активный звонок, в котором не осталось
+// собеседников: меньше двух участников и никто не ждёт ответа на приглашение.
+// Звонок в статусе "ringing" (ещё никто не ответил) остаётся жить —
+// приглашённые могут войти позже через «Войти в звонок».
+func (s *Server) maybeFinishSoloCall(call *models.Call) {
+	if call.Status == models.CallEnded {
+		return
+	}
+	count, _ := s.Store.CallParticipantCount(call.ID)
+	if count == 0 {
+		s.finishCall(*call, "в звонке не осталось участников")
+		return
+	}
+	if count == 1 {
+		ringing, _ := s.Store.RingingInvites(call.ID)
+		if len(ringing) > 0 || call.Status == models.CallRinging {
+			return // ждём ответа на приглашение или выхода инициатора
+		}
+		s.finishCall(*call, "в звонке остался один участник")
 	}
 }
 
@@ -272,6 +291,10 @@ func (s *Server) handleDeclineCall(w http.ResponseWriter, r *http.Request) {
 	s.Hub.SendToUser(call.InitiatorID, hub.NewEvent("call.declined", map[string]interface{}{
 		"call_id": callID, "user_id": userIDFrom(r),
 	}))
+	// Если в звонке остался один участник и больше никто не звонит —
+	// звонок бессмыслен, завершаем его (иначе инициатор сидел бы в
+	// одиночестве в вечно «активном» звонке).
+	s.maybeFinishSoloCall(call)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -333,11 +356,8 @@ func (s *Server) handleLeaveCall(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	count, _ := s.Store.CallParticipantCount(callID)
-	if count == 0 {
-		// Звонок полностью завершается, если в нём никого не осталось.
-		s.finishCall(*call, "все покинули звонок")
-	} else {
+	s.maybeFinishSoloCall(call)
+	if c2, err := s.Store.GetCall(callID); err == nil && c2.Status != models.CallEnded {
 		s.broadcastParticipants(callID)
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})

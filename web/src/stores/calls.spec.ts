@@ -31,6 +31,7 @@ vi.mock('livekit-client', () => ({
     ParticipantDisconnected: 'ParticipantDisconnected',
   },
   Track: { Kind: { Audio: 'audio', Video: 'video' }, Source: { ScreenShare: 'screen' } },
+  AudioPresets: { musicHighQuality: { maxBitrate: 96000 } },
 }))
 
 function mockApi() {
