@@ -56,8 +56,15 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "некорректный запрос")
 		return
 	}
-	u, err := s.Store.GetUserByNick(auth.NormalizeNick(req.Nick))
+	nick := auth.NormalizeNick(req.Nick)
+	// Блокировка аккаунта после серии неудачных попыток.
+	if nick != "" && s.loginLimiter.accountLocked(nick) {
+		writeErr(w, http.StatusTooManyRequests, "слишком много неудачных попыток, аккаунт заблокирован на 15 минут")
+		return
+	}
+	u, err := s.Store.GetUserByNick(nick)
 	if err != nil {
+		s.loginLimiter.recordFailure(nick)
 		writeErr(w, http.StatusUnauthorized, "неверный логин или пароль")
 		return
 	}
@@ -67,9 +74,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	hash, err := s.Store.PasswordHash(u.ID)
 	if err != nil || !auth.CheckPassword(hash, req.Password) {
+		s.loginLimiter.recordFailure(nick)
 		writeErr(w, http.StatusUnauthorized, "неверный логин или пароль")
 		return
 	}
+	s.loginLimiter.recordSuccess(nick)
 	s.issueToken(w, u.ID)
 }
 

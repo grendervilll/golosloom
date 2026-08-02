@@ -14,8 +14,12 @@ func (s *Server) Router() http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /api/config", s.handleConfig)
-	mux.HandleFunc("POST /api/register", s.handleRegister)
-	mux.HandleFunc("POST /api/login", s.handleLogin)
+	mux.HandleFunc("POST /api/register", func(w http.ResponseWriter, r *http.Request) {
+		s.registerLimiter.handle(w, r, s.handleRegister)
+	})
+	mux.HandleFunc("POST /api/login", func(w http.ResponseWriter, r *http.Request) {
+		s.loginLimiter.handle(w, r, s.handleLogin)
+	})
 	mux.HandleFunc("GET /ws", s.handleWS)
 
 	mux.HandleFunc("GET /api/me", s.requireAuth(s.handleMe))

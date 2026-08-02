@@ -14,15 +14,18 @@ import (
 )
 
 type Server struct {
-	Cfg  config.Config
+	Cfg   config.Config
 	Store *store.Store
-	Hub  *hub.Hub
+	Hub   *hub.Hub
 
-	msgMu   sync.Mutex
-	lastMsg map[string]time.Time // ключ: channel:user:hex(ct):hex(iv) -> время
-	buckets map[int64]*bucket    // rate limit сообщений на пользователя
-	punchMu sync.Mutex
+	msgMu     sync.Mutex
+	lastMsg   map[string]time.Time // ключ: channel:user:hex(ct):hex(iv) -> время
+	buckets   map[int64]*bucket    // rate limit сообщений на пользователя
+	punchMu   sync.Mutex
 	lastPunch map[string]time.Time // ключ: from:to
+
+	loginLimiter    *limiter
+	registerLimiter *limiter
 }
 
 type bucket struct {
@@ -36,12 +39,14 @@ func New(cfg config.Config, st *store.Store) *Server {
 	// (например, при падении или перезапуске сервера).
 	_ = st.EndAllActiveCalls()
 	return &Server{
-		Cfg:       cfg,
-		Store:     st,
-		Hub:       hub.New(),
-		lastMsg:   map[string]time.Time{},
-		buckets:   map[int64]*bucket{},
-		lastPunch: map[string]time.Time{},
+		Cfg:             cfg,
+		Store:           st,
+		Hub:             hub.New(),
+		lastMsg:         map[string]time.Time{},
+		loginLimiter:    newLimiter(20, 15*time.Minute, 8, 15*time.Minute),
+		registerLimiter: newLimiter(15, 15*time.Minute, 0, 0),
+		buckets:         map[int64]*bucket{},
+		lastPunch:       map[string]time.Time{},
 	}
 }
 
