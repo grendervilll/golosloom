@@ -223,7 +223,7 @@ async function declineInvite(id: number) {
   }
 }
 
-/* Мобильный режим: сайдбар — верхняя панель, каналы — горизонтальный список. */
+/* Мобильный режим: сайдбар — верхняя панель, каналы — вертикальный список. */
 @media (max-width: 900px) {
   .sidebar {
     position: relative;
@@ -249,21 +249,26 @@ async function declineInvite(id: number) {
     z-index: 95;
   }
   .channel-list {
-    flex: 1;
-    flex-direction: row;
-    overflow-x: auto;
-    padding: 0;
+    flex: 1 1 100%;
+    flex-direction: column;
+    align-items: stretch;
+    overflow-y: auto;
+    max-height: 42vh;
+    padding: 4px 2px 6px;
     min-width: 0;
   }
   .channel-item {
-    flex: 0 0 auto;
+    flex: none;
+    width: 100%;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .create-channel-btn {
-    width: auto;
-    flex: 0 0 auto;
+    width: 100%;
+    flex: none;
     margin-bottom: 0;
-    padding: 6px 10px;
+    padding: 8px 10px;
   }
   .invites {
     flex-direction: row;
