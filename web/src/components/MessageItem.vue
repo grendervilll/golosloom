@@ -24,6 +24,11 @@ const role = computed<Role>(() => {
   if (member.value?.is_server_admin) return 'server_admin'
   return member.value?.role || 'user'
 })
+// GIF-сообщения приходят как ![gif](url) — рендерим картинку.
+const gifUrl = computed(() => {
+  const m = props.msg.text.match(/!\[gif\]\((https?:\/\/[^)\s]+)\)/)
+  return m ? m[1] : ''
+})
 
 // Кнопка «⋯» открывает то же меню, что и правая кнопка мыши
 // (работает и на мобильных устройствах).
@@ -52,7 +57,8 @@ function openMore(e: MouseEvent) {
         🗑 {{ msg.text || 'Сообщение удалено' }}
       </p>
       <p v-else-if="msg.deleted" class="deleted-text">Сообщение удалено</p>
-      <p v-else class="text">{{ msg.text }}</p>
+      <p v-else-if="!gifUrl" class="text">{{ msg.text }}</p>
+      <img v-if="gifUrl" class="gif-img" :src="gifUrl" alt="GIF" loading="lazy" />
     </div>
     <button class="more-btn" title="Действия с сообщением" @click.stop="openMore($event)">⋯</button>
   </div>
@@ -82,6 +88,14 @@ function openMore(e: MouseEvent) {
 .text {
   word-break: break-word;
   white-space: pre-wrap;
+}
+.gif-img {
+  max-width: 320px;
+  max-height: 240px;
+  border-radius: 10px;
+  margin-top: 4px;
+  display: block;
+  object-fit: contain;
 }
 .encrypted,
 .deleted-text {

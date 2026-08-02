@@ -7,6 +7,7 @@ import { useChatStore, type ChatMessage } from '../stores/chat'
 import { useCallStore } from '../stores/calls'
 import { useToasts } from '../stores/toasts'
 import MessageItem from './MessageItem.vue'
+import EmojiPicker from './EmojiPicker.vue'
 
 const emit = defineEmits<{ (e: 'toggle-participants'): void; (e: 'open-invite'): void; (e: 'open-call'): void }>()
 
@@ -15,6 +16,7 @@ const channels = useChannelsStore()
 const chat = useChatStore()
 const calls = useCallStore()
 const toasts = useToasts()
+const showPicker = ref(false)
 
 const listEl = ref<HTMLElement | null>(null)
 const inputEl = ref<HTMLTextAreaElement | null>(null)
@@ -47,6 +49,25 @@ async function send() {
   chat.draft = ''
 }
 
+function insertEmoji(e: string) {
+  const el = inputEl.value
+  const start = el?.selectionStart ?? chat.draft.length
+  const end = el?.selectionEnd ?? start
+  chat.draft = chat.draft.slice(0, start) + e + chat.draft.slice(end)
+  void nextTick(() => {
+    el?.focus()
+    el?.setSelectionRange(start + e.length, start + e.length)
+  })
+}
+
+async function sendGif(url: string) {
+  showPicker.value = false
+  const ok = await chat.send(channels.currentId, '![gif](' + url + ')')
+  if (!ok) {
+    toasts.push({ kind: 'warning', text: 'Ключ канала ещё не получен, повторите позже' })
+  }
+}
+
 function startEdit(msg: ChatMessage) {
   if (msg.senderId !== auth.user?.id) return
   chat.editingId = msg.id
@@ -74,6 +95,7 @@ function openMenu(e: MouseEvent, msg: ChatMessage) {
 
 function closeMenu() {
   menu.value.msg = null
+  showPicker.value = false
 }
 
 function onKeydown(e: KeyboardEvent) {
@@ -124,8 +146,15 @@ function onKeydown(e: KeyboardEvent) {
       ></textarea>
       <div class="input-row">
         <button v-if="chat.editingId" @click="chat.editingId = 0; chat.draft = ''">Отменить</button>
+        <button class="emoji-btn" title="Смайлики и GIF" @click="showPicker = !showPicker">😊</button>
         <button class="primary" @click="send">{{ chat.editingId ? 'Сохранить' : 'Отправить' }}</button>
       </div>
+      <EmojiPicker
+        v-if="showPicker"
+        @insert="insertEmoji"
+        @send-gif="sendGif"
+        @close="showPicker = false"
+      />
     </div>
 
     <div v-if="menu.msg" class="ctx-menu" :style="{ left: menu.x + 'px', top: menu.y + 'px' }" @click.stop>
@@ -206,6 +235,7 @@ function onKeydown(e: KeyboardEvent) {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  position: relative;
 }
 .chat-input textarea {
   resize: none;
@@ -215,6 +245,18 @@ function onKeydown(e: KeyboardEvent) {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+.emoji-btn {
+  font-size: 20px;
+  line-height: 1;
+  padding: 8px 12px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.emoji-btn:hover {
+  background: var(--bg3);
 }
 .ctx-menu {
   position: fixed;

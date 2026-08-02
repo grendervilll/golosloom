@@ -169,6 +169,11 @@ export class ApiClient {
     return this.get(`/api/channels/${channelId}/keys/pending`)
   }
 
+  // --- GIF (прокси к Giphy на сервере) ---
+  gifSearch(q: string, limit = 24) {
+    return this.get(`/api/gifs/search?q=${encodeURIComponent(q)}&limit=${limit}`)
+  }
+
   // --- Сообщения ---
   listMessages(channelId: number, before = 0, limit = 50) {
     return this.get(`/api/channels/${channelId}/messages?before=${before}&limit=${limit}`)

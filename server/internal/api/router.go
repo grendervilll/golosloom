@@ -36,6 +36,7 @@ func (s *Server) Router() http.Handler {
 	// Пользователи
 	mux.HandleFunc("POST /api/users/key", s.requireAuth(s.handleUploadKey))
 	mux.HandleFunc("GET /api/users", s.requireAuth(s.handleListUsers))
+	mux.HandleFunc("GET /api/gifs/search", s.requireAuth(s.handleGifSearch))
 
 	// Каналы
 	mux.HandleFunc("POST /api/channels", s.requireAuth(s.handleCreateChannel))
