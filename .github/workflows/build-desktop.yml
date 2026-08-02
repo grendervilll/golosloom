@@ -14,8 +14,8 @@ jobs:
   build-macos:
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
       - uses: dtolnay/rust-toolchain@stable
@@ -28,7 +28,7 @@ jobs:
       # Раннер Intel, поэтому собираем для Apple Silicon явно.
       - run: npm run tauri build -- --target aarch64-apple-darwin --bundles app,dmg
         working-directory: desktop
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: golosloom-macos-aarch64
           path: |
@@ -42,8 +42,8 @@ jobs:
         arch: [x86_64, aarch64]
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
       - uses: dtolnay/rust-toolchain@stable
@@ -56,7 +56,7 @@ jobs:
       - name: Build for ${{ matrix.arch }}
         run: npm run tauri build -- --target ${{ matrix.arch == 'aarch64' && 'aarch64-pc-windows-msvc' || 'x86_64-pc-windows-msvc' }} --bundles nsis,msi
         working-directory: desktop
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: golosloom-windows-${{ matrix.arch }}
           path: |
@@ -74,8 +74,8 @@ jobs:
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
       - uses: dtolnay/rust-toolchain@stable
@@ -92,7 +92,7 @@ jobs:
       - name: Build for ${{ matrix.arch }}
         run: npm run tauri build
         working-directory: desktop
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: golosloom-linux-${{ matrix.arch }}
           path: desktop/src-tauri/target/release/bundle/**
@@ -105,13 +105,13 @@ jobs:
     needs: [build-macos, build-windows, build-linux]
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
       - run: npm ci
         working-directory: desktop
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           path: artifacts
           merge-multiple: false
@@ -163,9 +163,10 @@ jobs:
             exit 1
           fi
           export TAURI_SIGNING_PRIVATE_KEY
-          cd artifacts
-          for f in $(find . -type f \( -name '*.dmg' -o -name '*.exe' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.msi' -o -name 'golosloom' \) ! -name '*.sig'); do
-            npx tauri signer sign "$f"
+          # Ключ без пароля: явный "-p ''", иначе signer пытается спросить
+          # пароль и падает в CI (нет терминала).
+          for f in $(find artifacts -type f \( -name '*.dmg' -o -name '*.exe' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.msi' -o -name 'golosloom' \) ! -name '*.sig'); do
+            npx tauri signer sign -p "" "$f"
           done
           python3 /tmp/make_latest.py
       - name: Publish release
