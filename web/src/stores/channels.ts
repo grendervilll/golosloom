@@ -106,6 +106,12 @@ export const useChannelsStore = defineStore('channels', {
       await this.loadBanned(channelId)
       await chat.loadHistory(channelId)
       await this.syncKeys(channelId)
+      // Обновляем список звонков канала (кнопка «Войти в звонок» и пр.).
+      try {
+        await useCallStore().refresh(channelId)
+      } catch {
+        /* ignore */
+      }
     },
     // Забаненные участники канала (для разбана).
     async loadBanned(channelId: number) {

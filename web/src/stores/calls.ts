@@ -327,8 +327,11 @@ export const useCallStore = defineStore('calls', {
     },
     // ---------- Обработка WS-событий ----------
     handleCallInvite(data: { call_id: number; channel_id: number; initiator_id: number; initiator_nick: string }) {
-      // Не даём двум вызовам звучать одновременно: если звонок уже идёт —
-      // только уведомление с коротким звуком.
+      // Не даём двум вызовам звучать одновременно.
+      // ВАЖНО: проверяем ДО добавления нового звонка в список — иначе
+      // ringingCall уже истинен и звук звонка никогда не заиграет.
+      const alreadyRinging = this.calls.some((c) => c.incoming && c.id !== data.call_id)
+      const alreadyInCall = this.currentCall
       const exists = this.calls.find((c) => c.id === data.call_id)
       if (exists) return
       this.calls.push({
@@ -344,7 +347,7 @@ export const useCallStore = defineStore('calls', {
       })
       const toasts = useToasts()
       toasts.push({ kind: 'call', text: `Вас вызывает ${data.initiator_nick}` })
-      if (!this.ringingCall && !this.currentCall) {
+      if (!alreadyRinging && !alreadyInCall) {
         sounds.playRing()
       } else {
         sounds.message()
@@ -361,12 +364,11 @@ export const useCallStore = defineStore('calls', {
       sounds.stopAll()
       if (this.connectedCallId === data.call_id) void this.disconnectRoom()
     },
-    handleCallCreated(data: { call: Call }) {
-      const exists = this.calls.find((c) => c.id === data.call.id)
-      if (!exists && data.call.initiator_id !== useAuthStore().user?.id) {
-        // Звонок создан кем-то, но меня не пригласили — не показываем.
-        return
-      }
+    handleCallCreated() {
+      // Обновляем список звонков канала (для кнопки «Войти в звонок»):
+      // refresh возвращает только звонки, куда пользователь приглашён/участвует.
+      const channels = useChannelsStore()
+      if (channels.currentId) void this.refresh(channels.currentId)
     },
     handlePunch(data: { by_nick: string }) {
       const toasts = useToasts()
