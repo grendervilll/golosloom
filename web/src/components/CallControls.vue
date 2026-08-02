@@ -67,7 +67,7 @@ async function leave() {
           {{ q }}
         </button>
       </div>
-      <button :class="{ active: !settings.mutedOthers }" title="Звук от других пользователей" @click="settings.setMutedOthers(!settings.mutedOthers)">
+      <button :class="{ active: !settings.mutedOthers }" title="Звук от других пользователей" @click="calls.setSpeakersMuted(!settings.mutedOthers)">
         🔇 {{ settings.mutedOthers ? 'Звук выкл' : 'Звук вкл' }}
       </button>
       <button :class="{ active: showAudio }" title="Микрофон и шумоподавление" @click="showAudio = !showAudio">

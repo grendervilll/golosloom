@@ -212,7 +212,7 @@ export const useCallStore = defineStore('calls', {
           el.style.display = 'none'
           document.body.appendChild(el)
           track.attach(el)
-          el.volume = settings.mutedOthers ? 0 : 1
+          el.volume = 1
         } catch {
           /* не фатально */
         }
@@ -252,6 +252,8 @@ export const useCallStore = defineStore('calls', {
         ;(window as any).__golosloomRoom = room
       }
       this.connectedCallId = callId
+      // Применяем сохранённые настройки громкости (в т.ч. выключение звука).
+      this.applySpeakersVolume()
       // Микрофон включается автоматически при вызове, камера — нет.
       // Отказ микрофона (нет разрешения) НЕ должен обрывать звонок.
       this.micOn = false
@@ -345,25 +347,40 @@ export const useCallStore = defineStore('calls', {
       auth.ws.send('call.punch', { call_id: call.id, target_user_id: targetUserId })
     },
     // Громкость конкретного участника (сохраняется и применяется к его трекам).
-    // Identity участника в LiveKit имеет вид "userID:deviceID" — ищем по префиксу.
     async setParticipantVolume(userId: number, volume: number) {
       const settings = useSettingsStore()
       settings.setVolume(userId, volume)
+      this.applySpeakersVolume()
+    },
+    // Выключение/включение звука от всех собеседников (только их микрофоны;
+    // системные звуки и другие приложения не затрагиваются).
+    setSpeakersMuted(muted: boolean) {
+      const settings = useSettingsStore()
+      settings.setMutedOthers(muted)
+      this.applySpeakersVolume()
+    },
+    // Применяет громкость ко всем аудио-трекам собеседников: общее
+    // выключение звука + индивидуальная громкость каждого участника.
+    applySpeakersVolume() {
       if (!this.room) return
-      const p = this.room.remoteParticipants.get(String(userId))
-      let participant = p
-      if (!participant) {
-        for (const rp of this.room.remoteParticipants.values()) {
-          if (rp.identity.split(':')[0] === String(userId)) {
-            participant = rp
-            break
+      const settings = useSettingsStore()
+      for (const p of this.room.remoteParticipants.values()) {
+        const uid = Number(p.identity.split(':')[0])
+        const vol = settings.volumes[uid]
+        const target = settings.mutedOthers ? 0 : vol !== undefined ? vol / 100 : 1
+        for (const pub of p.audioTrackPublications.values()) {
+          if (!pub.track) continue
+          const track = pub.track as any
+          try {
+            if (typeof track.setVolume === 'function') {
+              track.setVolume(target)
+            }
+            for (const el of track.attachedElements || []) {
+              el.volume = target
+            }
+          } catch {
+            /* ignore */
           }
-        }
-      }
-      if (!participant) return
-      for (const pub of participant.audioTrackPublications.values()) {
-        if (pub.track && typeof (pub.track as any).setVolume === 'function') {
-          ;(pub.track as any).setVolume(settings.mutedOthers ? 0 : volume / 100)
         }
       }
     },
