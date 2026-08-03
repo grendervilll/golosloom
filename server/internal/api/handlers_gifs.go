@@ -3,12 +3,26 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"time"
 )
+
+// Клиент с принудительным IPv4: в контейнере DNS может отдавать IPv6 первым,
+// а IPv6-маршрут отсутствует — Go-клиент вис бы на нём до таймаута.
+var gifHTTP = &http.Client{
+	Timeout: 15 * time.Second,
+	Transport: &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return (&net.Dialer{Timeout: 8 * time.Second}).DialContext(ctx, "tcp4", addr)
+		},
+		TLSHandshakeTimeout: 8 * time.Second,
+	},
+}
 
 type gifResult struct {
 	URL     string `json:"url"`
@@ -39,8 +53,7 @@ func (s *Server) handleGifSearch(w http.ResponseWriter, r *http.Request) {
 }
 
 func giphyGet(url string, out interface{}) error {
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Get(url)
+	resp, err := gifHTTP.Get(url)
 	if err != nil {
 		return fmt.Errorf("не удалось обратиться к GIF-провайдеру")
 	}
