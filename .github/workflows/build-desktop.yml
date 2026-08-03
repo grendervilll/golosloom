@@ -164,9 +164,10 @@ jobs:
           fi
           export TAURI_SIGNING_PRIVATE_KEY
           # Ключ без пароля: явный "-p ''", иначе signer пытается спросить
-          # пароль и падает в CI (нет терминала).
-          for f in $(find artifacts -type f \( -name '*.dmg' -o -name '*.exe' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.msi' -o -name 'golosloom' \) ! -name '*.sig'); do
-            npx tauri signer sign -p "" "$f"
+          # пароль и падает в CI (нет терминала). CLI живёт в desktop/node_modules,
+          # поэтому npx запускаем из каталога desktop (пути к файлам — абсолютные).
+          for f in $(find "$GITHUB_WORKSPACE/artifacts" -type f \( -name '*.dmg' -o -name '*.exe' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.msi' -o -name 'golosloom' \) ! -name '*.sig'); do
+            (cd "$GITHUB_WORKSPACE/desktop" && npx tauri signer sign -p "" "$f")
           done
           python3 /tmp/make_latest.py
       - name: Publish release
