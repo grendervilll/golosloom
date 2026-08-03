@@ -124,7 +124,9 @@ jobs:
           base = f'https://github.com/grendervilll/golosloom/releases/download/{tag}'
 
           def entry(pattern):
-              paths = glob.glob('artifacts/' + pattern)
+              # recursive=True + '**': установщики лежат с сохранением
+              # каталогов артефактов (dmg/, nsis/, appimage/) — на любой глубине
+              paths = glob.glob('artifacts/' + pattern, recursive=True)
               if not paths:
                   return None
               path = sorted(paths)[0]
@@ -133,11 +135,11 @@ jobs:
 
           platforms = {}
           for name, pattern in [
-              ('darwin-aarch64', '*/*.dmg'),
-              ('windows-x86_64', '*x86_64*/nsis/*.exe'),
-              ('windows-aarch64', '*aarch64*/nsis/*.exe'),
-              ('linux-x86_64', '*x86_64*/appimage/*.AppImage'),
-              ('linux-aarch64', '*aarch64*/appimage/*.AppImage'),
+              ('darwin-aarch64', '**/*.dmg'),
+              ('windows-x86_64', '**/*x64-setup.exe'),
+              ('windows-aarch64', '**/*arm64-setup.exe'),
+              ('linux-x86_64', '**/*amd64.AppImage'),
+              ('linux-aarch64', '**/*aarch64.AppImage'),
           ]:
               e = entry(pattern)
               if e:
