@@ -91,7 +91,7 @@ function toggleChat() {
     <AdminPanel v-if="showAdmin" @close="showAdmin = false" />
     <SettingsModal v-if="showSettings" @close="showSettings = false" />
     <InviteModal v-if="showInvite" @close="showInvite = false" />
-    <RegistrationInviteModal v-if="showRegInvite" @close="showRegInvite = false" />
+    <RegistrationInviteModal v-if="showRegInvite" :channel-id="channels.currentId" @close="showRegInvite = false" />
     <CallModal v-if="showCallPicker" @close="showCallPicker = false" />
     <ServerUrlModal v-if="showServerUrl" @close="showServerUrl = false" />
     <UpdateModal />

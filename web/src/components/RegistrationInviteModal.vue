@@ -6,17 +6,19 @@ import { useSettingsStore } from '../stores/settings'
 import { useToasts } from '../stores/toasts'
 
 const emit = defineEmits<{ (e: 'close'): void }>()
+// Текущий канал: зарегистрировавшийся по ссылке сразу получит к нему доступ.
+const props = defineProps<{ channelId?: number }>()
 
 const settings = useSettingsStore()
 const link = ref('')
 const busy = ref(false)
 const error = ref('')
 
-async function create(channelId?: number) {
+async function create() {
   busy.value = true
   error.value = ''
   try {
-    const res = await settings.api.createRegistrationInvite(channelId)
+    const res = await settings.api.createRegistrationInvite(props.channelId)
     const url = new URL(window.location.href)
     url.hash = '#/register?invite=' + res.token
     link.value = url.toString()
@@ -48,7 +50,7 @@ async function copy() {
         <button class="primary" @click="copy">Копировать</button>
       </div>
       <div class="row">
-        <button v-if="!link" class="primary" :disabled="busy" @click="create(undefined)">Создать ссылку</button>
+        <button v-if="!link" class="primary" :disabled="busy" @click="create">Создать ссылку</button>
         <button v-if="!link" :disabled="busy" @click="emit('close')">Закрыть</button>
         <button v-else @click="emit('close')">Готово</button>
       </div>
