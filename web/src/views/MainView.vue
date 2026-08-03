@@ -29,6 +29,7 @@ const settings = useSettingsStore()
 const showAdmin = ref(false)
 const showSettings = ref(false)
 const showInvite = ref(false)
+const showRegInvite = ref(false)
 const showCallPicker = ref(false)
 const showServerUrl = ref(false)
 const showParticipants = ref(false)
@@ -55,6 +56,7 @@ function toggleChat() {
     <ChannelSidebar
       :key="channels.currentId"
       @open-invite="showInvite = true"
+      @open-reg-invite="showRegInvite = true"
       @open-call="showCallPicker = true"
       @toggle-chat="toggleChat"
       @logout="logout"
@@ -69,8 +71,9 @@ function toggleChat() {
       <ChatPanel
         v-if="!chatHidden"
         :class="{ 'in-call': inCall }"
-        @toggle-participants="showParticipants = true"
+        @toggle-participants="showParticipants = !showParticipants"
         @open-invite="showInvite = true"
+      @open-reg-invite="showRegInvite = true"
         @open-call="showCallPicker = true"
       />
       <div v-else class="empty-chat muted">Чат скрыт</div>
@@ -88,6 +91,7 @@ function toggleChat() {
     <AdminPanel v-if="showAdmin" @close="showAdmin = false" />
     <SettingsModal v-if="showSettings" @close="showSettings = false" />
     <InviteModal v-if="showInvite" @close="showInvite = false" />
+    <RegistrationInviteModal v-if="showRegInvite" @close="showRegInvite = false" />
     <CallModal v-if="showCallPicker" @close="showCallPicker = false" />
     <ServerUrlModal v-if="showServerUrl" @close="showServerUrl = false" />
     <UpdateModal />

@@ -9,7 +9,7 @@ import { useToasts } from '../stores/toasts'
 import MessageItem from './MessageItem.vue'
 import EmojiPicker from './EmojiPicker.vue'
 
-const emit = defineEmits<{ (e: 'toggle-participants'): void; (e: 'open-invite'): void; (e: 'open-call'): void }>()
+const emit = defineEmits<{ (e: 'toggle-participants'): void; (e: 'open-invite'): void; (e: 'open-call'): void; (e: 'open-reg-invite'): void }>()
 
 const auth = useAuthStore()
 const channels = useChannelsStore()
@@ -25,6 +25,10 @@ const menu = ref({ x: 0, y: 0, msg: null as ChatMessage | null })
 const messages = computed(() => chat.messages.get(channels.currentId) || [])
 const channelName = computed(() => channels.current?.name || '')
 const canModerate = computed(() => chat.canSeeDeleted())
+// Приглашение на регистрацию — только админ сервера или админ канала.
+const canCreateRegInvite = computed(
+  () => auth.isServerAdmin || channels.currentRole === 'channel_admin',
+)
 
 async function scrollBottom() {
   await nextTick()
@@ -119,6 +123,14 @@ function onKeydown(e: KeyboardEvent) {
         @click="emit('open-invite')"
       >
         🔗 Пригласить
+      </button>
+      <button
+        v-if="canCreateRegInvite"
+        class="invite-btn reg-invite-btn"
+        title="Одноразовая ссылка на регистрацию (5 минут)"
+        @click="emit('open-reg-invite')"
+      >
+        ✉️ Пригласить зарегистрироваться
       </button>
       <button v-if="!calls.inCall" class="invite-btn" title="Позвонить участникам канала" @click="emit('open-call')">
         📞 Позвонить
@@ -257,6 +269,10 @@ function onKeydown(e: KeyboardEvent) {
 }
 .emoji-btn:hover {
   background: var(--bg3);
+}
+.reg-invite-btn {
+  color: var(--accent, #5865f2);
+  border-color: var(--accent, #5865f2);
 }
 .ctx-menu {
   position: fixed;

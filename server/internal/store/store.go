@@ -244,6 +244,15 @@ CREATE TABLE IF NOT EXISTS settings (
 	key TEXT PRIMARY KEY,
 	value TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS registration_invites (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	token TEXT NOT NULL UNIQUE,
+	channel_id INTEGER,
+	created_by INTEGER NOT NULL,
+	created_at TEXT NOT NULL,
+	expires_at TEXT NOT NULL,
+	used_at TEXT
+);
 CREATE INDEX IF NOT EXISTS idx_messages_channel ON messages(channel_id, id);
 CREATE INDEX IF NOT EXISTS idx_invites_user ON channel_invites(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_call_invites_user ON call_invites(user_id, status);
@@ -291,6 +300,58 @@ func (s *Store) IsRegistrationEnabled() bool {
 
 func (s *Store) SetRegistrationEnabled(enabled bool) error {
 	return s.SetSetting(settingRegistration, fmt.Sprintf("%t", enabled))
+}
+
+// ---------- Приглашения на регистрацию ----------
+
+const RegistrationInviteTTL = 5 * time.Minute
+
+// CreateRegistrationInvite создаёт одноразовое приглашение на регистрацию,
+// действующее 5 минут. channelID — канал, в который новый пользователь
+// получит доступ сразу после регистрации (если задан).
+func (s *Store) CreateRegistrationInvite(token string, channelID *int64, createdBy int64) error {
+	expires := time.Now().UTC().Add(RegistrationInviteTTL).Format(time.RFC3339Nano)
+	var ch interface{}
+	if channelID != nil {
+		ch = *channelID
+	}
+	_, err := s.db.Exec(
+		`INSERT INTO registration_invites (token, channel_id, created_by, created_at, expires_at) VALUES (?, ?, ?, ?, ?)`,
+		token, ch, createdBy, now(), expires,
+	)
+	return err
+}
+
+// ErrInviteInvalid — приглашение недействительно (нет/использовано/истекло).
+var ErrInviteInvalid = errors.New("приглашение недействительно или истекло")
+
+// ConsumeRegistrationInvite проверяет и помечает приглашение использованным;
+// возвращает канал для автоматического доступа (может быть nil).
+func (s *Store) ConsumeRegistrationInvite(token string) (*int64, error) {
+	var channelID sql.NullInt64
+	var usedAt sql.NullString
+	var expiresAt string
+	err := s.db.QueryRow(
+		`SELECT channel_id, used_at, expires_at FROM registration_invites WHERE token = ?`, token,
+	).Scan(&channelID, &usedAt, &expiresAt)
+	if err != nil {
+		return nil, ErrInviteInvalid
+	}
+	if usedAt.Valid {
+		return nil, ErrInviteInvalid
+	}
+	expires, err := parseTime(expiresAt)
+	if err != nil || time.Now().UTC().After(expires) {
+		return nil, ErrInviteInvalid
+	}
+	if _, err := s.db.Exec(`UPDATE registration_invites SET used_at = ? WHERE token = ? AND used_at IS NULL`, now(), token); err != nil {
+		return nil, err
+	}
+	if !channelID.Valid {
+		return nil, nil
+	}
+	id := channelID.Int64
+	return &id, nil
 }
 
 func (s *Store) GetSetting(key string) (string, error) {

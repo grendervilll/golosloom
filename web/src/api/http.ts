@@ -79,6 +79,17 @@ export class ApiClient {
   adminStats() {
     return this.get('/api/admin/stats')
   }
+  adminGetRegistration() {
+    return this.get('/api/admin/settings/registration')
+  }
+  adminSetRegistration(enabled: boolean) {
+    return this.post('/api/admin/settings/registration', { enabled })
+  }
+  // Приглашение на регистрацию (одноразовое, 5 минут). channelId —
+  // канал, доступ к которому получит зарегистрировавшийся.
+  createRegistrationInvite(channelId?: number) {
+    return this.post('/api/registration/invites', channelId ? { channel_id: channelId } : {})
+  }
   // Скачивание бэкапа базы данных (бинарный файл).
   async adminBackup(): Promise<Blob> {
     const headers: Record<string, string> = {}
@@ -104,8 +115,8 @@ export class ApiClient {
   }
 
   // --- Аутентификация ---
-  register(nick: string, password: string) {
-    return this.post('/api/register', { nick, password })
+  register(nick: string, password: string, invite?: string) {
+    return this.post('/api/register', { nick, password, invite: invite || undefined })
   }
   login(nick: string, password: string) {
     return this.post('/api/login', { nick, password })
@@ -257,9 +268,6 @@ export class ApiClient {
   }
   adminServerUnban(userId: number) {
     return this.delete(`/api/admin/users/${userId}/server-ban`)
-  }
-  adminSetRegistration(enabled: boolean) {
-    return this.post('/api/admin/settings/registration', { enabled })
   }
   adminListChannels() {
     return this.get('/api/admin/channels')

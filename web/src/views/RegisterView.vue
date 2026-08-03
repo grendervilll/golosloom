@@ -16,11 +16,18 @@ const settings = useSettingsStore()
 const nick = ref('')
 const password = ref('')
 const confirm = ref('')
+const invite = ref('')
 const error = ref('')
 const busy = ref(false)
 const showServerUrl = ref(!settings.hasServer)
 
 const passwordProblem = computed(() => (password.value ? validatePassword(password.value) : null))
+
+// Код приглашения из ссылки: https://.../#/register?invite=TOKEN
+{
+  const m = window.location.hash.match(/invite=([a-f0-9]+)/i)
+  if (m) invite.value = m[1]
+}
 
 async function submit() {
   error.value = ''
@@ -44,7 +51,7 @@ async function submit() {
   }
   busy.value = true
   try {
-    await auth.register(nick.value.trim(), password.value)
+    await auth.register(nick.value.trim(), password.value, invite.value.trim() || undefined)
     router.push('/')
     await channels.init().catch(() => undefined)
   } catch (e: any) {
@@ -67,13 +74,17 @@ async function submit() {
       </div>
       <div class="field">
         <label>Пароль</label>
-        <input v-model="password" type="password" autocomplete="new-password" placeholder="Пароль" />
-        <p class="hint-text">{{ PASSWORD_HINT }}</p>
+        <input v-model="password" type="password" autocomplete="new-password" placeholder="Пароль" />        <p class="hint-text">{{ PASSWORD_HINT }}</p>
         <p v-if="passwordProblem" class="error-text">{{ passwordProblem }}</p>
       </div>
       <div class="field">
         <label>Повторите пароль</label>
         <input v-model="confirm" type="password" autocomplete="new-password" placeholder="Ещё раз" />
+      </div>
+      <div class="field">
+        <label>Код приглашения</label>
+        <input v-model="invite" placeholder="Код из приглашения (если есть)" />
+        <p class="hint-text">Если регистрация на сервере запрещена — нужен одноразовый код, действует 5 минут.</p>
       </div>
       <div v-if="error" class="error-text">{{ error }}</div>
       <button class="primary" type="submit" :disabled="busy">Зарегистрироваться</button>

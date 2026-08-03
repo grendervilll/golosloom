@@ -35,6 +35,16 @@ async function loadStats() {
   }
 }
 
+// Текущий статус регистрации загружается с сервера (запоминается).
+async function loadRegistrationStatus() {
+  try {
+    const res = await useSettingsStore().api.adminGetRegistration()
+    registrationEnabled.value = !!res?.enabled
+  } catch {
+    /* ignore */
+  }
+}
+
 async function downloadBackup() {
   busy.value = true
   try {
@@ -73,6 +83,7 @@ async function restoreBackup(e: Event) {
 onMounted(() => {
   if (useAuthStore().isServerAdmin) {
     void loadStats()
+    void loadRegistrationStatus()
     statsTimer = window.setInterval(() => void loadStats(), 15000)
   }
 })
@@ -237,8 +248,17 @@ async function toggleBan(u: any) {
 }
 
 async function toggleRegistration() {
-  await settings.api.adminSetRegistration(registrationEnabled.value)
-  toasts.push({ kind: 'info', text: registrationEnabled.value ? 'Регистрация включена' : 'Регистрация запрещена' })
+  busy.value = true
+  try {
+    const next = !registrationEnabled.value
+    await settings.api.adminSetRegistration(next)
+    registrationEnabled.value = next
+    toasts.push({ kind: 'info', text: next ? 'Регистрация разрешена' : 'Регистрация запрещена' })
+  } catch (e: any) {
+    toasts.push({ kind: 'error', text: 'Не удалось изменить: ' + String(e?.message || e).slice(0, 120) })
+  } finally {
+    busy.value = false
+  }
 }
 
 function copyId(u: any) {
@@ -289,10 +309,14 @@ function copyId(u: any) {
 
       <div v-if="tab === 'users'">
         <div class="reg-toggle">
-          <label class="check">
-            <input v-model="registrationEnabled" type="checkbox" @change="toggleRegistration" />
-            Разрешить регистрацию новых пользователей
-          </label>
+          <span class="reg-status" :class="registrationEnabled ? 'ok' : 'no'">
+            <span class="dot"></span>
+            {{ registrationEnabled ? 'Разрешено' : 'Запрещено' }}
+          </span>
+          <button class="primary" :disabled="busy" @click="toggleRegistration">
+            {{ registrationEnabled ? 'Запретить регистрацию' : 'Разрешить регистрацию' }}
+          </button>
+          <p class="muted small">Когда регистрация запрещена, новые пользователи входят только по одноразовому приглашению (действует 5 минут).</p>
         </div>
 
         <div class="create-user frame">
@@ -438,6 +462,39 @@ function copyId(u: any) {
 }
 .btn-file input {
   display: none;
+}
+.reg-toggle {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.reg-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  font-size: 14px;
+}
+.reg-status .dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+.reg-status.ok {
+  color: #4ade80;
+}
+.reg-status.ok .dot {
+  background: #22c55e;
+  box-shadow: 0 0 6px #22c55e;
+}
+.reg-status.no {
+  color: #f87171;
+}
+.reg-status.no .dot {
+  background: #ef4444;
+  box-shadow: 0 0 6px #ef4444;
 }
 .row {
   display: flex;

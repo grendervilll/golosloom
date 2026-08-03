@@ -1,17 +1,21 @@
 package api
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"net/http"
 	"strconv"
 
 	"golosloom/server/internal/auth"
 	"golosloom/server/internal/hub"
+	"golosloom/server/internal/models"
 	"golosloom/server/internal/store"
 )
 
 type registerReq struct {
 	Nick     string `json:"nick"`
 	Password string `json:"password"`
+	Invite   string `json:"invite"`
 }
 
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
@@ -29,9 +33,20 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	// Если регистрация запрещена — она доступна только по одноразовому
+	// приглашению (действует 5 минут). Приглашение может давать доступ к каналу.
+	var inviteChannel *int64
 	if !s.Store.IsRegistrationEnabled() {
-		writeErr(w, http.StatusForbidden, "регистрация новых пользователей запрещена админом сервера")
-		return
+		if req.Invite == "" {
+			writeErr(w, http.StatusForbidden, "регистрация новых пользователей запрещена — нужен код приглашения")
+			return
+		}
+		ch, err := s.Store.ConsumeRegistrationInvite(req.Invite)
+		if err != nil {
+			writeErr(w, http.StatusForbidden, "приглашение недействительно или истекло (действует 5 минут)")
+			return
+		}
+		inviteChannel = ch
 	}
 	hash, err := auth.HashPassword(req.Password)
 	if err != nil {
@@ -46,6 +61,11 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		}
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	// Автоматический доступ к каналу, указанному в приглашении
+	// (в т.ч. к приватному: членство даёт доступ).
+	if inviteChannel != nil {
+		_ = s.Store.AddMember(*inviteChannel, u.ID, models.RoleUser)
 	}
 	s.issueToken(w, u.ID)
 }
@@ -206,6 +226,59 @@ func (s *Server) handleAdminSetRegistration(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleAdminGetRegistration(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]bool{"enabled": s.Store.IsRegistrationEnabled()})
+}
+
+type createRegInviteReq struct {
+	ChannelID *int64 `json:"channel_id"`
+}
+
+// handleCreateRegistrationInvite создаёт одноразовое приглашение на
+// регистрацию (5 минут). Право: админ сервера (без канала или для любого),
+// админ канала — приглашение для своего канала.
+func (s *Server) handleCreateRegistrationInvite(w http.ResponseWriter, r *http.Request) {
+	var req createRegInviteReq
+	if err := readJSON(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, "некорректный запрос")
+		return
+	}
+	u, err := s.Store.GetUserByID(userIDFrom(r))
+	if err != nil {
+		writeErr(w, http.StatusUnauthorized, "пользователь не найден")
+		return
+	}
+	var channelID *int64
+	if req.ChannelID != nil && *req.ChannelID > 0 {
+		if !u.IsServerAdmin {
+			m, err := s.Store.GetMember(*req.ChannelID, u.ID)
+			if err != nil || m.Role != models.RoleChannelAdmin {
+				writeErr(w, http.StatusForbidden, "приглашение может создать админ сервера или админ канала")
+				return
+			}
+		}
+		channelID = req.ChannelID
+	} else if !u.IsServerAdmin {
+		writeErr(w, http.StatusForbidden, "приглашение может создать админ сервера или админ канала")
+		return
+	}
+	token := make([]byte, 16)
+	if _, err := rand.Read(token); err != nil {
+		writeErr(w, http.StatusInternalServerError, "ошибка генерации приглашения")
+		return
+	}
+	t := hex.EncodeToString(token)
+	if err := s.Store.CreateRegistrationInvite(t, channelID, u.ID); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"token":      t,
+		"expires_in": int(store.RegistrationInviteTTL.Seconds()),
+		"channel_id": channelID,
+	})
 }
 
 func (s *Server) handleUploadKey(w http.ResponseWriter, r *http.Request) {

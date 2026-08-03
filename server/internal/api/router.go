@@ -34,6 +34,8 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("POST /api/admin/users/{id}/server-ban", s.requireServerAdmin(s.handleAdminServerBan))
 	mux.HandleFunc("DELETE /api/admin/users/{id}/server-ban", s.requireServerAdmin(s.handleAdminServerUnban))
 	mux.HandleFunc("POST /api/admin/settings/registration", s.requireServerAdmin(s.handleAdminSetRegistration))
+	mux.HandleFunc("GET /api/admin/settings/registration", s.requireServerAdmin(s.handleAdminGetRegistration))
+	mux.HandleFunc("POST /api/registration/invites", s.requireAuth(s.handleCreateRegistrationInvite))
 	mux.HandleFunc("GET /api/admin/channels", s.requireServerAdmin(s.handleAdminListChannels))
 
 	// Пользователи
@@ -91,8 +93,8 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"ws_path":       "/ws",
-		"livekit_url":   s.Cfg.LiveKitURL,
+		"ws_path":         "/ws",
+		"livekit_url":     s.Cfg.LiveKitURL,
 		"max_message_len": s.Cfg.MaxMessageLen,
 		"turn": map[string]interface{}{
 			"urls":       s.Cfg.TurnURLs,
@@ -169,13 +171,13 @@ func (s *Server) handleAdminListUsers(w http.ResponseWriter, r *http.Request) {
 	out := make([]map[string]interface{}, 0, len(users))
 	for _, u := range users {
 		out = append(out, map[string]interface{}{
-			"id":              u.ID,
-			"nick":            u.Nick,
-			"is_server_admin": u.IsServerAdmin,
-			"server_banned":   u.ServerBanned,
+			"id":                u.ID,
+			"nick":              u.Nick,
+			"is_server_admin":   u.IsServerAdmin,
+			"server_banned":     u.ServerBanned,
 			"server_ban_reason": u.ServerBanReason,
-			"online":          s.Hub.IsOnline(u.ID),
-			"created_at":      u.CreatedAt,
+			"online":            s.Hub.IsOnline(u.ID),
+			"created_at":        u.CreatedAt,
 		})
 	}
 	writeJSON(w, http.StatusOK, out)

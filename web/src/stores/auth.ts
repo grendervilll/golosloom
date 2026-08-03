@@ -30,9 +30,9 @@ export const useAuthStore = defineStore('auth', {
       await this.fetchMe()
       this.connectWs()
     },
-    async register(nick: string, password: string): Promise<void> {
+    async register(nick: string, password: string, invite?: string): Promise<void> {
       const settings = useSettingsStore()
-      const res = await settings.api.register(nick, password)
+      const res = await settings.api.register(nick, password, invite)
       if (!res || typeof res.token !== 'string') {
         throw new Error('Некорректный ответ сервера — проверьте адрес сервера')
       }
