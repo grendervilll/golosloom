@@ -170,17 +170,15 @@ jobs:
             (cd "$GITHUB_WORKSPACE/desktop" && npx tauri signer sign -p "" "$f")
           done
           python3 /tmp/make_latest.py
+          # Плющим всё в одну плоскую папку — публикация простым глобом
+          # (вложенные nsis/appimage-каталоги глобами не ловились).
+          mkdir -p "$GITHUB_WORKSPACE/release-files"
+          find "$GITHUB_WORKSPACE/artifacts" -type f \( -name '*.dmg' -o -name '*.exe' -o -name '*.msi' -o -name '*.deb' -o -name '*.AppImage' -o -name '*.sig' -o -name 'golosloom' \) -exec cp {} "$GITHUB_WORKSPACE/release-files/" \;
+          cp "$GITHUB_WORKSPACE/artifacts/latest.json" "$GITHUB_WORKSPACE/release-files/"
+          echo "=== файлы к публикации:"
+          ls -la "$GITHUB_WORKSPACE/release-files/"
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            artifacts/*/*.dmg
-            artifacts/*/*.app
-            artifacts/*/*.exe
-            artifacts/*/*.msi
-            artifacts/*/*.deb
-            artifacts/*/*.AppImage
-            artifacts/*/*.sig
-            artifacts/latest.json
-            artifacts/*/golosloom
+          files: release-files/**
           fail_on_unmatched_files: false
