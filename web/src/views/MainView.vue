@@ -17,6 +17,7 @@ import AdminPanel from '../components/AdminPanel.vue'
 import SettingsModal from '../components/SettingsModal.vue'
 import ServerUrlModal from '../components/ServerUrlModal.vue'
 import InviteModal from '../components/InviteModal.vue'
+import RegistrationInviteModal from '../components/RegistrationInviteModal.vue'
 import CallModal from '../components/CallModal.vue'
 import UpdateModal from '../components/UpdateModal.vue'
 
@@ -56,7 +57,6 @@ function toggleChat() {
     <ChannelSidebar
       :key="channels.currentId"
       @open-invite="showInvite = true"
-      @open-reg-invite="showRegInvite = true"
       @open-call="showCallPicker = true"
       @toggle-chat="toggleChat"
       @logout="logout"
