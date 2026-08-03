@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,7 +25,8 @@ var (
 )
 
 type Store struct {
-	db *sql.DB
+	db   *sql.DB
+	path string
 }
 
 func Open(path string) (*Store, error) {
@@ -43,7 +45,7 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	s := &Store{db: db}
+	s := &Store{db: db, path: path}
 	if err := s.migrate(); err != nil {
 		db.Close()
 		return nil, err
@@ -51,7 +53,95 @@ func Open(path string) (*Store, error) {
 	return s, nil
 }
 
+// RestoreFromFile заменяет рабочую базу данных файлом-снапшотом
+// (валидный SQLite-файл, например созданный VACUUM INTO).
+func (s *Store) RestoreFromFile(tmpPath string) error {
+	if s.db != nil {
+		s.db.Close()
+	}
+	if err := copyFile(tmpPath, s.path); err != nil {
+		return err
+	}
+	// Снапшот согласован — старые WAL/SHM не нужны.
+	_ = os.Remove(s.path + "-wal")
+	_ = os.Remove(s.path + "-shm")
+	db, err := sql.Open("sqlite", s.path)
+	if err != nil {
+		return err
+	}
+	db.SetMaxOpenConns(1)
+	if _, err := db.Exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;`); err != nil {
+		db.Close()
+		return err
+	}
+	s.db = db
+	return s.migrate()
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		return err
+	}
+	return out.Close()
+}
+
 func (s *Store) Close() error { return s.db.Close() }
+
+// SnapshotTo создаёт согласованный снапшот базы данных в указанный файл.
+func (s *Store) SnapshotTo(dst string) error {
+	q := strings.ReplaceAll(dst, "'", "''")
+	_, err := s.db.Exec("VACUUM INTO '" + q + "'")
+	return err
+}
+
+// CountUsers/CountChannels/CountMessages/CountCalls — общие счётчики
+// для админ-мониторинга.
+// Exec выполняет произвольный SQL (для тестов и админ-операций).
+func (s *Store) Exec(query string) (sql.Result, error) { return s.db.Exec(query) }
+
+// SetServerAdmin устанавливает/снимает флаг админа сервера.
+func (s *Store) SetServerAdmin(userID int64, admin bool) error {
+	v := 0
+	if admin {
+		v = 1
+	}
+	_, err := s.db.Exec(`UPDATE users SET is_server_admin = ? WHERE id = ?`, v, userID)
+	return err
+}
+
+func (s *Store) CountUsers() (int64, error) {
+	var n int64
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&n)
+	return n, err
+}
+
+func (s *Store) CountChannels() (int64, error) {
+	var n int64
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM channels`).Scan(&n)
+	return n, err
+}
+
+func (s *Store) CountMessages() (int64, error) {
+	var n int64
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM messages`).Scan(&n)
+	return n, err
+}
+
+func (s *Store) CountCalls() (int64, error) {
+	var n int64
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM calls`).Scan(&n)
+	return n, err
+}
 
 func now() string { return time.Now().UTC().Format(time.RFC3339Nano) }
 

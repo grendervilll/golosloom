@@ -10,6 +10,18 @@
 		output file /data/access.log
 	}
 
+	# Безопасность: HSTS, защита от XSS-поверхностей (CSP), кликджекинга,
+	# sniffing и утечек Referer. style-src с 'unsafe-inline' обязателен —
+	# Vue инжектит стили и inline-атрибуты; connect-src wss: нужен для
+	# сигналинга LiveKit; img/media https: — для GIF Klipy и медиа.
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; media-src 'self' blob: https:; connect-src 'self' wss:; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+	}
+
 	# Сигналинг LiveKit: клиент подключается к wss://домен/rtc/... напрямую
 	# (путь /rtc/* свободен, префикс резать не нужно). livekit работает на
 	# host-сети и не виден по имени в docker-сети — проксируем через host-gateway.

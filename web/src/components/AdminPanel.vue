@@ -1,10 +1,84 @@
 // Админ панель сервера: пользователи, роли, баны, регистрация, пароли, каналы.
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useSettingsStore } from '../stores/settings'
 import { useToasts } from '../stores/toasts'
 import { roleIcon } from '../utils/roles'
+
+const tab = ref<'users' | 'channels' | 'server'>('users')
+const stats = ref<Record<string, number | string>>({})
+const busy = ref(false)
+let statsTimer: number | null = null
+
+function fmtBytes(n: any): string {
+  const v = Number(n) || 0
+  if (v < 1024) return v + ' Б'
+  if (v < 1024 * 1024) return (v / 1024).toFixed(1) + ' КБ'
+  return (v / 1024 / 1024).toFixed(1) + ' МБ'
+}
+function fmtUptime(sec: any): string {
+  const s = Number(sec) || 0
+  const d = Math.floor(s / 86400)
+  const h = Math.floor((s % 86400) / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  if (d > 0) return `${d}д ${h}ч`
+  if (h > 0) return `${h}ч ${m}м`
+  return `${m}м`
+}
+
+async function loadStats() {
+  try {
+    stats.value = await useSettingsStore().api.adminStats()
+  } catch {
+    /* панель закроется — не критично */
+  }
+}
+
+async function downloadBackup() {
+  busy.value = true
+  try {
+    const blob = await useSettingsStore().api.adminBackup()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `golosloom-backup-${new Date().toISOString().slice(0, 10)}.db`
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 5000)
+  } catch (e: any) {
+    useToasts().push({ kind: 'error', text: 'Бэкап не удался: ' + String(e?.message || e).slice(0, 150) })
+  } finally {
+    busy.value = false
+  }
+}
+
+async function restoreBackup(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  if (!file) return
+  if (!window.confirm('Восстановить базу данных из файла ' + file.name + '? Текущие данные будут заменены.')) {
+    ;(e.target as HTMLInputElement).value = ''
+    return
+  }
+  busy.value = true
+  try {
+    await useSettingsStore().api.adminRestore(file)
+    useToasts().push({ kind: 'info', text: 'База восстановлена — перезагружаем страницу' })
+    setTimeout(() => window.location.reload(), 1200)
+  } catch (err: any) {
+    useToasts().push({ kind: 'error', text: 'Восстановление не удалось: ' + String(err?.message || err).slice(0, 150) })
+    busy.value = false
+  }
+}
+
+onMounted(() => {
+  if (useAuthStore().isServerAdmin) {
+    void loadStats()
+    statsTimer = window.setInterval(() => void loadStats(), 15000)
+  }
+})
+onUnmounted(() => {
+  if (statsTimer !== null) clearInterval(statsTimer)
+})
 
 const emit = defineEmits<{ (e: 'close'): void }>()
 
@@ -15,7 +89,6 @@ const toasts = useToasts()
 const users = ref<any[]>([])
 const channels = ref<any[]>([])
 const registrationEnabled = ref(true)
-const tab = ref<'users' | 'channels'>('users')
 const bannedByChannel = ref<Record<number, any[]>>({})
 const bannedOpen = ref<Record<number, boolean>>({})
 const permsOpen = ref<Record<number, boolean>>({})
@@ -181,6 +254,37 @@ function copyId(u: any) {
       <div class="tabs">
         <button :class="{ active: tab === 'users' }" @click="tab = 'users'">Пользователи</button>
         <button :class="{ active: tab === 'channels' }" @click="tab = 'channels'">Каналы</button>
+        <button :class="{ active: tab === 'server' }" @click="tab = 'server'">Сервер</button>
+      </div>
+
+      <div v-if="tab === 'server'">
+        <div class="frame">
+          <p class="section-title">Мониторинг</p>
+          <div class="stats-grid">
+            <div class="stat"><b>{{ stats.online ?? '—' }}</b><span>онлайн</span></div>
+            <div class="stat"><b>{{ stats.users ?? '—' }}</b><span>пользователей</span></div>
+            <div class="stat"><b>{{ stats.channels ?? '—' }}</b><span>каналов</span></div>
+            <div class="stat"><b>{{ stats.messages ?? '—' }}</b><span>сообщений</span></div>
+            <div class="stat"><b>{{ stats.calls ?? '—' }}</b><span>звонков</span></div>
+            <div class="stat"><b>{{ fmtBytes(stats.db_size) }}</b><span>база данных</span></div>
+            <div class="stat"><b>{{ stats.mem_mb ?? '—' }} МБ</b><span>память процесса</span></div>
+            <div class="stat"><b>{{ fmtUptime(stats.uptime_sec) }}</b><span>аптайм</span></div>
+          </div>
+          <p class="muted small">Go {{ stats.go }} · goroutines: {{ stats.goroutines }}</p>
+        </div>
+
+        <div class="frame">
+          <p class="section-title">Бэкап базы данных</p>
+          <p class="muted small">Скачайте полный бэкап (все пользователи, каналы и сообщения). Для восстановления загрузите файл бэкапа — база будет заменена, страница перезагрузится.</p>
+          <div class="row">
+            <button class="primary" :disabled="busy" @click="downloadBackup">⬇️ Скачать бэкап</button>
+            <label class="btn-file">
+              ⬆️ Восстановить из файла
+              <input type="file" accept=".db,.sqlite" :disabled="busy" @change="restoreBackup" />
+            </label>
+          </div>
+          <p v-if="busy" class="muted small">Выполняется…</p>
+        </div>
       </div>
 
       <div v-if="tab === 'users'">
@@ -296,6 +400,44 @@ function copyId(u: any) {
   color: var(--text-dim);
   font-weight: 700;
   margin-bottom: 8px;
+}
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.stat {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.stat b {
+  font-size: 16px;
+}
+.stat span {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.btn-file {
+  display: inline-block;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  background: transparent;
+  color: var(--text);
+  text-align: center;
+}
+.btn-file:hover {
+  background: var(--bg3);
+}
+.btn-file input {
+  display: none;
 }
 .row {
   display: flex;

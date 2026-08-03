@@ -25,6 +25,9 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("GET /api/me", s.requireAuth(s.handleMe))
 
 	// Админ панель сервера
+	mux.HandleFunc("GET /api/admin/stats", s.requireServerAdmin(s.handleAdminStats))
+	mux.HandleFunc("GET /api/admin/backup", s.requireServerAdmin(s.handleAdminBackup))
+	mux.HandleFunc("POST /api/admin/restore", s.requireServerAdmin(s.handleAdminRestore))
 	mux.HandleFunc("GET /api/admin/users", s.requireServerAdmin(s.handleAdminListUsers))
 	mux.HandleFunc("POST /api/admin/users", s.requireServerAdmin(s.handleAdminCreateUser))
 	mux.HandleFunc("POST /api/admin/users/{id}/password", s.requireServerAdmin(s.handleAdminResetPassword))

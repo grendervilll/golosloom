@@ -30,9 +30,9 @@ func TestGifSearchWithoutKey(t *testing.T) {
 func TestGifSearchBadQuery(t *testing.T) {
 	a := newTestApp(t, nil)
 	u := a.register(t, "GifUser2")
-	// Длинный запрос обрезается, а не падает.
+	// Длинный запрос обрезается, а не падает (501 — просто нет ключа в тесте).
 	code, _ := a.do(t, http.MethodGet, fmt.Sprintf("/api/gifs/search?q=%s", string(make([]byte, 0))+"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), u.token, nil)
-	if code != http.StatusOK && code != http.StatusBadGateway {
+	if code != http.StatusOK && code != http.StatusBadGateway && code != http.StatusNotImplemented {
 		t.Fatalf("длинный запрос: неожиданный код %d", code)
 	}
 }

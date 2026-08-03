@@ -43,14 +43,43 @@ export const useChatStore = defineStore('chat', {
       }
       this.messages.set(channelId, decrypted)
     },
+    // Оптимистичная отправка: своё сообщение появляется сразу (pending),
+    // затем заменяется ответом сервера; история НЕ перечитывается целиком.
     async send(channelId: number, text: string): Promise<boolean> {
       const settings = useSettingsStore()
       const storage = await getKeyStorage()
       const key = await storage.loadChannelKey(channelId)
       if (!key) return false
       const { ciphertext, iv } = await encryptMessage(key, text)
-      const res = await settings.api.sendMessage(channelId, ciphertext, iv)
-      await this.loadHistory(channelId)
+      const auth = useAuthStore()
+      const tempId = -Date.now()
+      const pending: ChatMessage = {
+        id: tempId,
+        channelId,
+        senderId: auth.user?.id || 0,
+        senderNick: auth.user?.nick || '',
+        text,
+        encrypted: false,
+        deleted: false,
+        edited: false,
+        createdAt: new Date().toISOString(),
+        pending: true,
+      }
+      const list = this.messages.get(channelId) || []
+      this.messages.set(channelId, [...list, pending])
+      try {
+        const res: Message = await settings.api.sendMessage(channelId, ciphertext, iv)
+        const real = await this.toChatMessage(res, channelId, key, auth.user?.id || 0)
+        const cur = this.messages.get(channelId) || []
+        const idx = cur.findIndex((x) => x.id === tempId)
+        if (idx >= 0) cur[idx] = real
+        else cur.push(real)
+        this.messages.set(channelId, [...cur])
+      } catch {
+        const cur = this.messages.get(channelId) || []
+        this.messages.set(channelId, cur.filter((x) => x.id !== tempId))
+        return false
+      }
       return true
     },
     async edit(channelId: number, messageId: number, text: string) {
@@ -74,8 +103,12 @@ export const useChatStore = defineStore('chat', {
       const key = await storage.loadChannelKey(data.channel_id)
       const auth = useAuthStore()
       const m = await this.toChatMessage(data, data.channel_id, key, auth.user?.id || 0)
-      list.push(m)
-      this.messages.set(data.channel_id, list)
+      // Дубликат (своё сообщение после оптимистичной отправки) — заменяем,
+      // а не добавляем второй раз.
+      const idx = list.findIndex((x) => x.id === data.id)
+      if (idx >= 0) list[idx] = m
+      else list.push(m)
+      this.messages.set(data.channel_id, [...list])
       if (data.sender_id !== auth.user?.id && !m.encrypted) {
         sounds.message()
       }

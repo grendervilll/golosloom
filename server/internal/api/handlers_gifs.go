@@ -1,5 +1,5 @@
-// Поиск GIF: прокси к Tenor или Giphy. Ключ хранится на сервере
-// (GIF_API_KEY), клиент его не знает. Без ключа — 501 с подсказкой.
+// Поиск GIF: прокси к Klipy. Ключ хранится на сервере (GIF_API_KEY),
+// клиент его не знает. Без ключа — 501 с подсказкой.
 package api
 
 import (
@@ -19,7 +19,7 @@ type gifResult struct {
 func (s *Server) handleGifSearch(w http.ResponseWriter, r *http.Request) {
 	key := s.Cfg.GiphyAPIKey
 	if key == "" {
-		writeErr(w, http.StatusNotImplemented, "поиск GIF не настроен (нужен GIF_API_KEY — бесплатный ключ Tenor или Giphy)")
+		writeErr(w, http.StatusNotImplemented, "поиск GIF не настроен (нужен GIF_API_KEY — ключ Klipy)")
 		return
 	}
 	q := r.URL.Query().Get("q")
@@ -30,16 +30,7 @@ func (s *Server) handleGifSearch(w http.ResponseWriter, r *http.Request) {
 	if v, err := parseQueryInt(r, "limit"); err == nil && v > 0 && v <= 50 {
 		limit = v
 	}
-	var out []gifResult
-	var err error
-	switch s.Cfg.GifProvider {
-	case "klipy":
-		out, err = searchKlipy(key, q, limit)
-	case "tenor":
-		out, err = searchTenor(key, q, limit)
-	default:
-		out, err = searchGiphy(key, q, limit)
-	}
+	out, err := searchKlipy(key, q, limit)
 	if err != nil {
 		writeErr(w, http.StatusBadGateway, err.Error())
 		return
@@ -58,41 +49,6 @@ func giphyGet(url string, out interface{}) error {
 		return fmt.Errorf("GIF-провайдер ответил %d", resp.StatusCode)
 	}
 	return json.NewDecoder(resp.Body).Decode(out)
-}
-
-func searchGiphy(key, q string, limit int) ([]gifResult, error) {
-	apiURL := fmt.Sprintf(
-		"https://api.giphy.com/v1/gifs/search?api_key=%s&q=%s&limit=%d&rating=g&lang=ru",
-		url.QueryEscape(key), url.QueryEscape(q), limit,
-	)
-	var body struct {
-		Data []struct {
-			Title  string `json:"title"`
-			Images struct {
-				FixedHeight struct {
-					URL string `json:"url"`
-				} `json:"fixed_height"`
-				Downsized struct {
-					URL string `json:"url"`
-				} `json:"downsized"`
-			} `json:"images"`
-		} `json:"data"`
-	}
-	if err := giphyGet(apiURL, &body); err != nil {
-		return nil, err
-	}
-	out := make([]gifResult, 0, len(body.Data))
-	for _, g := range body.Data {
-		if g.Images.Downsized.URL == "" {
-			continue
-		}
-		out = append(out, gifResult{
-			URL:     g.Images.Downsized.URL,
-			Preview: g.Images.FixedHeight.URL,
-			Title:   g.Title,
-		})
-	}
-	return out, nil
 }
 
 // searchKlipy — Klipy: ключ в пути URL, региональный хост.
@@ -138,55 +94,6 @@ func searchKlipy(key, q string, limit int) ([]gifResult, error) {
 			URL:     g.File.Md.Gif.URL,
 			Preview: preview,
 			Title:   g.Title,
-		})
-	}
-	return out, nil
-}
-
-// searchTenor — поиск через Tenor v2. В чат уходит mediumgif (умеренный
-// размер), в пикере — tinygif-превью.
-func searchTenor(key, q string, limit int) ([]gifResult, error) {
-	apiURL := fmt.Sprintf(
-		"https://g.tenor.com/v2/search?key=%s&q=%s&limit=%d&media_filter=minimal&locale=ru_RU",
-		url.QueryEscape(key), url.QueryEscape(q), limit,
-	)
-	var body struct {
-		Results []struct {
-			Title string `json:"title"`
-			Media []struct {
-				TinyGif struct {
-					URL     string `json:"url"`
-					Preview string `json:"preview"`
-				} `json:"tinygif"`
-				MediumGif struct {
-					URL string `json:"url"`
-				} `json:"mediumgif"`
-				Gif struct {
-					URL string `json:"url"`
-				} `json:"gif"`
-			} `json:"media"`
-		} `json:"results"`
-	}
-	if err := giphyGet(apiURL, &body); err != nil {
-		return nil, err
-	}
-	out := make([]gifResult, 0, len(body.Results))
-	for _, r := range body.Results {
-		if len(r.Media) == 0 {
-			continue
-		}
-		med := r.Media[0]
-		url := med.MediumGif.URL
-		if url == "" {
-			url = med.Gif.URL
-		}
-		if url == "" {
-			continue
-		}
-		out = append(out, gifResult{
-			URL:     url,
-			Preview: med.TinyGif.Preview,
-			Title:   r.Title,
 		})
 	}
 	return out, nil

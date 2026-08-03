@@ -75,6 +75,34 @@ export class ApiClient {
     return this.request('DELETE', path)
   }
 
+  // --- Админ-панель: мониторинг и бэкапы ---
+  adminStats() {
+    return this.get('/api/admin/stats')
+  }
+  // Скачивание бэкапа базы данных (бинарный файл).
+  async adminBackup(): Promise<Blob> {
+    const headers: Record<string, string> = {}
+    if (this.token) headers['Authorization'] = `Bearer ${this.token}`
+    const res = await fetch(this.baseUrl + '/api/admin/backup', { method: 'GET', headers })
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      throw new Error(text || `Ошибка бэкапа: ${res.status}`)
+    }
+    return res.blob()
+  }
+  // Восстановление базы данных из загруженного файла.
+  async adminRestore(file: File): Promise<void> {
+    const form = new FormData()
+    form.append('file', file)
+    const headers: Record<string, string> = {}
+    if (this.token) headers['Authorization'] = `Bearer ${this.token}`
+    const res = await fetch(this.baseUrl + '/api/admin/restore', { method: 'POST', headers, body: form })
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      throw new Error(text || `Ошибка восстановления: ${res.status}`)
+    }
+  }
+
   // --- Аутентификация ---
   register(nick: string, password: string) {
     return this.post('/api/register', { nick, password })

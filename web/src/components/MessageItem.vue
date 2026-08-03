@@ -42,7 +42,7 @@ function openMore(e: MouseEvent) {
 <template>
   <div
     class="msg"
-    :class="{ mine: isMine, deleted: msg.deleted }"
+    :class="{ mine: isMine, deleted: msg.deleted, pending: msg.pending }"
     @contextmenu.prevent="emit('contextmenu', $event)"
   >
     <span class="role-icon" :style="{ filter: 'grayscale(0.6)' }">{{ roleIcon(undefined, role) }}</span>
@@ -88,6 +88,10 @@ function openMore(e: MouseEvent) {
 .text {
   word-break: break-word;
   white-space: pre-wrap;
+}
+/* Оптимистично показанное сообщение (ещё не подтверждено сервером). */
+.msg.pending {
+  opacity: 0.55;
 }
 .gif-img {
   max-width: 320px;

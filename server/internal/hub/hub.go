@@ -61,10 +61,10 @@ func NewClient(conn *websocket.Conn, userID int64, nick string) *Client {
 
 // Hub — менеджер WebSocket-подключений.
 type Hub struct {
-	mu            sync.RWMutex
-	clients       map[*Client]bool
-	byUser        map[int64]map[*Client]bool
-	byChannel     map[int64]map[*Client]bool
+	mu        sync.RWMutex
+	clients   map[*Client]bool
+	byUser    map[int64]map[*Client]bool
+	byChannel map[int64]map[*Client]bool
 }
 
 func New() *Hub {
@@ -139,6 +139,13 @@ func (h *Hub) IsOnline(userID int64) bool {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return len(h.byUser[userID]) > 0
+}
+
+// OnlineCount — сколько пользователей онлайн (хотя бы одно подключение).
+func (h *Hub) OnlineCount() int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return len(h.byUser)
 }
 
 func (h *Hub) OnlineUserIDs() []int64 {

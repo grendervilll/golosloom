@@ -14,9 +14,10 @@ import (
 )
 
 type Server struct {
-	Cfg   config.Config
-	Store *store.Store
-	Hub   *hub.Hub
+	Cfg       config.Config
+	Store     *store.Store
+	Hub       *hub.Hub
+	startedAt time.Time
 
 	msgMu     sync.Mutex
 	lastMsg   map[string]time.Time // ключ: channel:user:hex(ct):hex(iv) -> время
@@ -42,6 +43,7 @@ func New(cfg config.Config, st *store.Store) *Server {
 		Cfg:             cfg,
 		Store:           st,
 		Hub:             hub.New(),
+		startedAt:       time.Now(),
 		lastMsg:         map[string]time.Time{},
 		loginLimiter:    newLimiter(20, 15*time.Minute, 8, 15*time.Minute),
 		registerLimiter: newLimiter(15, 15*time.Minute, 0, 0),

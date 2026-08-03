@@ -97,6 +97,73 @@ describe('чат', () => {
     expect(api.sendMessage).not.toHaveBeenCalled()
   })
 
+  it('показывает своё сообщение сразу (оптимистично) и заменяет ответом сервера', async () => {
+    setup(1)
+    const storage = await getKeyStorage()
+    const key = generateChannelKey()
+    await storage.saveChannelKey(10, key)
+    const api = useSettingsStore().api as any
+    let resolveSend!: (v: any) => void
+    api.sendMessage.mockReturnValue(new Promise((res) => (resolveSend = res)))
+    const chat = useChatStore()
+    const p = chat.send(10, 'оптимистично')
+    // Ждём, пока pending-сообщение появится в списке (IDB-операции асинхронны).
+    const waitMs = (fn: () => boolean) =>
+      new Promise<void>((res) => {
+        const t = setInterval(() => {
+          if (fn()) {
+            clearInterval(t)
+            res()
+          }
+        }, 5)
+        setTimeout(() => clearInterval(t), 1000)
+      })
+    await waitMs(() => (chat.messages.get(10) || []).length === 1)
+    // Пока сервер не ответил — сообщение уже на месте (pending).
+    let msgs = chat.messages.get(10)!
+    expect(msgs.length).toBe(1)
+    expect(msgs[0].pending).toBe(true)
+    expect(msgs[0].text).toBe('оптимистично')
+    resolveSend({
+      id: 123,
+      channel_id: 10,
+      sender_id: 1,
+      sender_nick: 'u1',
+      ciphertext: '',
+      iv: '',
+      created_at: new Date().toISOString(),
+      deleted: false,
+    })
+    await p
+    msgs = chat.messages.get(10)!
+    expect(msgs.length).toBe(1)
+    expect(msgs[0].id).toBe(123)
+    expect(msgs[0].pending).toBeFalsy()
+  })
+
+  it('не дублирует своё сообщение, пришедшее по WS после оптимистичной отправки', async () => {
+    setup(1)
+    const storage = await getKeyStorage()
+    const key = generateChannelKey()
+    await storage.saveChannelKey(10, key)
+    const chat = useChatStore()
+    const base = {
+      id: 7,
+      channel_id: 10,
+      sender_id: 1,
+      sender_nick: 'u1',
+      ciphertext: '',
+      iv: '',
+      created_at: new Date().toISOString(),
+      deleted: false,
+    }
+    await chat.handleNew(base as any)
+    // Повторное событие WS с тем же id — заменяет, а не дублирует.
+    await chat.handleNew({ ...base, edited_at: new Date().toISOString() } as any)
+    const msgs = chat.messages.get(10)!
+    expect(msgs.length).toBe(1)
+  })
+
   it('расшифровывает приходящие сообщения', async () => {
     setup(1)
     const storage = await getKeyStorage()
@@ -205,7 +272,7 @@ describe('чат', () => {
     expect(api.listMessages).toHaveBeenCalledWith(10)
   })
 
-  it('отправка одного и того же сообщения дважды отклоняется сервером', async () => {
+  it('отправка, отклонённая сервером, убирает оптимистичное сообщение и возвращает false', async () => {
     setup(1)
     const storage = await getKeyStorage()
     const key = generateChannelKey()
@@ -213,6 +280,9 @@ describe('чат', () => {
     const api = useSettingsStore().api as any
     api.sendMessage.mockRejectedValue({ status: 409, message: 'сообщение уже отправлено' })
     const chat = useChatStore()
-    await expect(chat.send(10, 'дубль')).rejects.toMatchObject({ status: 409 })
+    const ok = await chat.send(10, 'дубль')
+    expect(ok).toBe(false)
+    const msgs = chat.messages.get(10)
+    expect(msgs || []).toHaveLength(0) // оптимистичное сообщение убрано
   })
 })
