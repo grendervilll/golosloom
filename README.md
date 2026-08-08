@@ -160,7 +160,10 @@ cd web && npm test
 
 ```
 GIF_API_KEY=<ключ Klipy>      # partner.klipy.com → API Keys
-GIF_PROVIDER=klipy            # klipy | tenor | giphy
 ```
 
 Без ключа кнопка GIF показывает «Поиск GIF недоступен на этом сервере», остальное работает. Тестовый ключ Klipy — до 100 запросов/час; production-доступ запрашивается в Partner Panel.
+
+## Лицензия
+
+Проект распространяется под **GNU General Public License v3.0** (GPLv3) — см. файл [`LICENSE`](LICENSE). Вы вправе использовать, изменять и распространять код при условии, что производные работы тоже распространяются под GPLv3 с сохранением указания авторства.
