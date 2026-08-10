@@ -156,4 +156,14 @@ async function leave() {
 .popup-title:first-child {
   margin-top: 0;
 }
+
+@media (max-width: 900px) {
+  .popup {
+    max-height: 60vh;
+    overflow-y: auto;
+  }
+  .controls {
+    padding: 8px 10px;
+  }
+}
 </style>

@@ -1,4 +1,5 @@
 // Главный экран: каналы слева, чат и звонок в центре, участники справа.
+// На мобильных: каналы и участники — выезжающие шторки, внизу — навигация.
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -20,6 +21,7 @@ import InviteModal from '../components/InviteModal.vue'
 import RegistrationInviteModal from '../components/RegistrationInviteModal.vue'
 import CallModal from '../components/CallModal.vue'
 import UpdateModal from '../components/UpdateModal.vue'
+import MobileTabBar from '../components/MobileTabBar.vue'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -34,6 +36,8 @@ const showRegInvite = ref(false)
 const showCallPicker = ref(false)
 const showServerUrl = ref(false)
 const showParticipants = ref(false)
+// Мобильная шторка: 'channels' | 'members' | 'none'.
+const mobilePanel = ref<'none' | 'channels' | 'members'>('none')
 
 const inCall = computed(() => calls.connectedCallId > 0)
 const chatHidden = computed(() => settings.chatHidden)
@@ -50,12 +54,33 @@ function logout() {
 function toggleChat() {
   settings.setChatHidden(!settings.chatHidden)
 }
+
+function openChannelsDrawer() {
+  mobilePanel.value = mobilePanel.value === 'channels' ? 'none' : 'channels'
+}
+function openMembersDrawer() {
+  if (mobilePanel.value === 'channels') mobilePanel.value = 'none'
+  showParticipants.value = true
+  mobilePanel.value = 'members'
+}
+function closeDrawers() {
+  mobilePanel.value = 'none'
+  showParticipants.value = false
+}
+function onChatToggleParticipants() {
+  showParticipants.value = !showParticipants.value
+  mobilePanel.value = showParticipants.value ? 'members' : 'none'
+}
 </script>
 
 <template>
-  <div class="main-layout">
+  <div
+    class="main-layout"
+    :class="{ 'drawer-channels': mobilePanel === 'channels', 'drawer-members': mobilePanel === 'members' }"
+  >
     <ChannelSidebar
       :key="channels.currentId"
+      :class="{ 'drawer-open': mobilePanel === 'channels' }"
       @open-invite="showInvite = true"
       @open-call="showCallPicker = true"
       @toggle-chat="toggleChat"
@@ -71,9 +96,9 @@ function toggleChat() {
       <ChatPanel
         v-if="!chatHidden"
         :class="{ 'in-call': inCall }"
-        @toggle-participants="showParticipants = !showParticipants"
+        @toggle-participants="onChatToggleParticipants"
         @open-invite="showInvite = true"
-      @open-reg-invite="showRegInvite = true"
+        @open-reg-invite="showRegInvite = true"
         @open-call="showCallPicker = true"
       />
       <div v-else class="empty-chat muted">Чат скрыт</div>
@@ -84,7 +109,17 @@ function toggleChat() {
     <ParticipantsPanel
       class="right-col"
       :class="{ open: showParticipants }"
-      @close="showParticipants = false"
+      @close="closeDrawers"
+    />
+
+    <!-- Бэкдроп шторок на мобильных (скрыт на десктопе). -->
+    <div v-if="mobilePanel !== 'none'" class="mobile-backdrop" @click="closeDrawers"></div>
+
+    <MobileTabBar
+      :active="mobilePanel"
+      @channels="openChannelsDrawer"
+      @chat="closeDrawers"
+      @members="openMembersDrawer"
     />
 
     <IncomingCallOverlay />
@@ -131,6 +166,12 @@ function toggleChat() {
 .right-col.open {
   display: flex;
 }
+
+/* Бэкдроп мобильных шторок. */
+.mobile-backdrop {
+  display: none;
+}
+
 @media (max-width: 900px) {
   .main-layout {
     flex-direction: column;
@@ -139,11 +180,33 @@ function toggleChat() {
     flex: 1;
     min-height: 0;
   }
+  /* Во время звонка на мобильном чат компактнее, сцена — основной экран. */
+  .chat-panel.in-call {
+    flex: 0 0 240px;
+  }
+  /* Участники — полноэкранная шторка. */
   .right-col.open {
     position: fixed;
     inset: 0;
     width: 100%;
-    z-index: 80;
+    z-index: 90;
+    animation: slide-up 0.25s ease;
+  }
+  /* Бэкдроп под шторками, но над контентом. */
+  .mobile-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    z-index: 85;
+  }
+  @keyframes slide-up {
+    from {
+      transform: translateY(100%);
+    }
+    to {
+      transform: none;
+    }
   }
 }
 </style>

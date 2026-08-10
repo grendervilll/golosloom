@@ -225,4 +225,25 @@ async function fetchGifs() {
   border-radius: 14px;
   box-shadow: 0 12px 60px rgba(0, 0, 0, 0.6);
 }
+
+/* Мобильные: пикер — нижний лист во всю ширину. */
+@media (max-width: 900px) {
+  .picker {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    max-width: none;
+    max-height: 60vh;
+    border-radius: 14px 14px 0 0;
+    margin-bottom: 0;
+  }
+  .content {
+    height: 46vh;
+  }
+  .emoji-grid {
+    grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+  }
+}
 </style>

@@ -21,6 +21,7 @@ const emit = defineEmits<{
   (e: 'logout'): void
   (e: 'open-admin'): void
   (e: 'open-settings'): void
+  (e: 'close'): void
 }>()
 
 const auth = useAuthStore()
@@ -83,6 +84,7 @@ async function declineInvite(id: number) {
       <img class="server-logo" src="/logo.png" alt="Golosloom" />
       <span class="server-name">Golosloom</span>
       <span class="chevron">{{ menuOpen ? '▲' : '▼' }}</span>
+      <button class="sidebar-close" title="Закрыть" @click.stop="emit('close')">✕</button>
     </div>
 
     <div v-if="menuOpen" class="server-menu">
@@ -222,73 +224,72 @@ async function declineInvite(id: number) {
   border-radius: 6px;
 }
 
+.sidebar-close {
+  display: none;
+}
+
 @media (max-width: 1200px) {
   .sidebar {
     width: 200px;
   }
 }
 
-/* Мобильный режим: сайдбар — верхняя панель, каналы — вертикальный список. */
+/* Мобильные: сайдбар — выезжающая шторка слева (скрыта, пока не открыта). */
 @media (max-width: 900px) {
   .sidebar {
-    position: relative;
-    width: 100%;
-    min-width: 0;
-    flex-direction: row;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 6px;
-    padding: 6px 10px;
-    border-right: none;
-    border-bottom: 1px solid var(--border);
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: min(85vw, 320px);
+    z-index: 95;
+    transform: translateX(-105%);
+    transition: transform 0.25s ease;
+    border-right: 1px solid var(--border);
+    border-bottom: none;
+    box-shadow: 8px 0 30px rgba(0, 0, 0, 0.4);
+  }
+  .sidebar.drawer-open {
+    transform: translateX(0);
   }
   .server-head {
-    padding: 6px 10px;
-    flex: 0 0 auto;
+    padding: 12px 14px;
+  }
+  .sidebar-close {
+    display: block;
+    background: transparent;
+    color: var(--text-dim);
+    padding: 2px 10px;
+    min-height: 40px;
+    font-size: 15px;
+    margin-left: 4px;
+  }
+  .sidebar-close:hover {
+    background: var(--bg4);
+    color: var(--text);
   }
   .server-menu {
-    position: absolute;
-    top: 100%;
-    left: 8px;
-    right: 8px;
-    z-index: 95;
+    position: static;
+    z-index: auto;
   }
   .channel-list {
-    flex: 1 1 100%;
-    flex-direction: column;
-    align-items: stretch;
-    overflow-y: auto;
-    max-height: 42vh;
-    padding: 4px 2px 6px;
-    min-width: 0;
-  }
-  .channel-item {
-    flex: none;
-    width: 100%;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .create-channel-btn {
-    width: 100%;
-    flex: none;
-    margin-bottom: 0;
-    padding: 8px 10px;
+    flex: 1;
+    max-height: none;
   }
   .invites {
-    flex-direction: row;
-    overflow-x: auto;
-    border-top: none;
-    padding: 0;
+    flex-direction: column;
+    overflow: visible;
+    border-top: 1px solid var(--border);
+    padding: 8px;
   }
   .invite-card {
-    flex: 0 0 auto;
+    flex: none;
   }
   .sidebar-footer {
-    display: none;
+    display: flex;
   }
   .empty {
-    display: none;
+    display: block;
   }
 }
 .invites {

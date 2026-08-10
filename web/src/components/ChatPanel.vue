@@ -114,7 +114,7 @@ function onKeydown(e: KeyboardEvent) {
   <div class="chat-panel" @click="closeMenu">
     <div class="chat-head">
       <h2><span class="hash">#</span> {{ channelName }}</h2>
-      <span class="muted small">ID канала: {{ channels.currentId }}</span>
+      <span class="muted small id-text">ID канала: {{ channels.currentId }}</span>
       <button
         v-if="channels.current?.private"
         class="invite-btn"
@@ -317,6 +317,31 @@ function onKeydown(e: KeyboardEvent) {
   to {
     opacity: 1;
     transform: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .id-text {
+    display: none;
+  }
+  .chat-head {
+    flex-wrap: wrap;
+    padding: 8px 10px;
+    gap: 6px;
+  }
+  .chat-list {
+    padding: 8px 10px;
+  }
+  /* На сенсорных экранах нет hover — «⋯» видна всегда. */
+  .more-btn {
+    visibility: visible;
+    opacity: 0.55;
+  }
+  .msg:hover {
+    background: var(--bg3);
+  }
+  .chat-input {
+    padding: 8px 10px;
   }
 }
 </style>

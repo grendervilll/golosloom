@@ -294,6 +294,12 @@ function setVolume(userId: number, v: number) {
   .close-btn {
     display: block;
   }
+  .right-col.open {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    z-index: 90;
+  }
 }
 
 @media (min-width: 901px) and (max-width: 1200px) {
