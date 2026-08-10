@@ -14,6 +14,7 @@ func (s *Server) Router() http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /api/config", s.handleConfig)
+	mux.HandleFunc("GET /api/health", s.handleHealth)
 	mux.HandleFunc("POST /api/register", func(w http.ResponseWriter, r *http.Request) {
 		s.registerLimiter.handle(w, r, s.handleRegister)
 	})

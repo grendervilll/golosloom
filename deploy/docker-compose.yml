@@ -33,6 +33,13 @@ services:
       - golosloom
     mem_limit: 256m
     logging: *default-logging
+    # Health check: /api/health без аутентификации (проверяет и БД).
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
   web:
     build:
@@ -61,6 +68,13 @@ services:
       - ${LIVEKIT_CONFIG}:/etc/livekit.yaml:ro
     mem_limit: 512m
     logging: *default-logging
+    # Health check: HTTP-сервер LiveKit (порт 7880).
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:7880/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
   coturn:
     image: coturn/coturn:4.6
@@ -96,6 +110,14 @@ services:
       - --dh-file=/certs/dhparam.pem
     mem_limit: 128m
     logging: *default-logging
+    # Health check: TCP-подключение к TURN-порту (в образе нет wget/nc,
+    # проверяем через bash /dev/tcp).
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/3478 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
   caddy:
     image: caddy:2

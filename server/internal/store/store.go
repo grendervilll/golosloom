@@ -97,6 +97,9 @@ func copyFile(src, dst string) error {
 
 func (s *Store) Close() error { return s.db.Close() }
 
+// Ping проверяет доступность базы данных (health check).
+func (s *Store) Ping() error { return s.db.Ping() }
+
 // SnapshotTo создаёт согласованный снапшот базы данных в указанный файл.
 func (s *Store) SnapshotTo(dst string) error {
 	q := strings.ReplaceAll(dst, "'", "''")

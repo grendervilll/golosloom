@@ -432,3 +432,19 @@ func TestPunchRejectedForNonParticipants(t *testing.T) {
 		t.Fatalf("пинок неучастнику звонка не должен доходить: %v", msg)
 	}
 }
+
+func TestHealthCheck(t *testing.T) {
+	a := newTestApp(t, nil)
+	code, body := a.do(t, http.MethodGet, "/api/health", "", nil)
+	if code != http.StatusOK {
+		t.Fatalf("health: ожидали 200, получили %d", code)
+	}
+	if body["status"] != "ok" {
+		t.Fatalf("health: статус не ok: %v", body)
+	}
+	for _, key := range []string{"status", "version", "uptime_sec"} {
+		if _, exists := body[key]; !exists {
+			t.Fatalf("в health нет поля %s: %v", key, body)
+		}
+	}
+}
