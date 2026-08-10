@@ -2,12 +2,20 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useSettingsStore } from '../stores/settings'
-import { useToasts } from '../stores/toasts'
+import { toast } from 'vue-sonner'
+import { Button } from './ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from './ui/dialog'
 
 const emit = defineEmits<{ (e: 'close'): void }>()
 
 const settings = useSettingsStore()
-const toasts = useToasts()
 const url = ref(settings.serverUrl)
 const busy = ref(false)
 const error = ref('')
@@ -18,7 +26,7 @@ async function save() {
   try {
     settings.setServerUrl(url.value.trim())
     await settings.loadConfig()
-    toasts.push({ kind: 'info', text: 'Сервер подключён' })
+    toast.info('Сервер подключён')
     emit('close')
   } catch (e: any) {
     error.value = e.message
@@ -29,25 +37,19 @@ async function save() {
 </script>
 
 <template>
-  <div class="modal-backdrop">
-    <div class="modal">
-      <h2>Подключение к серверу</h2>
-      <p class="hint-text">Укажите адрес вашего сервера Golosloom</p>
-      <div class="field">
+  <Dialog :open="true" @update:open="(o) => { if (!o) emit('close') }">
+    <DialogContent class="max-w-[420px]">
+      <DialogHeader class="text-center">
+        <DialogTitle class="text-center">Подключение к серверу</DialogTitle>
+        <DialogDescription class="text-center">Укажите адрес вашего сервера Golosloom</DialogDescription>
+      </DialogHeader>
+      <div class="field modal-field">
         <input v-model="url" placeholder="https://golosloom.example.com" />
       </div>
       <div v-if="error" class="error-text">{{ error }}</div>
-      <div class="row end">
-        <button class="primary" :disabled="busy" @click="save">Подключиться</button>
-      </div>
-    </div>
-  </div>
+      <DialogFooter class="grid-cols-1">
+        <Button :disabled="busy" @click="save">Подключиться</Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
 </template>
-
-<style scoped>
-.row.end {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 12px;
-}
-</style>

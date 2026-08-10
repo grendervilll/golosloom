@@ -5,7 +5,7 @@ import { useAuthStore } from '../stores/auth'
 import { useChannelsStore } from '../stores/channels'
 import { useSettingsStore } from '../stores/settings'
 import { useCallStore } from '../stores/calls'
-import { useToasts } from '../stores/toasts'
+import { toast } from 'vue-sonner'
 import { roleIcon, roleLabel } from '../utils/roles'
 import type { Role } from '../api/types'
 
@@ -15,7 +15,6 @@ const auth = useAuthStore()
 const channels = useChannelsStore()
 const settings = useSettingsStore()
 const calls = useCallStore()
-const toasts = useToasts()
 
 const showMembers = ref(true)
 
@@ -53,20 +52,20 @@ async function setRole(userId: number, role: Role) {
   try {
     await channels.setRole(channels.currentId, userId, role)
   } catch (e: any) {
-    toasts.push({ kind: 'error', text: e.message })
+    toast.error(e.message)
   }
 }
 
 async function kick(userId: number, nick: string) {
   if (!modReason.value.trim()) {
-    toasts.push({ kind: 'warning', text: 'Укажите причину кика' })
+    toast.warning('Укажите причину кика')
     return
   }
   try {
     await channels.kick(channels.currentId, userId, modReason.value)
-    toasts.push({ kind: 'info', text: `${nick} кикнут` })
+    toast.info(`${nick} кикнут`)
   } catch (e: any) {
-    toasts.push({ kind: 'error', text: e.message })
+    toast.error(e.message)
   }
   modTarget.value = 0
   modReason.value = ''
@@ -74,14 +73,14 @@ async function kick(userId: number, nick: string) {
 
 async function ban(userId: number, nick: string) {
   if (!modReason.value.trim()) {
-    toasts.push({ kind: 'warning', text: 'Укажите причину бана' })
+    toast.warning('Укажите причину бана')
     return
   }
   try {
     await channels.ban(channels.currentId, userId, modReason.value)
-    toasts.push({ kind: 'info', text: `${nick} забанен` })
+    toast.info(`${nick} забанен`)
   } catch (e: any) {
-    toasts.push({ kind: 'error', text: e.message })
+    toast.error(e.message)
   }
   modTarget.value = 0
   modReason.value = ''
@@ -90,9 +89,9 @@ async function ban(userId: number, nick: string) {
 async function unban(userId: number, nick: string) {
   try {
     await channels.unban(channels.currentId, userId)
-    toasts.push({ kind: 'info', text: `${nick} разбанен` })
+    toast.info(`${nick} разбанен`)
   } catch (e: any) {
-    toasts.push({ kind: 'error', text: e.message })
+    toast.error(e.message)
   }
 }
 

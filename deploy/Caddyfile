@@ -7,7 +7,11 @@
 	encode zstd gzip
 
 	log {
-		output file /data/access.log
+		# Ротация: 3 файла по 50 МБ — access.log не заполнит диск (15-20 ГБ).
+		output file /data/access.log {
+			roll_size 50mb
+			roll_keep 3
+		}
 	}
 
 	# Безопасность: HSTS, защита от XSS-поверхностей (CSP), кликджекинга,

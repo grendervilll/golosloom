@@ -4,14 +4,21 @@ import { computed, ref } from 'vue'
 import { useChannelsStore } from '../stores/channels'
 import { useAuthStore } from '../stores/auth'
 import { useSettingsStore } from '../stores/settings'
-import { useToasts } from '../stores/toasts'
+import { toast } from 'vue-sonner'
+import { Button } from './ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from './ui/dialog'
 
 const emit = defineEmits<{ (e: 'close'): void }>()
 
 const channels = useChannelsStore()
 const auth = useAuthStore()
 const settings = useSettingsStore()
-const toasts = useToasts()
 
 const userId = ref<number | null>(null)
 const userList = ref<any[]>([])
@@ -39,7 +46,7 @@ async function invite(id: number) {
   try {
     await channels.enterChannel(channels.currentId)
     await settings.api.inviteToChannel(channels.currentId, id)
-    toasts.push({ kind: 'info', text: 'Приглашение отправлено' })
+    toast.info('Приглашение отправлено')
     emit('close')
   } catch (e: any) {
     error.value = e.message
@@ -58,14 +65,18 @@ async function inviteById() {
 </script>
 
 <template>
-  <div class="modal-backdrop" @click.self="emit('close')">
-    <div class="modal">
-      <h2>Пригласить в канал «{{ channels.current?.name }}»</h2>
-      <div class="field">
+  <Dialog :open="true" @update:open="(o) => { if (!o) emit('close') }">
+    <DialogContent class="max-h-[85vh] max-w-[420px] overflow-y-auto">
+      <DialogHeader class="text-center">
+        <DialogTitle class="text-center">Пригласить в канал «{{ channels.current?.name }}»</DialogTitle>
+      </DialogHeader>
+      <div class="field modal-field">
         <label>ID пользователя</label>
         <input v-model.number="userId" type="number" placeholder="Например: 42" />
       </div>
-      <button class="primary" :disabled="busy" @click="inviteById">Пригласить по ID</button>
+      <div class="modal-field">
+        <Button class="w-full" :disabled="busy" @click="inviteById">Пригласить по ID</Button>
+      </div>
 
       <p class="section-title">Или выберите из списка:</p>
       <div class="user-list">
@@ -74,14 +85,14 @@ async function inviteById() {
           <span class="nick">{{ u.nick }}</span>
           <span class="muted small">ID: {{ u.id }}</span>
         </div>
-        <p v-if="candidates.length === 0" class="muted">Все участники уже в канале</p>
+        <p v-if="candidates.length === 0" class="muted center">Все участники уже в канале</p>
       </div>
       <div v-if="error" class="error-text">{{ error }}</div>
-      <div class="row">
-        <button @click="emit('close')">Закрыть</button>
-      </div>
-    </div>
-  </div>
+      <DialogFooter class="grid-cols-1">
+        <Button variant="secondary" @click="emit('close')">Закрыть</Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
 </template>
 
 <style scoped>
@@ -91,6 +102,7 @@ async function inviteById() {
   text-transform: uppercase;
   color: var(--text-dim);
   font-weight: 700;
+  text-align: center;
 }
 .user-list {
   max-height: 260px;
@@ -99,6 +111,10 @@ async function inviteById() {
   flex-direction: column;
   gap: 4px;
   margin-bottom: 10px;
+  padding: 0 16px;
+}
+.user-list .center {
+  text-align: center;
 }
 .user-row {
   display: flex;
@@ -113,10 +129,5 @@ async function inviteById() {
 }
 .nick {
   flex: 1;
-}
-.row {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 10px;
 }
 </style>

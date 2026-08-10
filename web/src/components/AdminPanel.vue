@@ -3,8 +3,17 @@
 import { onMounted, onUnmounted, ref } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useSettingsStore } from '../stores/settings'
-import { useToasts } from '../stores/toasts'
+import { toast } from 'vue-sonner'
 import { roleIcon } from '../utils/roles'
+import { Button } from './ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from './ui/dialog'
+import AdminGauge from './AdminGauge.vue'
 
 const tab = ref<'users' | 'channels' | 'server'>('users')
 const stats = ref<Record<string, number | string>>({})
@@ -56,7 +65,7 @@ async function downloadBackup() {
     a.click()
     setTimeout(() => URL.revokeObjectURL(url), 5000)
   } catch (e: any) {
-    useToasts().push({ kind: 'error', text: 'Бэкап не удался: ' + String(e?.message || e).slice(0, 150) })
+    toast.error('Бэкап не удался: ' + String(e?.message || e).slice(0, 150))
   } finally {
     busy.value = false
   }
@@ -72,10 +81,10 @@ async function restoreBackup(e: Event) {
   busy.value = true
   try {
     await useSettingsStore().api.adminRestore(file)
-    useToasts().push({ kind: 'info', text: 'База восстановлена — перезагружаем страницу' })
+    toast.info('База восстановлена — перезагружаем страницу')
     setTimeout(() => window.location.reload(), 1200)
   } catch (err: any) {
-    useToasts().push({ kind: 'error', text: 'Восстановление не удалось: ' + String(err?.message || err).slice(0, 150) })
+    toast.error('Восстановление не удалось: ' + String(err?.message || err).slice(0, 150))
     busy.value = false
   }
 }
@@ -84,7 +93,7 @@ onMounted(() => {
   if (useAuthStore().isServerAdmin) {
     void loadStats()
     void loadRegistrationStatus()
-    statsTimer = window.setInterval(() => void loadStats(), 15000)
+    statsTimer = window.setInterval(() => void loadStats(), 2000)
   }
 })
 onUnmounted(() => {
@@ -95,8 +104,6 @@ const emit = defineEmits<{ (e: 'close'): void }>()
 
 const auth = useAuthStore()
 const settings = useSettingsStore()
-const toasts = useToasts()
-
 const users = ref<any[]>([])
 const channels = ref<any[]>([])
 const registrationEnabled = ref(true)
@@ -175,20 +182,20 @@ async function togglePerm(channelId: number, role: string, perm: string) {
   const current = permAllowed(channelId, role, perm)
   try {
     await settings.api.setPermission(channelId, role, perm, !current)
-    toasts.push({ kind: 'info', text: 'Права обновлены' })
+    toast.info('Права обновлены')
     await loadPerms(channelId)
   } catch (e: any) {
-    toasts.push({ kind: 'error', text: e.message })
+    toast.error(e.message)
   }
 }
 
 async function unbanInChannel(channelId: number, userId: number, nick: string) {
   try {
     await settings.api.unbanMember(channelId, userId)
-    toasts.push({ kind: 'info', text: `${nick} разбанен в канале` })
+    toast.info(`${nick} разбанен в канале`)
     await loadBanned(channelId)
   } catch (e: any) {
-    toasts.push({ kind: 'error', text: e.message })
+    toast.error(e.message)
   }
 }
 
@@ -196,26 +203,26 @@ async function deleteChannel(channelId: number, name: string) {
   if (!confirm(`Удалить канал «${name}»? Сообщения и звонки будут удалены.`)) return
   try {
     await settings.api.deleteChannel(channelId)
-    toasts.push({ kind: 'info', text: `Канал «${name}» удалён` })
+    toast.info(`Канал «${name}» удалён`)
     await load()
   } catch (e: any) {
-    toasts.push({ kind: 'error', text: e.message })
+    toast.error(e.message)
   }
 }
 
 async function createUser() {
   if (!newNick.value.trim() || !newPass.value) {
-    toasts.push({ kind: 'warning', text: 'Укажите ник и пароль' })
+    toast.warning('Укажите ник и пароль')
     return
   }
   try {
     await settings.api.adminCreateUser(newNick.value.trim(), newPass.value)
     newNick.value = ''
     newPass.value = ''
-    toasts.push({ kind: 'info', text: 'Пользователь создан' })
+    toast.info('Пользователь создан')
     await load()
   } catch (e: any) {
-    toasts.push({ kind: 'error', text: e.message })
+    toast.error(e.message)
   }
 }
 
@@ -225,9 +232,9 @@ async function resetPassword(u: any) {
   try {
     await settings.api.adminResetPassword(u.id, pw)
     resetPass.value[u.id] = ''
-    toasts.push({ kind: 'info', text: `Пароль ${u.nick} обновлён` })
+    toast.info(`Пароль ${u.nick} обновлён`)
   } catch (e: any) {
-    toasts.push({ kind: 'error', text: e.message })
+    toast.error(e.message)
   }
 }
 
@@ -235,15 +242,15 @@ async function toggleBan(u: any) {
   try {
     if (u.server_banned) {
       await settings.api.adminServerUnban(u.id)
-      toasts.push({ kind: 'info', text: `${u.nick} разбанен` })
+      toast.info(`${u.nick} разбанен`)
     } else {
       const reason = banReason.value[u.id]
       await settings.api.adminServerBan(u.id, reason || '')
-      toasts.push({ kind: 'info', text: `${u.nick} забанен на сервере` })
+      toast.info(`${u.nick} забанен на сервере`)
     }
     await load()
   } catch (e: any) {
-    toasts.push({ kind: 'error', text: e.message })
+    toast.error(e.message)
   }
 }
 
@@ -253,9 +260,9 @@ async function toggleRegistration() {
     const next = !registrationEnabled.value
     await settings.api.adminSetRegistration(next)
     registrationEnabled.value = next
-    toasts.push({ kind: 'info', text: next ? 'Регистрация разрешена' : 'Регистрация запрещена' })
+    toast.info(next ? 'Регистрация разрешена' : 'Регистрация запрещена')
   } catch (e: any) {
-    toasts.push({ kind: 'error', text: 'Не удалось изменить: ' + String(e?.message || e).slice(0, 120) })
+    toast.error('Не удалось изменить: ' + String(e?.message || e).slice(0, 120))
   } finally {
     busy.value = false
   }
@@ -263,31 +270,36 @@ async function toggleRegistration() {
 
 function copyId(u: any) {
   navigator.clipboard?.writeText(String(u.id)).catch(() => undefined)
-  toasts.push({ kind: 'info', text: `ID ${u.id} скопирован` })
+  toast.info(`ID ${u.id} скопирован`)
 }
 </script>
 
 <template>
-  <div v-if="auth.isServerAdmin" class="modal-backdrop" @click.self="emit('close')">
-    <div class="modal admin">
-      <h2>Админ панель сервера</h2>
+  <Dialog v-if="auth.isServerAdmin" :open="true" @update:open="(o) => { if (!o) emit('close') }">
+    <DialogContent class="max-h-[85vh] max-w-[680px] overflow-y-auto">
+      <DialogHeader class="text-center">
+        <DialogTitle class="text-center">Админ панель сервера</DialogTitle>
+      </DialogHeader>
       <div class="tabs">
         <button :class="{ active: tab === 'users' }" @click="tab = 'users'">Пользователи</button>
         <button :class="{ active: tab === 'channels' }" @click="tab = 'channels'">Каналы</button>
         <button :class="{ active: tab === 'server' }" @click="tab = 'server'">Сервер</button>
       </div>
-
       <div v-if="tab === 'server'">
         <div class="frame">
           <p class="section-title">Мониторинг</p>
+          <div class="gauges">
+            <AdminGauge label="ЦПУ" :percent="stats.cpu_percent" />
+            <AdminGauge label="RAM" :percent="stats.ram_percent" :value="`${stats.ram_total_mb ?? '—'} МБ`" />
+            <AdminGauge label="База данных" :percent="stats.db_percent" :value="fmtBytes(stats.db_size)" />
+            <AdminGauge label="Память процесса" :percent="stats.mem_percent" :value="`${stats.mem_mb ?? '—'} МБ`" />
+          </div>
           <div class="stats-grid">
             <div class="stat"><b>{{ stats.online ?? '—' }}</b><span>онлайн</span></div>
             <div class="stat"><b>{{ stats.users ?? '—' }}</b><span>пользователей</span></div>
             <div class="stat"><b>{{ stats.channels ?? '—' }}</b><span>каналов</span></div>
             <div class="stat"><b>{{ stats.messages ?? '—' }}</b><span>сообщений</span></div>
             <div class="stat"><b>{{ stats.calls ?? '—' }}</b><span>звонков</span></div>
-            <div class="stat"><b>{{ fmtBytes(stats.db_size) }}</b><span>база данных</span></div>
-            <div class="stat"><b>{{ stats.mem_mb ?? '—' }} МБ</b><span>память процесса</span></div>
             <div class="stat"><b>{{ fmtUptime(stats.uptime_sec) }}</b><span>аптайм</span></div>
           </div>
           <p class="muted small">Go {{ stats.go }} · goroutines: {{ stats.goroutines }}</p>
@@ -296,7 +308,7 @@ function copyId(u: any) {
         <div class="frame">
           <p class="section-title">Бэкап базы данных</p>
           <p class="muted small">Скачайте полный бэкап (все пользователи, каналы и сообщения). Для восстановления загрузите файл бэкапа — база будет заменена, страница перезагрузится.</p>
-          <div class="row">
+          <div class="row backup-row">
             <button class="primary" :disabled="busy" @click="downloadBackup">⬇️ Скачать бэкап</button>
             <label class="btn-file">
               ⬆️ Восстановить из файла
@@ -392,38 +404,42 @@ function copyId(u: any) {
         </div>
       </div>
 
-      <div class="row end">
-        <button @click="emit('close')">Закрыть</button>
-      </div>
-    </div>
-  </div>
+      <DialogFooter class="grid-cols-1">
+        <Button variant="secondary" @click="emit('close')">Закрыть</Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
 </template>
 
 <style scoped>
-.admin {
-  width: 640px;
-}
 .tabs {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
   gap: 8px;
   margin-bottom: 12px;
+  padding: 0 12px;
+}
+.tabs button {
+  border-radius: 6px;
+  font-weight: 600;
 }
 .tabs .active {
-  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
 }
-.reg-toggle {
+.tabs .active:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+/* Рамки-блоки: текст внутри не прикасается к краям рамки.
+   (user-card/channel-card/create-user задают свой паддинг ниже.) */
+.frame {
+  padding: 12px 16px;
+}
+.gauges {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
   margin-bottom: 10px;
-}
-.create-user {
-  padding: 10px;
-  margin-bottom: 10px;
-}
-.section-title {
-  font-size: 12px;
-  text-transform: uppercase;
-  color: var(--text-dim);
-  font-weight: 700;
-  margin-bottom: 8px;
 }
 .stats-grid {
   display: grid;
@@ -439,6 +455,7 @@ function copyId(u: any) {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  text-align: center;
 }
 .stat b {
   font-size: 16px;
@@ -446,6 +463,21 @@ function copyId(u: any) {
 .stat span {
   font-size: 11px;
   color: var(--text-dim);
+}
+.reg-toggle {
+  margin-bottom: 10px;
+}
+.create-user {
+  padding: 10px;
+  margin-bottom: 10px;
+}
+.section-title {
+  font-size: 12px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  font-weight: 700;
+  margin-bottom: 8px;
+  text-align: center;
 }
 .btn-file {
   display: inline-block;
@@ -469,6 +501,7 @@ function copyId(u: any) {
   align-items: flex-start;
   gap: 8px;
   margin-bottom: 12px;
+  padding: 0 12px;
 }
 .reg-status {
   display: inline-flex;
@@ -501,6 +534,9 @@ function copyId(u: any) {
   gap: 8px;
   margin-top: 6px;
   align-items: center;
+}
+.backup-row {
+  justify-content: center;
 }
 .user-list {
   max-height: 380px;

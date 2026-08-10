@@ -1,3 +1,62 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'vue-sonner/style.css';
+
+/*
+ * Токены shadcn-компонентов (Dialog, Button, ...) живут в отдельном
+ * пространстве --ui-*, чтобы не конфликтовать с собственными переменными
+ * приложения (--bg, --accent, --border, --radius). Палитра — Discord.
+ */
+:root {
+  --ui-background: #313338;
+  --ui-foreground: #dbdee1;
+  --ui-card: #2b2d31;
+  --ui-card-foreground: #dbdee1;
+  --ui-popover: #111214;
+  --ui-popover-foreground: #dbdee1;
+  --ui-primary: #5865f2;
+  --ui-primary-foreground: #ffffff;
+  --ui-secondary: #2b2d31;
+  --ui-secondary-foreground: #dbdee1;
+  --ui-muted: #2b2d31;
+  --ui-muted-foreground: #949ba4;
+  --ui-accent: #404249;
+  --ui-accent-foreground: #dbdee1;
+  --ui-destructive: #da373c;
+  --ui-destructive-foreground: #ffffff;
+  --ui-border: #26282c;
+  --ui-input: #1e1f22;
+  --ui-ring: #5865f2;
+  --ui-radius: 8px;
+}
+
+@theme inline {
+  --radius-sm: calc(var(--ui-radius) - 4px);
+  --radius-md: calc(var(--ui-radius) - 2px);
+  --radius-lg: var(--ui-radius);
+  --radius-xl: calc(var(--ui-radius) + 4px);
+  --color-background: var(--ui-background);
+  --color-foreground: var(--ui-foreground);
+  --color-card: var(--ui-card);
+  --color-card-foreground: var(--ui-card-foreground);
+  --color-popover: var(--ui-popover);
+  --color-popover-foreground: var(--ui-popover-foreground);
+  --color-primary: var(--ui-primary);
+  --color-primary-foreground: var(--ui-primary-foreground);
+  --color-secondary: var(--ui-secondary);
+  --color-secondary-foreground: var(--ui-secondary-foreground);
+  --color-muted: var(--ui-muted);
+  --color-muted-foreground: var(--ui-muted-foreground);
+  --color-accent: var(--ui-accent);
+  --color-accent-foreground: var(--ui-accent-foreground);
+  --color-destructive: var(--ui-destructive);
+  --color-destructive-foreground: var(--ui-destructive-foreground);
+  --color-border: var(--ui-border);
+  --color-input: var(--ui-input);
+  --color-ring: var(--ui-ring);
+}
+
+/* Собственные токены приложения (не трогать компоненты shadcn). */
 :root {
   --bg: #1e1f22;
   --bg2: #2b2d31;
@@ -44,21 +103,30 @@ body {
   color: var(--text);
   font-size: 15px;
   overflow: hidden;
+  color-scheme: dark;
 }
 
 button {
   font: inherit;
   border: none;
-  background: var(--bg4);
-  color: var(--text);
+  background: #4e5058;
+  color: #fff;
   padding: 8px 14px;
-  border-radius: var(--radius);
+  border-radius: 4px;
   cursor: pointer;
-  transition: background 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    border-color 0.15s,
+    transform 0.05s;
 }
 
 button:hover:not(:disabled) {
-  background: #43454d;
+  background: #6d6f78;
+}
+
+button:active:not(:disabled) {
+  transform: translateY(1px);
 }
 
 button:disabled {
@@ -68,18 +136,21 @@ button:disabled {
 
 button.primary {
   background: var(--accent);
-  color: #fff;
 }
 button.primary:hover:not(:disabled) {
   background: var(--accent-hover);
 }
 button.danger {
   background: var(--red);
-  color: #fff;
+}
+button.danger:hover:not(:disabled) {
+  background: #a12829;
 }
 button.success {
   background: var(--green);
-  color: #fff;
+}
+button.success:hover:not(:disabled) {
+  background: #1a7f44;
 }
 
 input,
@@ -88,11 +159,19 @@ select {
   font: inherit;
   background: var(--bg);
   color: var(--text);
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   border-radius: var(--radius);
   padding: 9px 12px;
   outline: none;
   width: 100%;
+  min-width: 0;
+  transition: border-color 0.15s;
+}
+
+input:hover,
+textarea:hover,
+select:hover {
+  border-color: var(--bg4);
 }
 
 /* Чекбоксы/радио не растягиваются на всю строку (иначе соседние
@@ -103,6 +182,7 @@ input[type='radio'] {
   padding: 0;
   margin: 0;
   flex-shrink: 0;
+  accent-color: var(--accent);
 }
 
 /* Полноэкранный режим демонстрации (Tauri: развёрнуто окно приложения) —
@@ -133,32 +213,6 @@ select:focus {
   border-color: var(--accent);
 }
 
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.6);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-}
-
-.modal {
-  background: var(--bg2);
-  border-radius: 12px;
-  padding: 20px;
-  width: 460px;
-  max-width: 94vw;
-  max-height: 86vh;
-  overflow-y: auto;
-  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
-}
-
-.modal h2 {
-  margin-bottom: 14px;
-  font-size: 20px;
-}
-
 .field {
   margin-bottom: 12px;
 }
@@ -169,6 +223,13 @@ select:focus {
   font-size: 13px;
   font-weight: 600;
   text-transform: uppercase;
+}
+
+/* Поле в модалке: центрированная полоса с одинаковыми отступами по бокам,
+   чтобы инпут не растягивался на всю ширину попапа. */
+.modal-field {
+  margin: 0 auto;
+  width: min(100%, 300px);
 }
 
 .error-text {
@@ -213,4 +274,11 @@ select:focus {
 ::-webkit-scrollbar-thumb {
   background: var(--bg4);
   border-radius: 4px;
+}
+
+/* Тёмный фон у sonner-тостов поверх тёмного интерфейса. */
+[data-sonner-toaster] {
+  --normal-bg: #2b2d31;
+  --normal-border: #26282c;
+  --normal-text: #dbdee1;
 }

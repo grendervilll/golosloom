@@ -2,9 +2,9 @@
 import { defineStore } from 'pinia'
 import { markRaw } from 'vue'
 import { useSettingsStore } from './settings'
+import { toast } from 'vue-sonner'
 import { useAuthStore } from './auth'
 import { useChannelsStore } from './channels'
-import { useToasts } from './toasts'
 import { sounds } from '../audio/sounds'
 import type { Call } from '../api/types'
 import { AudioPresets, Room, RoomEvent, Track } from 'livekit-client'
@@ -282,8 +282,7 @@ export const useCallStore = defineStore('calls', {
         this.micOn = true
       } catch {
         this.micOn = false
-        const toasts = useToasts()
-        toasts.push({ kind: 'warning', text: 'Микрофон недоступен — проверьте разрешения браузера' })
+        toast.warning('Микрофон недоступен — проверьте разрешения браузера')
       }
     },
     async disconnectRoom() {
@@ -304,8 +303,7 @@ export const useCallStore = defineStore('calls', {
         await this.room.localParticipant.setMicrophoneEnabled(this.micOn)
       } catch {
         this.micOn = !this.micOn
-        const toasts = useToasts()
-        toasts.push({ kind: 'warning', text: 'Микрофон недоступен — проверьте разрешения браузера' })
+        toast.warning('Микрофон недоступен — проверьте разрешения браузера')
       }
     },
     async toggleCam() {
@@ -315,8 +313,7 @@ export const useCallStore = defineStore('calls', {
         await this.room.localParticipant.setCameraEnabled(this.camOn)
       } catch {
         this.camOn = !this.camOn
-        const toasts = useToasts()
-        toasts.push({ kind: 'warning', text: 'Веб-камера недоступна — проверьте разрешения браузера' })
+        toast.warning('Веб-камера недоступна — проверьте разрешения браузера')
       }
     },
     // Переключение микрофона на выбранное устройство.
@@ -325,8 +322,7 @@ export const useCallStore = defineStore('calls', {
       try {
         await this.room.switchActiveDevice('audioinput', deviceId)
       } catch {
-        const toasts = useToasts()
-        toasts.push({ kind: 'warning', text: 'Не удалось переключить микрофон' })
+        toast.warning('Не удалось переключить микрофон')
       }
     },
     async toggleScreen(quality: string) {
@@ -342,8 +338,7 @@ export const useCallStore = defineStore('calls', {
         })
         this.screenOn = true
       } catch {
-        const toasts = useToasts()
-        toasts.push({ kind: 'warning', text: 'Не удалось запустить демонстрацию экрана' })
+        toast.warning('Не удалось запустить демонстрацию экрана')
       }
     },
     // Выключение демонстрации: отдельное действие, чтобы кнопка «Экран»
@@ -429,8 +424,7 @@ export const useCallStore = defineStore('calls', {
         ringing: false,
         inCall: false,
       })
-      const toasts = useToasts()
-      toasts.push({ kind: 'call', text: `Вас вызывает ${data.initiator_nick}` })
+      toast(`Вас вызывает ${data.initiator_nick}`, { duration: 15000 })
       if (!alreadyRinging && !alreadyInCall) {
         sounds.playRing()
       } else {
@@ -455,8 +449,7 @@ export const useCallStore = defineStore('calls', {
       if (channels.currentId) void this.refresh(channels.currentId)
     },
     handlePunch(data: { by_nick: string }) {
-      const toasts = useToasts()
-      toasts.push({ kind: 'punch', text: `Вас пнул ${data.by_nick}` })
+      toast(`Вас пнул ${data.by_nick}`, { duration: 6000 })
       sounds.punched()
     },
   },

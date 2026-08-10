@@ -1,0 +1,16 @@
+<script setup lang="ts">
+import type { HTMLAttributes } from 'vue'
+import { DialogClose, type DialogCloseProps } from 'reka-ui'
+import { cn } from '../../../lib/utils'
+
+const props = defineProps<DialogCloseProps & { class?: HTMLAttributes['class'] }>()
+</script>
+
+<template>
+  <DialogClose
+    :class="cn('cursor-pointer', props.class)"
+    v-bind="props"
+  >
+    <slot />
+  </DialogClose>
+</template>

@@ -6,16 +6,15 @@ import { useSettingsStore } from './stores/settings'
 import { useChannelsStore } from './stores/channels'
 import { useChatStore } from './stores/chat'
 import { useCallStore } from './stores/calls'
-import { useToasts } from './stores/toasts'
+import { toast } from 'vue-sonner'
 import { sounds } from './audio/sounds'
-import ToastList from './components/ToastList.vue'
+import { Toaster } from './components/ui/sonner'
 
 const auth = useAuthStore()
 const settings = useSettingsStore()
 const channels = useChannelsStore()
 const chat = useChatStore()
 const calls = useCallStore()
-const toasts = useToasts()
 
 let unsubs: (() => void)[] = []
 
@@ -47,22 +46,22 @@ function wireWs() {
     }),
     ws.on('call.invite.timeout', (d: any) => {
       calls.stopIncoming(d.call_id)
-      toasts.push({ kind: 'info', text: 'Вызов не принят, звонок отклонён автоматически' })
+      toast.info('Вызов не принят, звонок отклонён автоматически')
     }),
     ws.on('punch', (d: any) => calls.handlePunch(d)),
     ws.on('device.registered', () => void channels.syncAllKeys()),
     ws.on('kicked', (d: any) => {
       sounds.warning()
-      toasts.push({ kind: 'warning', text: `Вас кикнули из канала: ${d.reason || 'без причины'}` })
+      toast.warning(`Вас кикнули из канала: ${d.reason || 'без причины'}`)
     }),
     ws.on('banned', (d: any) => {
       sounds.warning()
-      toasts.push({ kind: 'warning', text: `Вас забанили в канале: ${d.reason || 'без причины'}` })
+      toast.warning(`Вас забанили в канале: ${d.reason || 'без причины'}`)
       void channels.refresh()
     }),
     ws.on('server_banned', (d: any) => {
       sounds.warning()
-      toasts.push({ kind: 'warning', text: `Вы забанены на сервере: ${d.reason || 'без причины'}` })
+      toast.warning(`Вы забанены на сервере: ${d.reason || 'без причины'}`)
       auth.logout()
     }),
     ws.on('channel.deleted', (d: any) => {
@@ -107,6 +106,8 @@ onUnmounted(() => {
 <template>
   <div class="app-root">
     <RouterView />
-    <ToastList />
   </div>
+  <!-- Toaster вне .app-root: его <section> в потоке документа, и правило
+       .app-root > * { flex: 1 } сжимало бы интерфейс влево. -->
+  <Toaster theme="dark" position="top-right" :close-button="true" rich-colors />
 </template>

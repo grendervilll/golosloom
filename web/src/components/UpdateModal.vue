@@ -3,6 +3,14 @@
 // из GitHub Releases через плагин updater).
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import { Button } from './ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from './ui/dialog'
 
 const visible = ref(false)
 const busy = ref(false)
@@ -61,30 +69,19 @@ onMounted(checkForUpdates)
 </script>
 
 <template>
-  <div v-if="visible" class="modal-backdrop">
-    <div class="modal update">
-      <h2>⬆️ Доступно обновление</h2>
+  <Dialog :open="visible" @update:open="(o) => { if (!o) visible = false }">
+    <DialogContent class="max-w-[380px] text-center">
+      <DialogHeader class="text-center">
+        <DialogTitle class="text-center">⬆️ Доступно обновление</DialogTitle>
+      </DialogHeader>
       <p v-if="newVersion">Вышла новая версия Golosloom <b>{{ newVersion }}</b>. Обновить сейчас?</p>
       <p v-else>Вышла новая версия Golosloom. Обновить сейчас?</p>
       <p v-if="progress" class="muted">{{ progress }}</p>
       <p v-if="error" class="error-text">{{ error }}</p>
-      <div class="row">
-        <button class="primary" :disabled="busy" @click="installNow">Да, обновить</button>
-        <button :disabled="busy" @click="later">Позже</button>
-      </div>
-    </div>
-  </div>
+      <DialogFooter class="grid-cols-2">
+        <Button variant="secondary" :disabled="busy" @click="later">Позже</Button>
+        <Button :disabled="busy" @click="installNow">Да, обновить</Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
 </template>
-
-<style scoped>
-.update {
-  width: 380px;
-  text-align: center;
-}
-.row {
-  display: flex;
-  gap: 8px;
-  justify-content: center;
-  margin-top: 8px;
-}
-</style>

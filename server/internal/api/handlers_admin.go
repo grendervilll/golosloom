@@ -25,18 +25,37 @@ func (s *Server) handleAdminStats(w http.ResponseWriter, r *http.Request) {
 	}
 	var mem runtime.MemStats
 	runtime.ReadMemStats(&mem)
+	// Проценты для полукруговых индикаторов в админ-панели.
+	cpuPercent := s.systemCPUPercent()
+	ramPercent, ramTotalMB := systemRAM()
+	// Ёмкости индикаторов: БД — 1 ГБ, память процесса — 256 МБ (лимит контейнера).
+	const dbCapBytes = 1 << 30
+	const memCapBytes = 256 << 20
+	dbPercent := float64(dbSize) / dbCapBytes * 100
+	memPercent := float64(mem.Alloc) / memCapBytes * 100
+	if dbPercent > 100 {
+		dbPercent = 100
+	}
+	if memPercent > 100 {
+		memPercent = 100
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"uptime_sec": int64(time.Since(s.startedAt).Seconds()),
-		"version":    "1.2.0",
-		"go":         runtime.Version(),
-		"users":      users,
-		"channels":   channels,
-		"messages":   messages,
-		"calls":      calls,
-		"online":     s.Hub.OnlineCount(),
-		"db_size":    dbSize,
-		"mem_mb":     mem.Alloc / 1024 / 1024,
-		"goroutines": runtime.NumGoroutine(),
+		"uptime_sec":    int64(time.Since(s.startedAt).Seconds()),
+		"version":       "1.2.0",
+		"go":            runtime.Version(),
+		"users":         users,
+		"channels":      channels,
+		"messages":      messages,
+		"calls":         calls,
+		"online":        s.Hub.OnlineCount(),
+		"db_size":       dbSize,
+		"mem_mb":        mem.Alloc / 1024 / 1024,
+		"goroutines":    runtime.NumGoroutine(),
+		"cpu_percent":   cpuPercent,
+		"ram_percent":   ramPercent,
+		"ram_total_mb":  ramTotalMB,
+		"db_percent":    dbPercent,
+		"mem_percent":   memPercent,
 	})
 }
 

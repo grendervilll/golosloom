@@ -3,8 +3,16 @@
 import { computed, ref } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useChannelsStore } from '../stores/channels'
-import { useToasts } from '../stores/toasts'
+import { toast } from 'vue-sonner'
 import { roleIcon } from '../utils/roles'
+import { Button } from './ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from './ui/dialog'
 
 const emit = defineEmits<{
   (e: 'open-invite'): void
@@ -17,7 +25,6 @@ const emit = defineEmits<{
 
 const auth = useAuthStore()
 const channels = useChannelsStore()
-const toasts = useToasts()
 
 const menuOpen = ref(false)
 const newChannelName = ref('')
@@ -54,7 +61,7 @@ async function deleteCurrent() {
   try {
     await channels.deleteChannel(ch.id)
   } catch (e: any) {
-    toasts.push({ kind: 'error', text: e.message })
+    toast.error(e.message)
   }
 }
 
@@ -62,7 +69,7 @@ async function acceptInvite(id: number) {
   try {
     await channels.acceptInvite(id)
   } catch (e: any) {
-    toasts.push({ kind: 'error', text: e.message })
+    toast.error(e.message)
   }
 }
 async function declineInvite(id: number) {
@@ -86,7 +93,7 @@ async function declineInvite(id: number) {
     </div>
 
     <div class="channel-list">
-      <button class="create-channel-btn" @click="showCreate = true">
+      <button class="success create-channel-btn" @click="showCreate = true">
         <span>➕</span> Создать канал
       </button>
       <div v-for="ch in sortedChannels" :key="ch.id" class="frame channel-item" :class="{ active: ch.id === channels.currentId }" @click="select(ch.id)">
@@ -119,21 +126,23 @@ async function declineInvite(id: number) {
       </div>
     </div>
 
-    <div v-if="showCreate" class="modal-backdrop" @click.self="showCreate = false">
-      <div class="modal">
-        <h2>Создать канал</h2>
-        <div class="field">
+    <Dialog :open="showCreate" @update:open="(o) => { if (!o) showCreate = false }">
+      <DialogContent class="max-w-[420px]">
+        <DialogHeader class="text-center">
+          <DialogTitle class="text-center">Создать канал</DialogTitle>
+        </DialogHeader>
+        <div class="field modal-field">
           <label>Название</label>
           <input v-model="newChannelName" placeholder="Название канала" />
         </div>
-        <label class="check"><input v-model="newChannelPrivate" type="checkbox" /> Приватный канал</label>
+        <label class="check create-check"><input v-model="newChannelPrivate" type="checkbox" /> Приватный канал</label>
         <div v-if="error" class="error-text">{{ error }}</div>
-        <div class="row" style="margin-top: 14px">
-          <button class="primary" @click="createChannel">Создать</button>
-          <button @click="showCreate = false">Отмена</button>
-        </div>
-      </div>
-    </div>
+        <DialogFooter class="grid-cols-2">
+          <Button variant="secondary" @click="showCreate = false">Отмена</Button>
+          <Button @click="createChannel">Создать</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </aside>
 </template>
 
@@ -209,12 +218,8 @@ async function declineInvite(id: number) {
   gap: 8px;
   width: 100%;
   margin-bottom: 4px;
-  background: var(--accent);
-  color: #fff;
   font-weight: 600;
-}
-.create-channel-btn:hover {
-  background: var(--accent-hover);
+  border-radius: 6px;
 }
 
 @media (max-width: 1200px) {
@@ -328,5 +333,12 @@ async function declineInvite(id: number) {
   align-items: center;
   color: var(--text-dim);
   font-size: 14px;
+}
+
+/* Поле названия и чекбокс — по центру с одинаковыми отступами по бокам. */
+.create-check {
+  justify-content: center;
+  margin: 0 auto;
+  width: min(100%, 300px);
 }
 </style>

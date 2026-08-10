@@ -111,8 +111,25 @@ async function leave() {
   gap: 8px;
   flex-wrap: wrap;
 }
-button.active {
-  border: 1px solid var(--accent);
+.controls button {
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.controls button.active {
+  background: var(--accent);
+}
+.controls button.active:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+.controls .leave {
+  background: var(--red);
+  padding: 7px 18px;
+  font-weight: 700;
+}
+.controls .leave:hover:not(:disabled) {
+  background: #a12829;
 }
 .popup {
   position: absolute;
@@ -127,6 +144,7 @@ button.active {
   gap: 6px;
   z-index: 40;
   min-width: 220px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
 }
 .popup-title {
   font-size: 12px;

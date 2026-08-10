@@ -1,10 +1,10 @@
 // Каналы: список, создание, приглашения, участники, права, ключи каналов.
 import { defineStore } from 'pinia'
 import { useSettingsStore } from './settings'
+import { toast } from 'vue-sonner'
 import { useAuthStore } from './auth'
 import { useChatStore } from './chat'
 import { useCallStore } from './calls'
-import { useToasts } from './toasts'
 import type { Channel, ChannelMember, Invite, Role } from '../api/types'
 import { getKeyStorage } from '../crypto/storage'
 import { generateChannelKey, wrapChannelKey, unwrapChannelKey, generateDeviceKeys, bytesToB64, b64ToBytes } from '../crypto/crypto'
@@ -219,11 +219,15 @@ export const useChannelsStore = defineStore('channels', {
       }, 7000)
     },
     async handleInviteEvent(invite: Invite) {
-      const toasts = useToasts()
-      toasts.push({
-        kind: 'invite',
-        text: `Приглашение в канал «${invite.channel_name}» от ${invite.invited_by_nick}`,
-        inviteId: invite.id,
+      const toastId = toast(`Приглашение в канал «${invite.channel_name}» от ${invite.invited_by_nick}`, {
+        duration: 15000,
+        action: {
+          label: 'Принять',
+          onClick: () => {
+            void this.acceptInvite(invite.id)
+            toast.dismiss(toastId)
+          },
+        },
       })
       await this.refreshInvites()
     },

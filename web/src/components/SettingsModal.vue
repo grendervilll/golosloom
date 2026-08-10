@@ -2,12 +2,19 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useSettingsStore } from '../stores/settings'
-import { useToasts } from '../stores/toasts'
+import { toast } from 'vue-sonner'
+import { Button } from './ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from './ui/dialog'
 
 const emit = defineEmits<{ (e: 'close'): void }>()
 
 const settings = useSettingsStore()
-const toasts = useToasts()
 
 const serverUrl = ref(settings.serverUrl)
 
@@ -15,24 +22,26 @@ async function save() {
   try {
     settings.setServerUrl(serverUrl.value.trim())
     await settings.loadConfig()
-    toasts.push({ kind: 'info', text: 'Настройки сохранены' })
+    toast.info('Настройки сохранены')
     emit('close')
   } catch (e: any) {
-    toasts.push({ kind: 'error', text: 'Не удалось подключиться к серверу: ' + e.message })
+    toast.error('Не удалось подключиться к серверу: ' + e.message)
   }
 }
 </script>
 
 <template>
-  <div class="modal-backdrop" @click.self="emit('close')">
-    <div class="modal">
-      <h2>Настройки</h2>
-      <div class="field">
+  <Dialog :open="true" @update:open="(o) => { if (!o) emit('close') }">
+    <DialogContent class="max-w-[420px]">
+      <DialogHeader class="text-center">
+        <DialogTitle class="text-center">Настройки</DialogTitle>
+      </DialogHeader>
+      <div class="field modal-field">
         <label>Адрес сервера</label>
         <input v-model="serverUrl" placeholder="https://ваш-домен.example" />
         <p class="hint-text">Можно сменить при переезде на другой VPS — пересборка приложения не нужна</p>
       </div>
-      <div class="field">
+      <div class="field modal-field">
         <label>Шумоподавление микрофона</label>
         <select :value="settings.noiseSuppression" @change="settings.setNoiseSuppression(($event.target as HTMLSelectElement).value as any)">
           <option value="off">Выключено</option>
@@ -41,7 +50,7 @@ async function save() {
           <option value="high">Сильное</option>
         </select>
       </div>
-      <div class="field">
+      <div class="field modal-field">
         <label>Качество демонстрации экрана</label>
         <select :value="settings.screenQuality" @change="settings.setScreenQuality(($event.target as HTMLSelectElement).value)">
           <option value="1080p60">1080p / 60 fps</option>
@@ -51,19 +60,10 @@ async function save() {
           <option value="480p30">480p / 30 fps</option>
         </select>
       </div>
-      <div class="row end">
-        <button class="primary" @click="save">Сохранить</button>
-        <button @click="emit('close')">Закрыть</button>
-      </div>
-    </div>
-  </div>
+      <DialogFooter class="grid-cols-2">
+        <Button variant="secondary" @click="emit('close')">Закрыть</Button>
+        <Button @click="save">Сохранить</Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
 </template>
-
-<style scoped>
-.row.end {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 12px;
-}
-</style>

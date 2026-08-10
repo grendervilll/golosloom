@@ -5,7 +5,7 @@ import { useAuthStore } from '../stores/auth'
 import { useChannelsStore } from '../stores/channels'
 import { useChatStore, type ChatMessage } from '../stores/chat'
 import { useCallStore } from '../stores/calls'
-import { useToasts } from '../stores/toasts'
+import { toast } from 'vue-sonner'
 import MessageItem from './MessageItem.vue'
 import EmojiPicker from './EmojiPicker.vue'
 
@@ -15,7 +15,6 @@ const auth = useAuthStore()
 const channels = useChannelsStore()
 const chat = useChatStore()
 const calls = useCallStore()
-const toasts = useToasts()
 const showPicker = ref(false)
 
 const listEl = ref<HTMLElement | null>(null)
@@ -47,7 +46,7 @@ async function send() {
   }
   const ok = await chat.send(channels.currentId, text)
   if (!ok) {
-    toasts.push({ kind: 'warning', text: 'Ключ канала ещё не получен, повторите позже' })
+    toast.warning('Ключ канала ещё не получен, повторите позже')
     return
   }
   chat.draft = ''
@@ -68,7 +67,7 @@ async function sendGif(url: string) {
   showPicker.value = false
   const ok = await chat.send(channels.currentId, '![gif](' + url + ')')
   if (!ok) {
-    toasts.push({ kind: 'warning', text: 'Ключ канала ещё не получен, повторите позже' })
+    toast.warning('Ключ канала ещё не получен, повторите позже')
   }
 }
 
@@ -214,19 +213,30 @@ function onKeydown(e: KeyboardEvent) {
 }
 .members-btn {
   margin-left: auto;
-  padding: 4px 10px;
+  padding: 6px 10px;
   display: block;
+  border-radius: 999px;
+  background: var(--bg4);
 }
 .invite-btn {
   margin-left: auto;
-  padding: 5px 12px;
+  padding: 6px 12px;
   background: transparent;
   border: 1px solid var(--accent);
   color: var(--text);
   font-size: 13px;
+  border-radius: 999px;
 }
 .invite-btn:hover {
-  background: var(--bg4);
+  background: var(--accent);
+  color: #fff;
+}
+.reg-invite-btn {
+  color: var(--accent, #5865f2);
+  border-color: var(--accent, #5865f2);
+}
+.reg-invite-btn:hover {
+  color: #fff;
 }
 .chat-list {
   flex: 1;
@@ -264,7 +274,7 @@ function onKeydown(e: KeyboardEvent) {
   padding: 8px 12px;
   background: transparent;
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: 999px;
   cursor: pointer;
 }
 .emoji-btn:hover {
@@ -277,20 +287,36 @@ function onKeydown(e: KeyboardEvent) {
 .ctx-menu {
   position: fixed;
   z-index: 200;
-  background: var(--bg3);
+  background: #111214;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 6px;
   padding: 6px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   min-width: 200px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  animation: ctx-in 0.1s ease;
 }
 .ctx-menu button {
   text-align: left;
   background: transparent;
+  border-radius: 4px;
+  font-size: 13px;
+  padding: 8px 10px;
 }
 .ctx-menu button:hover {
-  background: var(--bg4);
+  background: var(--accent);
+  color: #fff;
+}
+@keyframes ctx-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 </style>

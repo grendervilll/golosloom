@@ -1,3 +1,11 @@
+# Общий лимит логов для всех контейнеров: 3 файла по 10 МБ.
+# Без него docker-логи (coturn, LiveKit, Caddy) забивают диск.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: 3
+
 services:
   server:
     build:
@@ -23,6 +31,8 @@ services:
       - livekit
     networks:
       - golosloom
+    mem_limit: 256m
+    logging: *default-logging
 
   web:
     build:
@@ -34,6 +44,8 @@ services:
       - web-dist:/srv
     networks:
       - golosloom
+    mem_limit: 32m
+    logging: *default-logging
 
   livekit:
     # v1.8 не поддерживает новый путь сигналинга /rtc/v1 (SDK: "v1 RTC path
@@ -47,6 +59,8 @@ services:
     network_mode: host
     volumes:
       - ${LIVEKIT_CONFIG}:/etc/livekit.yaml:ro
+    mem_limit: 512m
+    logging: *default-logging
 
   coturn:
     image: coturn/coturn:4.6
@@ -65,14 +79,24 @@ services:
       - --realm=${TURN_REALM}
       - --use-auth-secret
       - --static-auth-secret=${TURN_SHARED_SECRET}
+      # Диапазон реле расширен до 100 портов: 20 участников + демонстрации.
       - --min-port=49160
-      - --max-port=49200
+      - --max-port=49260
       - --no-cli
       - --no-tlsv1
       - --no-tlsv1_1
+      # Безопасность: не релеить мультикаст-адреса.
+      - --no-multicast-peers
+      # Защита от исчерпания портов: максимум одновременных реле-сессий.
+      # user-quota не задаём: golosloom использует общий username
+      # (expiry:golosloom), поэтому квота "на пользователя" работает как общая.
+      - --total-quota=80
+      - --max-sessions=160
       - --cert=/certs/fullchain.pem
       - --pkey=/certs/privkey.pem
       - --dh-file=/certs/dhparam.pem
+    mem_limit: 128m
+    logging: *default-logging
 
   caddy:
     image: caddy:2
@@ -93,6 +117,8 @@ services:
       - server
     networks:
       - golosloom
+    mem_limit: 128m
+    logging: *default-logging
 
 networks:
   golosloom:

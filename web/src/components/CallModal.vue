@@ -3,10 +3,18 @@
 import { computed, onMounted, ref } from 'vue'
 import { useChannelsStore } from '../stores/channels'
 import { useCallStore } from '../stores/calls'
-import { useToasts } from '../stores/toasts'
 import { useSettingsStore } from '../stores/settings'
-import { roleIcon } from '../utils/roles'
 import { useAuthStore } from '../stores/auth'
+import { toast } from 'vue-sonner'
+import { Button } from './ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from './ui/dialog'
+import { roleIcon } from '../utils/roles'
 
 const emit = defineEmits<{ (e: 'close'): void }>()
 
@@ -14,7 +22,6 @@ const channels = useChannelsStore()
 const calls = useCallStore()
 const auth = useAuthStore()
 const settings = useSettingsStore()
-const toasts = useToasts()
 
 const selected = ref<number[]>([])
 const busy = ref(false)
@@ -49,7 +56,7 @@ function clearAll() {
 
 async function start() {
   if (selected.value.length === 0) {
-    toasts.push({ kind: 'warning', text: 'Выберите хотя бы одного пользователя' })
+    toast.warning('Выберите хотя бы одного пользователя')
     return
   }
   busy.value = true
@@ -57,7 +64,7 @@ async function start() {
     await calls.initiate(channels.currentId, selected.value)
     emit('close')
   } catch (e: any) {
-    toasts.push({ kind: 'error', text: e.message })
+    toast.error(e.message)
   } finally {
     busy.value = false
   }
@@ -65,12 +72,14 @@ async function start() {
 </script>
 
 <template>
-  <div class="modal-backdrop" @click.self="emit('close')">
-    <div class="modal">
-      <h2>Кому позвонить?</h2>
+  <Dialog :open="true" @update:open="(o) => { if (!o) emit('close') }">
+    <DialogContent class="max-w-[420px]">
+      <DialogHeader class="text-center">
+        <DialogTitle class="text-center">Кому позвонить?</DialogTitle>
+      </DialogHeader>
       <div class="toolbar">
-        <button @click="selectAll">Выбрать всех</button>
-        <button @click="clearAll">Снять всех</button>
+        <Button variant="secondary" size="sm" @click="selectAll">Выбрать всех</Button>
+        <Button variant="secondary" size="sm" @click="clearAll">Снять всех</Button>
       </div>
       <div class="user-list">
         <div v-for="u in candidates" :key="u.user_id" class="user-row" :class="{ picked: selected.includes(u.user_id) }" @click="toggle(u.user_id)">
@@ -79,19 +88,20 @@ async function start() {
           <span class="nick">{{ u.nick }}</span>
           <span class="muted small">ID: {{ u.user_id }}</span>
         </div>
-        <p v-if="candidates.length === 0" class="muted">В канале нет других участников</p>
+        <p v-if="candidates.length === 0" class="muted center">В канале нет других участников</p>
       </div>
-      <div class="row">
-        <button class="primary" :disabled="busy" @click="start">Начать вызов</button>
-        <button @click="emit('close')">Отмена</button>
-      </div>
-    </div>
-  </div>
+      <DialogFooter class="grid-cols-2">
+        <Button variant="secondary" @click="emit('close')">Отмена</Button>
+        <Button :disabled="busy" @click="start">Начать вызов</Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
 </template>
 
 <style scoped>
 .toolbar {
   display: flex;
+  justify-content: center;
   gap: 8px;
   margin-bottom: 10px;
 }
@@ -102,6 +112,10 @@ async function start() {
   flex-direction: column;
   gap: 4px;
   margin-bottom: 12px;
+  padding: 0 16px;
+}
+.user-list .center {
+  text-align: center;
 }
 .user-row {
   display: flex;
@@ -130,10 +144,5 @@ async function start() {
 .user-row .muted.small {
   flex-shrink: 0;
   margin-left: auto;
-}
-.row {
-  display: flex;
-  gap: 8px;
-  justify-content: flex-end;
 }
 </style>

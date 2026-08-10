@@ -2,11 +2,18 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useCallStore } from '../stores/calls'
-import { useToasts } from '../stores/toasts'
+import { toast } from 'vue-sonner'
 import type { Call } from '../api/types'
+import { Button } from './ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from './ui/dialog'
 
 const calls = useCallStore()
-const toasts = useToasts()
 
 const call = computed(() => calls.ringingCall)
 
@@ -14,7 +21,7 @@ async function accept(c: Call) {
   try {
     await calls.accept(c)
   } catch (e: any) {
-    toasts.push({ kind: 'error', text: e.message || 'Не удалось подключиться к звонку' })
+    toast.error(e.message || 'Не удалось подключиться к звонку')
   }
 }
 async function decline(c: Call) {
@@ -23,30 +30,17 @@ async function decline(c: Call) {
 </script>
 
 <template>
-  <div v-if="call" class="modal-backdrop">
-    <div class="modal incoming">
-      <h2>📞 Входящий звонок</h2>
+  <!-- :open управляется только звонком: Esc/клик мимо не закроют входящий вызов. -->
+  <Dialog v-if="call" :open="true">
+    <DialogContent class="max-w-[360px] text-center">
+      <DialogHeader class="text-center">
+        <DialogTitle class="text-center">📞 Входящий звонок</DialogTitle>
+      </DialogHeader>
       <p>Вам звонят в канале. Принять?</p>
-      <div class="row">
-        <button class="success" @click="accept(call)">Принять</button>
-        <button class="danger" @click="decline(call)">Отклонить</button>
-      </div>
-    </div>
-  </div>
+      <DialogFooter class="grid-cols-2">
+        <Button variant="outline" @click="decline(call)">Отклонить</Button>
+        <Button class="bg-[#23a55a] hover:bg-[#23a55a]/90" @click="accept(call)">Принять</Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
 </template>
-
-<style scoped>
-.incoming {
-  text-align: center;
-  width: 360px;
-}
-.row {
-  display: flex;
-  gap: 10px;
-  justify-content: center;
-  margin-top: 16px;
-}
-.row button {
-  flex: 1;
-}
-</style>

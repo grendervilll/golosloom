@@ -130,8 +130,8 @@ ask_params() {
 # Порты, которые открывает скрипт (в ufw). SSH — отдельно.
 # Диапазон UDP LiveKit сужен до 100 портов (хватает на 100 одновременных
 # участников медиа) и не пересекается с эфемерными портами хоста.
-# -----------------------------------------------------------------------------
-NEEDED_PORTS="80/tcp 443/tcp 7880/tcp 7881/tcp 7882/tcp 50000:50100/udp 3478/udp 3478/tcp 5349/udp 5349/tcp 49160:49200/udp"
+# Реле TURN — 100 портов (49160-49260): 20 участников + демонстрации.
+NEEDED_PORTS="80/tcp 443/tcp 7880/tcp 7881/tcp 7882/tcp 50000:50100/udp 3478/udp 3478/tcp 5349/udp 5349/tcp 49160:49260/udp"
 
 open_ports() {
   ufw status >/dev/null 2>&1 || { ufw --force enable >/dev/null 2>&1 || true; }
@@ -226,6 +226,19 @@ rtc:
   congestion_control:
     enabled: false
   allow_tcp_fallback: true
+# Лимиты комнат: защита слабого VPS (1 CPU / 1-2 ГБ) от перегруза.
+room:
+  # Максимум участников в комнате (расчёт — 10-20 человек, запас 30).
+  max_participants: 30
+  # Пустая комната закрывается сама через 5 минут — авто-очистка.
+  empty_timeout: 300
+  # Отвалившийся участник удаляется через 2 минуты (запас для слабого
+  # мобильного интернета; без этого брошенные устройства висят вечно).
+  departure_timeout: 120
+limit:
+  # Максимум публикуемых треков на участника: голос + камера + экран.
+  # Один клиент не сможет залить SFU потоками.
+  num_tracks: 3
 keys:
   ${api_key}: ${api_secret}
 logging:
@@ -326,6 +339,22 @@ EOF
 }
 
 # -----------------------------------------------------------------------------
+# Ограничение системных логов (journald): без лимита они могут занять весь
+# диск дешёвого VPS (15-20 ГБ). Логи контейнеров ограничены в compose.
+# -----------------------------------------------------------------------------
+configure_logs() {
+  mkdir -p /etc/systemd/journald.conf.d
+  cat > /etc/systemd/journald.conf.d/golosloom.conf <<'EOF'
+[Journal]
+SystemMaxUse=200M
+SystemMaxFileSize=20M
+MaxRetentionSec=7d
+EOF
+  systemctl restart systemd-journald >/dev/null 2>&1 || true
+  log "Системные логи ограничены (journald: 200 МБ, 7 дней)"
+}
+
+# -----------------------------------------------------------------------------
 # Проверка занятости портов: медиа-сервисы используют host-сеть, поэтому
 # конфликтующие процессы на хосте (например, системные coturn/caddy) помешают
 # запуску. Ловим это до начала установки.
@@ -363,6 +392,7 @@ install_fresh() {
   check_os
   install_deps
   configure_docker
+  configure_logs
   ask_params
   mkdir -p "$INSTALL_DIR" "$DATA_DIR"
   clone_repo
@@ -397,6 +427,7 @@ do_update() {
   [ -f "$STATE_FILE" ] || die "Установка не найдена. Запустите install.sh (без аргументов) для установки."
   check_os
   configure_docker
+  configure_logs
   DOMAIN="$(state_get domain)"
   SSH_PORT="$(state_get ssh_port)"
   GOLOSLOOM_REPO="$(state_get repo)"
@@ -511,7 +542,9 @@ bantime = 3600
 findtime = 600
 maxretry = 5
 banaction = ufw
-backend = auto
+# polling (а не auto/pyinotify): Caddy ротирует access.log переименованием
+# файла, и inotify-бэкенд потерял бы журнал после ротации.
+backend = polling
 
 [sshd]
 enabled = true

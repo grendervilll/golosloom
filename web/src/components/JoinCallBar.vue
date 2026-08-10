@@ -2,10 +2,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useCallStore } from '../stores/calls'
-import { useToasts } from '../stores/toasts'
+import { toast } from 'vue-sonner'
 
 const calls = useCallStore()
-const toasts = useToasts()
 
 const visible = computed(() => calls.canJoinCall)
 
@@ -15,14 +14,14 @@ async function join() {
   try {
     await calls.join(call.id)
   } catch (e: any) {
-    toasts.push({ kind: 'error', text: e.message })
+    toast.error(e.message)
   }
 }
 </script>
 
 <template>
   <div v-if="visible" class="join-bar">
-    <button class="primary" @click="join">📞 Войти в звонок</button>
+    <button class="success" @click="join">📞 Войти в звонок</button>
   </div>
 </template>
 
@@ -34,5 +33,7 @@ async function join() {
 }
 .join-bar button {
   width: 100%;
+  border-radius: 999px;
+  font-weight: 600;
 }
 </style>

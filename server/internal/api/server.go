@@ -27,6 +27,10 @@ type Server struct {
 
 	loginLimiter    *limiter
 	registerLimiter *limiter
+
+	statsMu       sync.Mutex
+	prevCPUIdle   uint64
+	prevCPUTotal  uint64
 }
 
 type bucket struct {
