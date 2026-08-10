@@ -91,7 +91,6 @@ services:
       # user-quota не задаём: golosloom использует общий username
       # (expiry:golosloom), поэтому квота "на пользователя" работает как общая.
       - --total-quota=80
-      - --max-sessions=160
       - --cert=/certs/fullchain.pem
       - --pkey=/certs/privkey.pem
       - --dh-file=/certs/dhparam.pem
