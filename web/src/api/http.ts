@@ -75,6 +75,14 @@ export class ApiClient {
     return this.request('DELETE', path)
   }
 
+  // --- Web Push-уведомления ---
+  pushSubscribe(endpoint: string, p256dh: string, auth: string) {
+    return this.post('/api/push/subscribe', { endpoint, p256dh, auth })
+  }
+  pushUnsubscribe(endpoint: string) {
+    return this.request('DELETE', '/api/push/subscribe', { endpoint })
+  }
+
   // --- Админ-панель: мониторинг и бэкапы ---
   adminStats() {
     return this.get('/api/admin/stats')
@@ -279,5 +287,6 @@ export interface ServerConfigShape {
   ws_path: string
   livekit_url: string
   max_message_len: number
+  vapid_public_key?: string
   turn: { urls: string[]; username: string; credential: string }
 }

@@ -256,6 +256,14 @@ CREATE TABLE IF NOT EXISTS registration_invites (
 	expires_at TEXT NOT NULL,
 	used_at TEXT
 );
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	endpoint TEXT NOT NULL UNIQUE,
+	p256dh TEXT NOT NULL,
+	auth TEXT NOT NULL,
+	created_at TEXT NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_messages_channel ON messages(channel_id, id);
 CREATE INDEX IF NOT EXISTS idx_invites_user ON channel_invites(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_call_invites_user ON call_invites(user_id, status);
@@ -1336,4 +1344,45 @@ func (s *Store) CountCallsByInitiator(channelID, userID int64) (int, error) {
 	err := s.db.QueryRow(`SELECT COUNT(*) FROM calls WHERE channel_id = ? AND initiator_id = ? AND status != 'ended'`,
 		channelID, userID).Scan(&n)
 	return n, err
+}
+
+// ---------- Push-подписки (Web Push) ----------
+
+type PushSubscription struct {
+	UserID   int64
+	Endpoint string
+	P256dh   string
+	Auth     string
+}
+
+// AddPushSubscription добавляет подписку; при повторной регистрации того же
+// эндпоинта обновляет ключи (приложение могло переустановить SW).
+func (s *Store) AddPushSubscription(userID int64, endpoint, p256dh, auth string) error {
+	_, err := s.db.Exec(`INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth, created_at)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(endpoint) DO UPDATE SET p256dh = excluded.p256dh, auth = excluded.auth, user_id = excluded.user_id`,
+		userID, endpoint, p256dh, auth, now())
+	return err
+}
+
+func (s *Store) RemovePushSubscription(userID int64, endpoint string) error {
+	_, err := s.db.Exec(`DELETE FROM push_subscriptions WHERE user_id = ? AND endpoint = ?`, userID, endpoint)
+	return err
+}
+
+func (s *Store) PushSubscriptions(userID int64) ([]PushSubscription, error) {
+	rows, err := s.db.Query(`SELECT user_id, endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ?`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []PushSubscription
+	for rows.Next() {
+		var p PushSubscription
+		if err := rows.Scan(&p.UserID, &p.Endpoint, &p.P256dh, &p.Auth); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
 }

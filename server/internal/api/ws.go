@@ -200,4 +200,6 @@ func (s *Server) handlePunch(fromID, callID, targetID int64) {
 	s.Hub.SendToUser(targetID, hub.NewEvent("punch", map[string]interface{}{
 		"call_id": callID, "by_user_id": fromID, "by_nick": nick,
 	}))
+	// Пуш, если приложение закрыто.
+	s.pushNotify(targetID, "👊 Пинок", nick+" пнул вас в звонке", "punch")
 }

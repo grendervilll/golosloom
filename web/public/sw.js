@@ -30,3 +30,36 @@ self.addEventListener('fetch', (e) => {
     }),
   )
 })
+
+// Web Push: показ уведомления и клик по нему.
+self.addEventListener('push', (e) => {
+  let data = { title: 'Golosloom', body: '', tag: '' }
+  try {
+    if (e.data) data = Object.assign(data, e.data.json())
+  } catch {
+    /* payload не JSON — покажем заголовок по умолчанию */
+  }
+  e.waitUntil(
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      tag: data.tag || undefined,
+      icon: '/icons/icon-192.png',
+      badge: '/icons/icon-192.png',
+    }),
+  )
+})
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close()
+  e.waitUntil(
+    clients
+      .matchAll({ type: 'window', includeUncontrolled: true })
+      .then((ws) => {
+        for (const c of ws) {
+          if ('focus' in c) return c.focus()
+        }
+        return clients.openWindow('/')
+      })
+      .catch(() => clients.openWindow('/')),
+  )
+})

@@ -31,6 +31,8 @@ type Server struct {
 	statsMu       sync.Mutex
 	prevCPUIdle   uint64
 	prevCPUTotal  uint64
+
+	push *pushService
 }
 
 type bucket struct {
@@ -43,7 +45,7 @@ func New(cfg config.Config, st *store.Store) *Server {
 	// Завершаем звонки, оставшиеся «активными» после предыдущего запуска
 	// (например, при падении или перезапуске сервера).
 	_ = st.EndAllActiveCalls()
-	return &Server{
+	s := &Server{
 		Cfg:             cfg,
 		Store:           st,
 		Hub:             hub.New(),
@@ -54,6 +56,15 @@ func New(cfg config.Config, st *store.Store) *Server {
 		buckets:         map[int64]*bucket{},
 		lastPunch:       map[string]time.Time{},
 	}
+	// Web Push: сервис создаётся только если задан приватный VAPID-ключ.
+	if cfg.VAPIDPrivateKey != "" {
+		s.push = &pushService{
+			publicKey:  cfg.VAPIDPublicKey,
+			privateKey: cfg.VAPIDPrivateKey,
+			subject:    cfg.VAPIDSubject,
+		}
+	}
+	return s
 }
 
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {

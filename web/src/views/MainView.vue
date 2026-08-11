@@ -22,6 +22,7 @@ import RegistrationInviteModal from '../components/RegistrationInviteModal.vue'
 import CallModal from '../components/CallModal.vue'
 import UpdateModal from '../components/UpdateModal.vue'
 import MobileTabBar from '../components/MobileTabBar.vue'
+import { initPush } from '../utils/push'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -48,8 +49,18 @@ watch(inCall, (v) => {
   if (!v) mobileCallChat.value = false
 })
 
-onMounted(() => {
-  if (!auth.token) router.push('/login')
+onMounted(async () => {
+  if (!auth.token) {
+    router.push('/login')
+    return
+  }
+  // Web Push-уведомления (звонки/сообщения при закрытом приложении).
+  try {
+    await settings.loadConfig()
+    void initPush(settings.api, settings.serverConfig?.vapid_public_key)
+  } catch {
+    /* пуши не критичны */
+  }
 })
 
 function logout() {

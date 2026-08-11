@@ -169,6 +169,22 @@ EOF
 }
 
 # -----------------------------------------------------------------------------
+# VAPID-ключи для Web Push (RFC 8292). Формат: приватный — 32 байта,
+# публичный — 65 байт (uncompressed P-256), оба в base64url.
+# -----------------------------------------------------------------------------
+gen_vapid_keys() {
+  local tmp
+  tmp="$(mktemp -d)"
+  openssl ecparam -name prime256v1 -genkey -noout -out "$tmp/vapid.pem" 2>/dev/null
+  VAPID_PRIVATE_KEY="$(openssl ec -in "$tmp/vapid.pem" -outform DER 2>/dev/null | tail -c +8 | head -c 32 | base64 | tr '+/' '-_' | tr -d '=')"
+  VAPID_PUBLIC_KEY="$(openssl ec -in "$tmp/vapid.pem" -pubout -outform DER 2>/dev/null | tail -c +27 | head -c 65 | base64 | tr '+/' '-_' | tr -d '=')"
+  rm -rf "$tmp"
+  if [ -z "$VAPID_PRIVATE_KEY" ] || [ -z "$VAPID_PUBLIC_KEY" ]; then
+    die "Не удалось сгенерировать VAPID-ключи"
+  fi
+}
+
+# -----------------------------------------------------------------------------
 # Генерация .env с секретами (запоминает и устанавливает ключи и пароли).
 # -----------------------------------------------------------------------------
 gen_env() {
@@ -177,6 +193,7 @@ gen_env() {
   livekit_secret="$(openssl rand -hex 32)"
   turn_secret="$(openssl rand -hex 32)"
   jwt_secret="$(openssl rand -hex 32)"
+  gen_vapid_keys
   cat > "$DEPLOY_DIR/.env" <<EOF
 DOMAIN=$DOMAIN
 TURN_REALM=$DOMAIN
@@ -184,6 +201,9 @@ TURN_SHARED_SECRET=$turn_secret
 LIVEKIT_API_KEY=$livekit_key
 LIVEKIT_API_SECRET=$livekit_secret
 JWT_SECRET=$jwt_secret
+VAPID_PUBLIC_KEY=$VAPID_PUBLIC_KEY
+VAPID_PRIVATE_KEY=$VAPID_PRIVATE_KEY
+VAPID_SUBJECT=mailto:admin@$DOMAIN
 TURN_URLS=turn:$DOMAIN:3478?transport=udp,turn:$DOMAIN:3478?transport=tcp
 ALLOW_ORIGINS=https://$DOMAIN,tauri://localhost,http://tauri.localhost,http://localhost:5173
 DATA_DIR=$DATA_DIR
@@ -444,6 +464,13 @@ do_update() {
   # Дополняем .env новыми переменными (если .env с более старой версии).
   ensure_env_var "DATA_DIR" "$DATA_DIR"
   ensure_env_var "LIVEKIT_CONFIG" "$INSTALL_DIR/livekit.yaml"
+  if ! grep -q "^VAPID_PRIVATE_KEY=" "$DEPLOY_DIR/.env" 2>/dev/null; then
+    log "Генерирую VAPID-ключи для Web Push..."
+    gen_vapid_keys
+    ensure_env_var "VAPID_PUBLIC_KEY" "$VAPID_PUBLIC_KEY"
+    ensure_env_var "VAPID_PRIVATE_KEY" "$VAPID_PRIVATE_KEY"
+    ensure_env_var "VAPID_SUBJECT" "mailto:admin@$DOMAIN"
+  fi
 
   cd "$REPO_DIR"
   log "Скачиваю последние изменения с GitHub..."

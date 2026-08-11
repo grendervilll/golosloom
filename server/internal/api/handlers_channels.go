@@ -268,6 +268,9 @@ func (s *Server) handleCreateInvite(w http.ResponseWriter, r *http.Request) {
 	}
 	// Приглашение приходит сразу (онлайн — мгновенно, офлайн — очередь при входе).
 	s.Hub.SendToUser(req.UserID, hub.NewEvent("invite.new", data))
+	// Пуш, если приложение закрыто.
+	s.pushNotify(req.UserID, "📨 Приглашение в канал",
+		"Вас пригласили в канал «"+s.channelName(channelID)+"»", "invite")
 	writeJSON(w, http.StatusCreated, inv)
 }
 

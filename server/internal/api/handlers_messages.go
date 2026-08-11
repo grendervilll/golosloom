@@ -109,6 +109,8 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.Hub.SendToChannel(channelID, hub.NewEvent("message.new", s.messageJSON(*m, true)))
+	// Пуши офлайн-участникам канала (текст не отдаём: E2E — сервер его не знает).
+	s.pushChannelMessage(channelID, userIDFrom(r))
 	writeJSON(w, http.StatusCreated, s.messageJSON(*m, false))
 }
 

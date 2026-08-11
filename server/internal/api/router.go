@@ -23,6 +23,10 @@ func (s *Server) Router() http.Handler {
 	})
 	mux.HandleFunc("GET /ws", s.handleWS)
 
+	// Web Push-уведомления
+	mux.HandleFunc("POST /api/push/subscribe", s.requireAuth(s.handlePushSubscribe))
+	mux.HandleFunc("DELETE /api/push/subscribe", s.requireAuth(s.handlePushUnsubscribe))
+
 	mux.HandleFunc("GET /api/me", s.requireAuth(s.handleMe))
 
 	// Админ панель сервера
@@ -97,6 +101,7 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		"ws_path":         "/ws",
 		"livekit_url":     s.Cfg.LiveKitURL,
 		"max_message_len": s.Cfg.MaxMessageLen,
+		"vapid_public_key": s.Cfg.VAPIDPublicKey,
 		"turn": map[string]interface{}{
 			"urls":       s.Cfg.TurnURLs,
 			"username":   username,

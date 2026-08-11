@@ -88,6 +88,9 @@ func (s *Server) handleCreateCall(w http.ResponseWriter, r *http.Request) {
 			"initiator_id": userIDFrom(r),
 			"initiator_nick": callerNick,
 		}))
+		// Пуш, если приложение закрыто: телефон должен узнать о звонке.
+		s.pushNotify(targetID, "📞 Входящий звонок",
+			callerNick+" звонит в канале «"+s.channelName(channelID)+"»", "call")
 		invited++
 	}
 

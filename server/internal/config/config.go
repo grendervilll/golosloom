@@ -24,6 +24,9 @@ type Config struct {
 	MessageRatePerSec int
 	PunchInterval     time.Duration
 	RingTimeout       time.Duration
+	VAPIDPublicKey    string
+	VAPIDPrivateKey   string
+	VAPIDSubject      string
 }
 
 func Load() Config {
@@ -44,6 +47,9 @@ func Load() Config {
 		MessageRatePerSec: getenvInt("MESSAGE_RATE_PER_SEC", 10),
 		PunchInterval:     getenvDur("PUNCH_INTERVAL", 10*time.Second),
 		RingTimeout:       getenvDur("RING_TIMEOUT", 20*time.Second),
+		VAPIDPublicKey:    getenv("VAPID_PUBLIC_KEY", ""),
+		VAPIDPrivateKey:   getenv("VAPID_PRIVATE_KEY", ""),
+		VAPIDSubject:      getenv("VAPID_SUBJECT", "mailto:admin@localhost"),
 	}
 }
 

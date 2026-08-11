@@ -448,3 +448,57 @@ func TestHealthCheck(t *testing.T) {
 		}
 	}
 }
+
+func TestPushSubscribeAndUnsubscribe(t *testing.T) {
+	a := newTestApp(t, nil)
+	u := a.register(t, "PushUser")
+
+	code, _ := a.do(t, http.MethodPost, "/api/push/subscribe", u.token, map[string]string{
+		"endpoint": "https://example.com/push/ep1",
+		"p256dh":   "key1",
+		"auth":     "auth1",
+	})
+	if code != http.StatusOK {
+		t.Fatalf("подписка: ожидали 200, получили %d", code)
+	}
+
+	// Повторная регистрация того же эндпоинта — обновление ключей, не ошибка.
+	code, _ = a.do(t, http.MethodPost, "/api/push/subscribe", u.token, map[string]string{
+		"endpoint": "https://example.com/push/ep1",
+		"p256dh":   "key2",
+		"auth":     "auth2",
+	})
+	if code != http.StatusOK {
+		t.Fatalf("повторная подписка: %d", code)
+	}
+	subs, err := a.srv.Store.PushSubscriptions(u.id)
+	if err != nil || len(subs) != 1 || subs[0].P256dh != "key2" {
+		t.Fatalf("в БД должно быть 1 обновлённая подписка: %v, err=%v", subs, err)
+	}
+
+	// Пустой запрос — 400.
+	code, _ = a.do(t, http.MethodPost, "/api/push/subscribe", u.token, map[string]string{})
+	if code != http.StatusBadRequest {
+		t.Fatalf("пустая подписка: ожидали 400, получили %d", code)
+	}
+
+	// Отписка.
+	code, _ = a.do(t, http.MethodDelete, "/api/push/subscribe", u.token, map[string]string{
+		"endpoint": "https://example.com/push/ep1",
+	})
+	if code != http.StatusOK {
+		t.Fatalf("отписка: %d", code)
+	}
+	subs, _ = a.srv.Store.PushSubscriptions(u.id)
+	if len(subs) != 0 {
+		t.Fatalf("после отписки подписок быть не должно: %v", subs)
+	}
+
+	// Без токена — 401.
+	code, _ = a.do(t, http.MethodPost, "/api/push/subscribe", "", map[string]string{
+		"endpoint": "e", "p256dh": "k", "auth": "a",
+	})
+	if code != http.StatusUnauthorized {
+		t.Fatalf("без токена: ожидали 401, получили %d", code)
+	}
+}
