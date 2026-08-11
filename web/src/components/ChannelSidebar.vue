@@ -30,6 +30,17 @@ const auth = useAuthStore()
 const channels = useChannelsStore()
 
 const menuOpen = ref(false)
+const avatarInput = ref<HTMLInputElement | null>(null)
+const avatarMenuOpen = ref(false)
+
+function closeAvatarMenu() {
+  avatarMenuOpen.value = false
+}
+function openAvatarMenu() {
+  avatarMenuOpen.value = !avatarMenuOpen.value
+}
+// Клик мимо — закрываем меню аватара.
+window.addEventListener('click', closeAvatarMenu)
 const newChannelName = ref('')
 const newChannelPrivate = ref(false)
 const showCreate = ref(false)
@@ -80,6 +91,19 @@ async function declineInvite(id: number) {
 }
 
 // Смена/удаление своего аватара (ограничение сервера — 5 МБ).
+function onAvatarMenu(action: string) {
+  avatarMenuOpen.value = false
+  if (action === 'set') {
+    avatarInput.value?.click()
+  } else if (action === 'remove') {
+    if (!auth.user?.avatar) {
+      toast.error('У вас не установлен аватар')
+      return
+    }
+    void removeAvatar()
+  }
+}
+
 async function changeAvatar(e: Event) {
   const file = (e.target as HTMLInputElement).files?.[0]
   if (!file) return
@@ -152,16 +176,26 @@ async function removeAvatar() {
 
     <div class="sidebar-footer">
       <div class="user-chip">
-        <span class="avatar-wrap" title="Сменить аватар (до 5 МБ)">
-          <Avatar :user-id="auth.user?.id || 0" :nick="auth.user?.nick || '?'" :avatar="auth.user?.avatar" :size="32" />
-          <label class="avatar-overlay">
-            <input type="file" accept="image/*" @change="changeAvatar" />
-          </label>
-        </span>
+        <input ref="avatarInput" type="file" accept="image/*" class="hidden-input" @change="changeAvatar" />
+        <PopupMenuButton
+          tooltip="Аватар"
+          position="over"
+          color="#111214"
+          :offset="6"
+          @on-selected="onAvatarMenu"
+        >
+          <span class="avatar-menu">
+            <Avatar :user-id="auth.user?.id || 0" :nick="auth.user?.nick || '?'" :avatar="auth.user?.avatar" :size="32" />
+          </span>
+          <template #item="{ item }">
+            <span class="menu-item" :class="{ danger: item.key === 'remove' }">
+              {{ item.label }}
+            </span>
+          </template>
+        </PopupMenuButton>
         <div class="user-info">
           <b>{{ auth.user?.nick }}</b>
           <span class="muted">ID: {{ auth.user?.id }}</span>
-          <button class="tiny" title="Удалить аватар" @click="removeAvatar">✕ аватар</button>
         </div>
       </div>
     </div>
@@ -361,17 +395,42 @@ async function removeAvatar() {
   align-items: center;
   gap: 8px;
 }
-.avatar-wrap {
+.avatar-menu {
   position: relative;
+  display: inline-flex;
   cursor: pointer;
 }
-.avatar-overlay input {
+.hidden-input {
+  display: none;
+}
+.avatar-dropdown {
   position: absolute;
-  inset: 0;
-  opacity: 0;
-  cursor: pointer;
-  width: 100%;
-  height: 100%;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 60;
+  background: #111214;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 190px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+.avatar-dropdown button {
+  text-align: left;
+  background: transparent;
+  border-radius: 4px;
+  font-size: 13px;
+  padding: 8px 10px;
+}
+.avatar-dropdown button:hover {
+  background: var(--accent);
+  color: #fff;
+}
+.avatar-dropdown button.danger:hover {
+  background: var(--red);
 }
 .user-info {
   display: flex;
