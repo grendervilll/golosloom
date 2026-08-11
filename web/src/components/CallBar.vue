@@ -69,11 +69,6 @@ function isSpeaking(identity: string): boolean {
 
 <style scoped>
 .call-bar {
-  position: fixed;
-  left: 50%;
-  transform: translateX(-50%);
-  bottom: 14px;
-  z-index: 75;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -82,7 +77,7 @@ function isSpeaking(identity: string): boolean {
   border-radius: 999px;
   padding: 6px 14px;
   cursor: pointer;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
   color: var(--text);
 }
 .mic {
@@ -115,9 +110,5 @@ function isSpeaking(identity: string): boolean {
   font-size: 12px;
   color: var(--text-dim);
 }
-@media (max-width: 900px) {
-  .call-bar {
-    bottom: calc(66px + var(--safe-bottom));
-  }
-}
+
 </style>

@@ -39,7 +39,14 @@ function wireWs() {
     ws.on('invite.updated', () => void channels.refreshInvites()),
     ws.on('call.invite', (d: any) => calls.handleCallInvite(d)),
     ws.on('call.started', (d: any) => calls.handleCallStarted(d.call_id)),
-    ws.on('call.ended', (d: any) => calls.handleCallEnded(d)),
+    ws.on('call.ended', (d: any) => {
+      calls.handleCallEnded(d)
+      // «Звонок завершён, время …» — в открытый канал.
+      const dur = calls.callDurationText()
+      if (dur && channels.currentId) {
+        chat.pushSystem(channels.currentId, 'Звонок завершён, время звонка ' + dur)
+      }
+    }),
     ws.on('call.participants', (d: any) => {
       const c = calls.calls.find((x) => x.id === d.call_id)
       if (c) c.participants = d.participants

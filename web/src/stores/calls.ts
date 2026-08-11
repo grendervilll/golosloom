@@ -169,6 +169,16 @@ export const useCallStore = defineStore('calls', {
       sounds.stopAll()
       void this.disconnectRoom()
     },
+    // Текст длительности звонка для системного сообщения («12:34»).
+    callDurationText(): string | null {
+      if (!this.connectedAt) return null
+      const s = Math.max(1, Math.floor((Date.now() - this.connectedAt) / 1000))
+      const h = Math.floor(s / 3600)
+      const m = Math.floor((s % 3600) / 60)
+      const sec = s % 60
+      const two = (v: number) => String(v).padStart(2, '0')
+      return h > 0 ? `${h}:${two(m)}:${two(sec)}` : `${m}:${two(sec)}`
+    },
     // ---------- LiveKit ----------
     async connectRoom(callId: number, token: string) {
       const settings = useSettingsStore()
@@ -233,7 +243,7 @@ export const useCallStore = defineStore('calls', {
           /* не фатально */
         }
       }
-      // Кто говорит прямо сейчас (для зелёной подсветки аватаров).
+    // Кто говорит прямо сейчас (для зелёной подсветки аватаров).
       room.on(RoomEvent.ActiveSpeakersChanged, (speakers: any[]) => {
         this.speakers = (speakers || []).map((sp) => ({
           identity: sp.identity,

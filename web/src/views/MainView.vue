@@ -113,19 +113,25 @@ function onTabChat() {
     />
 
     <div class="center-col">
-      <!-- На мобильных во время звонка сцена — главный экран, чат — вкладка. -->
-      <div v-if="inCall && !mobileCallChat" class="stage-wrap">
+      <!-- Сцена звонка: на мобильном скрывается, когда открыт чат. -->
+      <div v-if="inCall" class="stage-wrap" :class="{ hidden: mobileCallChat }">
         <CallStage />
       </div>
+      <!-- Чат доступен и во время звонка (на мобильном — через вкладку). -->
       <ChatPanel
-        v-if="!chatHidden && (!inCall || mobileCallChat)"
-        :class="{ 'in-call': inCall && mobileCallChat }"
+        v-if="!chatHidden"
+        :class="{ 'in-call': inCall, hidden: inCall && !mobileCallChat }"
         @toggle-participants="onChatToggleParticipants"
         @open-invite="showInvite = true"
         @open-reg-invite="showRegInvite = true"
         @open-call="showCallPicker = true"
       />
-      <div v-else-if="chatHidden && (!inCall || mobileCallChat)" class="empty-chat muted">Чат скрыт</div>
+      <div v-if="chatHidden && (!inCall || mobileCallChat)" class="empty-chat muted">Чат скрыт</div>
+      <CallBar
+        v-if="inCall"
+        class="call-bar-row"
+        @return="mobileCallChat = false"
+      />
       <JoinCallBar v-if="!inCall" />
       <CallControls v-if="inCall" />
     </div>
@@ -150,10 +156,6 @@ function onTabChat() {
       @chat="onTabChat"
       @members="openMembersDrawer"
     />
-
-    <!-- Плашка звонка: длительность, участники, подсветка говорящего,
-         тап — вернуться к звонку. -->
-    <CallBar @return="mobileCallChat = false" />
 
     <IncomingCallOverlay />
     <AdminPanel v-if="showAdmin" @close="showAdmin = false" />
@@ -191,6 +193,14 @@ function onTabChat() {
   align-items: center;
   justify-content: center;
 }
+/* Во время звонка чат — компактная колонка под сценой. */
+.chat-panel.in-call {
+  flex: 0 0 300px;
+  border-top: 1px solid var(--border);
+}
+.call-bar-row {
+  flex: none;
+}
 
 /* Панель участников скрыта по умолчанию, открывается по кнопке 👥. */
 .right-col {
@@ -217,6 +227,10 @@ function onTabChat() {
   .center-col {
     flex: 1;
     min-height: 0;
+  }
+  /* На мобильном во время звонка сцена и чат переключаются вкладкой. */
+  .hidden {
+    display: none !important;
   }
   .back-to-call {
     display: block;

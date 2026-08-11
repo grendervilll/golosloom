@@ -7,6 +7,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../call_service.dart';
+import '../chat_store.dart';
 import '../session.dart';
 import '../screens/call_screen.dart';
 import 'avatar.dart';
@@ -14,8 +15,9 @@ import 'avatar.dart';
 class MiniCallBar extends StatefulWidget {
   final CallService calls;
   final Session session;
+  final ChatStore chat;
 
-  const MiniCallBar({super.key, required this.calls, required this.session});
+  const MiniCallBar({super.key, required this.calls, required this.session, required this.chat});
 
   @override
   State<MiniCallBar> createState() => _MiniCallBarState();
@@ -68,7 +70,7 @@ class _MiniCallBarState extends State<MiniCallBar> {
           onTap: () {
             Navigator.of(context).push(
               MaterialPageRoute(
-                builder: (_) => CallScreen(session: widget.session, calls: calls),
+                builder: (_) => CallScreen(session: widget.session, calls: calls, chat: widget.chat),
               ),
             );
           },

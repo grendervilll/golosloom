@@ -51,21 +51,22 @@ describe('мобильная навигация', () => {
     await wrapper.vm.$nextTick()
     await new Promise((r) => setTimeout(r, 30))
 
-    // Во время звонка сцена — главный экран, чат скрыт.
+    // Во время звонка сцена — главный экран, чат скрыт классом hidden.
     expect(wrapper.find('.stage-wrap').exists()).toBe(true)
-    expect(wrapper.find('.chat-panel').exists()).toBe(false)
+    expect(wrapper.find('.stage-wrap').classes()).not.toContain('hidden')
+    expect(wrapper.find('.chat-panel').classes()).toContain('hidden')
 
     // Таб «Чат» → чат вместо сцены + кнопка возврата.
     const tabs = wrapper.find('.mobile-tabbar').findAll('button')
     await tabs[1].trigger('click')
     await wrapper.vm.$nextTick()
-    expect(wrapper.find('.chat-panel').exists()).toBe(true)
-    expect(wrapper.find('.stage-wrap').exists()).toBe(false)
+    expect(wrapper.find('.chat-panel').classes()).not.toContain('hidden')
+    expect(wrapper.find('.stage-wrap').classes()).toContain('hidden')
     expect(wrapper.find('.back-to-call').exists()).toBe(true)
 
     await wrapper.find('.back-to-call').trigger('click')
     await wrapper.vm.$nextTick()
-    expect(wrapper.find('.stage-wrap').exists()).toBe(true)
+    expect(wrapper.find('.stage-wrap').classes()).not.toContain('hidden')
 
     wrapper.unmount()
     document.body.innerHTML = ''

@@ -57,7 +57,7 @@ class GolosloomApp extends StatelessWidget {
         return Stack(
           children: [
             child ?? const SizedBox.shrink(),
-            Positioned(left: 0, right: 0, bottom: 0, child: MiniCallBar(calls: calls, session: session)),
+            Positioned(left: 0, right: 0, bottom: 0, child: MiniCallBar(calls: calls, session: session, chat: HomeScreen.globalChat!)),
           ],
         );
       },

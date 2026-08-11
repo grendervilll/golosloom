@@ -118,7 +118,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (ok) {
       await Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => CallScreen(session: widget.session, calls: widget.calls),
+          builder: (_) => CallScreen(session: widget.session, calls: widget.calls, chat: widget.chat),
         ),
       );
     } else if (widget.calls.callError != null) {

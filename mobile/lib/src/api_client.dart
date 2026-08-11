@@ -256,4 +256,46 @@ class ApiClient {
   Future<void> registerFcmToken(String token) async {
     await _request('POST', '/api/push/fcm', {'token': token});
   }
+
+  // --- Админ-панель ---
+  Future<Map<String, dynamic>> adminStats() async {
+    return await _request('GET', '/api/admin/stats') as Map<String, dynamic>;
+  }
+
+  Future<List<dynamic>> adminUsers() async {
+    return await _request('GET', '/api/admin/users') as List<dynamic>;
+  }
+
+  Future<List<dynamic>> adminChannels() async {
+    return await _request('GET', '/api/admin/channels') as List<dynamic>;
+  }
+
+  Future<void> adminSetRegistration(bool enabled) async {
+    await _request('POST', '/api/admin/settings/registration', {'enabled': enabled});
+  }
+
+  Future<bool> adminGetRegistration() async {
+    final j = await _request('GET', '/api/admin/settings/registration') as Map<String, dynamic>;
+    return (j['enabled'] as bool?) ?? true;
+  }
+
+  Future<void> adminServerBan(int userId, String reason) async {
+    await _request('POST', '/api/admin/users/$userId/server-ban', {'reason': reason});
+  }
+
+  Future<void> adminServerUnban(int userId) async {
+    await _request('DELETE', '/api/admin/users/$userId/server-ban');
+  }
+
+  Future<void> adminCreateUser(String nick, String password) async {
+    await _request('POST', '/api/admin/users', {'nick': nick, 'password': password});
+  }
+
+  Future<void> adminResetPassword(int userId, String password) async {
+    await _request('POST', '/api/admin/users/$userId/password', {'password': password});
+  }
+
+  Future<void> adminDeleteChannel(int channelId) async {
+    await _request('DELETE', '/api/channels/$channelId');
+  }
 }

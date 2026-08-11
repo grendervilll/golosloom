@@ -7,14 +7,22 @@ import 'package:flutter/material.dart';
 import 'package:livekit_client/livekit_client.dart' hide Session;
 
 import '../call_service.dart';
+import '../chat_store.dart';
 import '../session.dart';
 import '../widgets/avatar.dart';
+import 'chat_screen.dart';
 
 class CallScreen extends StatefulWidget {
   final Session session;
   final CallService calls;
+  final ChatStore chat;
 
-  const CallScreen({super.key, required this.session, required this.calls});
+  const CallScreen({
+    super.key,
+    required this.session,
+    required this.calls,
+    required this.chat,
+  });
 
   @override
   State<CallScreen> createState() => _CallScreenState();
@@ -37,6 +45,41 @@ class _CallScreenState extends State<CallScreen> {
     widget.calls.removeListener(_onChanged);
     _timer?.cancel();
     super.dispose();
+  }
+
+  Future<void> _openChat() async {
+    final call = widget.calls.currentCall;
+    if (call == null) return;
+    final channel = widget.session.channels
+        .where((c) => (c['id'] as num?)?.toInt() == call.channelId)
+        .toList()
+        .firstOrNull;
+    if (channel == null) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ChatScreen(
+          session: widget.session,
+          chat: widget.chat,
+          calls: widget.calls,
+          channel: channel,
+        ),
+      ),
+    );
+  }
+
+  void _openFullscreen(RemoteVideoTrack track, String label) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          backgroundColor: Colors.black,
+          appBar: AppBar(
+            backgroundColor: Colors.black,
+            title: Text(label, style: const TextStyle(color: Colors.white)),
+          ),
+          body: Center(child: VideoTrackRenderer(track, fit: VideoViewFit.contain)),
+        ),
+      ),
+    );
   }
 
   String _fmt(Duration d) {
@@ -111,8 +154,12 @@ class _CallScreenState extends State<CallScreen> {
                           if (pub.source == TrackSource.screenShareVideo)
                             Padding(
                               padding: const EdgeInsets.only(bottom: 8),
-                              child: _VideoTile(pub: pub, big: true,
-                                  label: '🖥️ ${p.name.isEmpty ? p.identity : p.name}'),
+                              child: _VideoTile(
+                                pub: pub,
+                                big: true,
+                                label: '🖥️ ${p.name.isEmpty ? p.identity : p.name}',
+                                onTap: (t) => _openFullscreen(t, '🖥️ ${p.name.isEmpty ? p.identity : p.name}'),
+                              ),
                             ),
                       Wrap(
                         spacing: 8,
@@ -121,8 +168,12 @@ class _CallScreenState extends State<CallScreen> {
                           for (final p in calls.remoteParticipants)
                             for (final pub in p.videoTrackPublications)
                               if (pub.source == TrackSource.camera)
-                                _VideoTile(pub: pub, big: false,
-                                    label: p.name.isEmpty ? p.identity : p.name),
+                                _VideoTile(
+                                  pub: pub,
+                                  big: false,
+                                  label: p.name.isEmpty ? p.identity : p.name,
+                                  onTap: (t) => _openFullscreen(t, '📷 ${p.name.isEmpty ? p.identity : p.name}'),
+                                ),
                           for (final p in calls.remoteParticipants)
                             if (!p.videoTrackPublications.any((x) => x.source == TrackSource.camera))
                               Padding(
@@ -181,6 +232,12 @@ class _CallScreenState extends State<CallScreen> {
                 ),
                 const SizedBox(width: 24),
                 _CallButton(
+                  icon: Icons.chat,
+                  color: const Color(0xFF383A40),
+                  onTap: _openChat,
+                ),
+                const SizedBox(width: 12),
+                _CallButton(
                   icon: Icons.call_end,
                   color: red,
                   onTap: _leave,
@@ -233,8 +290,14 @@ class _VideoTile extends StatelessWidget {
   final RemoteTrackPublication<RemoteVideoTrack> pub;
   final bool big;
   final String label;
+  final void Function(RemoteVideoTrack track) onTap;
 
-  const _VideoTile({required this.pub, required this.big, required this.label});
+  const _VideoTile({
+    required this.pub,
+    required this.big,
+    required this.label,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -243,7 +306,10 @@ class _VideoTile extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
+        InkWell(
+          onTap: track == null ? null : () => onTap(track),
+          borderRadius: BorderRadius.circular(10),
+          child: Container(
           width: w,
           height: big ? 220 : 100,
           decoration: BoxDecoration(
@@ -260,6 +326,7 @@ class _VideoTile extends StatelessWidget {
                   ),
                 )
               : VideoTrackRenderer(track, fit: VideoViewFit.cover),
+          ),
         ),
         const SizedBox(height: 2),
         Text(label,

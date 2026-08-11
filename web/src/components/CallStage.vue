@@ -21,6 +21,7 @@ interface VideoTile {
 const tiles = ref<VideoTile[]>([])
 const screens = ref<VideoTile[]>([])
 const focusedScreen = ref<VideoTile | null>(null)
+const focusedCam = ref<VideoTile | null>(null)
 const selectedScreenIdentity = ref('')
 let watching = false
 
@@ -51,7 +52,8 @@ function updateTiles() {
   const scr: VideoTile[] = []
   for (const p of room.remoteParticipants.values()) {
     for (const pub of p.videoTrackPublications.values()) {
-      if (!pub.isSubscribed || !pub.track) continue
+      // muted — участник выключил камеру/демонстрацию: пустое окно не показываем.
+      if (!pub.isSubscribed || !pub.track || pub.track.isMuted) continue
       const t: VideoTile = {
         identity: p.identity,
         nick: p.name || p.identity,
@@ -64,7 +66,7 @@ function updateTiles() {
   }
   // Своя демонстрация экрана.
   for (const pub of room.localParticipant.videoTrackPublications.values()) {
-    if (!pub.track || !isScreen(pub.track)) continue
+    if (!pub.track || !isScreen(pub.track) || pub.track.isMuted) continue
     const t: VideoTile = {
       identity: room.localParticipant.identity,
       nick: 'Вы',
@@ -91,6 +93,8 @@ function startWatching() {
   watching = true
   room.on(RoomEvent.TrackSubscribed, () => updateTiles())
   room.on(RoomEvent.TrackUnsubscribed, () => updateTiles())
+  room.on(RoomEvent.TrackMuted, () => updateTiles())
+  room.on(RoomEvent.TrackUnmuted, () => updateTiles())
   room.on(RoomEvent.ParticipantDisconnected, () => updateTiles())
   updateTiles()
   // Периодический повторный скан: подхватываем треки, если события были пропущены.
@@ -180,12 +184,18 @@ const stageMembers = computed(() => channels.members.filter((m) => callParticipa
       <span class="screen-nick">🖥️ Демонстрация: {{ focusedScreen.nick }}</span>
       <button class="fullscreen-btn" title="На весь экран" @click="toggleFullscreen">⛶</button>
     </div>
+    <div v-else-if="focusedCam" class="screen-main">
+      <video v-track="focusedCam" class="screen-video cam-full" autoplay playsinline />
+      <span class="screen-nick">📷 {{ focusedCam.nick }}</span>
+      <button class="fullscreen-btn" title="На весь экран" @click="toggleFullscreen">⛶</button>
+      <button class="close-cam-btn" title="Свернуть" @click="focusedCam = null">✕</button>
+    </div>
     <div v-else class="screen-empty">
       <p class="muted">Демонстраций экрана нет</p>
     </div>
 
     <div class="cam-grid">
-      <div v-for="t in cameras" :key="t.identity + '-cam'" class="cam-tile frame">
+      <div v-for="t in cameras" :key="t.identity + '-cam'" class="cam-tile frame" @click="focusedCam = t">
         <video v-track="t" class="cam-video" autoplay playsinline />
         <span class="cam-nick">{{ roleIcon(auth.user) }}{{ t.nick }}</span>
       </div>
@@ -274,6 +284,19 @@ const stageMembers = computed(() => channels.members.filter((m) => callParticipa
   height: 130px;
   background: #000;
   overflow: hidden;
+  cursor: pointer;
+}
+.cam-full {
+  object-fit: cover;
+}
+.close-cam-btn {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  background: rgba(0, 0, 0, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  padding: 4px 10px;
+  font-size: 13px;
 }
 .cam-video {
   width: 100%;

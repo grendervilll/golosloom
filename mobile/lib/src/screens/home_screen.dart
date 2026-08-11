@@ -13,10 +13,14 @@ import '../session.dart';
 import '../settings.dart';
 import '../update_dialog.dart';
 import '../widgets/avatar.dart';
+import 'admin_screen.dart';
 import 'call_screen.dart';
 import 'chat_screen.dart';
 
 class HomeScreen extends StatefulWidget {
+  /// Глобальный чат-стор (для плашки звонка на любом экране).
+  static ChatStore? globalChat;
+
   final AppSettings settings;
 
   const HomeScreen({super.key, required this.settings});
@@ -41,6 +45,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _myNick = widget.settings.user?.nick ?? '';
     _session = Session(widget.settings, _api);
     _chat = ChatStore(_session);
+    HomeScreen.globalChat = _chat;
     _calls = CallService(_session);
     _push = PushService(_api);
     _session.addListener(_onSessionChanged);
@@ -54,6 +59,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     _session.removeListener(_onSessionChanged);
     _calls.removeListener(_onCallsChanged);
+    if (HomeScreen.globalChat == _chat) HomeScreen.globalChat = null;
     _calls.dispose();
     _chat.dispose();
     _session.stop();
@@ -107,7 +113,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (ok && mounted) {
         await Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (_) => CallScreen(session: _session, calls: _calls),
+            builder: (_) => CallScreen(session: _session, calls: _calls, chat: _chat),
           ),
         );
       }
@@ -211,6 +217,16 @@ class _HomeScreenState extends State<HomeScreen> {
               size: 30,
             ),
           ),
+          if (widget.settings.user?.isServerAdmin == true)
+            IconButton(
+              icon: const Icon(Icons.admin_panel_settings, color: Color(0xFFF0B232)),
+              tooltip: 'Админ панель',
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => AdminScreen(session: _session)),
+                );
+              },
+            ),
           IconButton(
             icon: const Icon(Icons.logout, color: dim),
             tooltip: 'Выйти',

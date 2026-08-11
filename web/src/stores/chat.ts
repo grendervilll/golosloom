@@ -14,6 +14,7 @@ export interface ChatMessage {
   senderId: number
   senderNick: string
   text: string
+  system?: boolean // системное сообщение («Звонок завершён…»)
   encrypted: boolean
   deleted: boolean
   deletedBy?: number
@@ -91,6 +92,23 @@ export const useChatStore = defineStore('chat', {
       await settings.api.editMessage(channelId, messageId, ciphertext, iv)
       this.editingId = 0
       this.draft = ''
+    },
+    // Системное сообщение от клиента (не из истории сервера).
+    pushSystem(channelId: number, text: string) {
+      const list = this.messages.get(channelId) || []
+      const msg: ChatMessage = {
+        id: -Date.now(),
+        channelId,
+        senderId: 0,
+        senderNick: '',
+        text,
+        encrypted: false,
+        deleted: false,
+        edited: false,
+        createdAt: new Date().toISOString(),
+        system: true,
+      }
+      this.messages.set(channelId, [...list, msg])
     },
     async remove(channelId: number, messageId: number) {
       const settings = useSettingsStore()

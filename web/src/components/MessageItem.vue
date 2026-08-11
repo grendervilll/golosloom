@@ -43,7 +43,11 @@ function openMore(e: MouseEvent) {
 </script>
 
 <template>
+  <div v-if="msg.system" class="msg system">
+    <p class="system-text">{{ msg.text }}</p>
+  </div>
   <div
+    v-else
     class="msg"
     :class="{ mine: isMine, deleted: msg.deleted, pending: msg.pending }"
     @contextmenu.prevent="emit('contextmenu', $event)"
@@ -119,6 +123,17 @@ function openMore(e: MouseEvent) {
 .deleted-text {
   color: var(--text-dim);
   font-style: italic;
+}
+.msg.system {
+  justify-content: center;
+  padding: 6px;
+}
+.system-text {
+  font-size: 12px;
+  color: var(--text-dim);
+  background: var(--bg3);
+  padding: 4px 12px;
+  border-radius: 999px;
 }
 .more-btn {
   visibility: hidden;
