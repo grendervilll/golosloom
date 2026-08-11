@@ -351,7 +351,7 @@ func (s *Server) handleJoinCall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u, _ := s.Store.GetUserByID(userIDFrom(r))
-	if !u.IsServerAdmin {
+	if !u.IsServerAdmin && call.InitiatorID != userIDFrom(r) {
 		inv, err := s.Store.GetCallInvite(callID, userIDFrom(r))
 		if err != nil {
 			writeErr(w, http.StatusForbidden, "в звонок могут войти только приглашённые")

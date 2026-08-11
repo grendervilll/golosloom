@@ -1309,8 +1309,9 @@ func (s *Store) CallsVisibleToUser(channelID, userID int64) ([]models.Call, erro
 		FROM calls c
 		LEFT JOIN call_invites ci ON ci.call_id = c.id AND ci.user_id = ?
 		LEFT JOIN call_participants cp ON cp.call_id = c.id AND cp.user_id = ?
-		WHERE c.channel_id = ? AND c.status != 'ended' AND (ci.user_id IS NOT NULL OR cp.user_id IS NOT NULL)
-		ORDER BY c.id`, userID, userID, channelID)
+		WHERE c.channel_id = ? AND c.status != 'ended'
+		  AND (ci.user_id IS NOT NULL OR cp.user_id IS NOT NULL OR c.initiator_id = ?)
+		ORDER BY c.id`, userID, userID, channelID, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -1517,4 +1518,24 @@ func (s *Store) HasActiveRingingInvite(userID int64) (bool, error) {
 		JOIN calls c ON c.id = ci.call_id AND c.status != 'ended'
 		WHERE ci.user_id = ? AND ci.status = 'ringing'`, userID).Scan(&n)
 	return n > 0, err
+}
+
+func (s *Store) CallInvitesForCall(callID int64) ([]models.CallInvite, error) {
+	rows, err := s.db.Query(`SELECT call_id, user_id, status, created_at, responded_at
+		FROM call_invites WHERE call_id = ?`, callID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []models.CallInvite
+	for rows.Next() {
+		var ci models.CallInvite
+		var respondedAt sql.NullString
+		var createdAt string
+		if err := rows.Scan(&ci.CallID, &ci.UserID, &ci.Status, &createdAt, &respondedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, ci)
+	}
+	return out, rows.Err()
 }
