@@ -142,6 +142,13 @@ class Session extends ChangeNotifier {
     }
   }
 
+  /// Тестовый хук: эмуляция WS-события без сети.
+  @visibleForTesting
+  void debugEmitEvent(String type, Map<String, dynamic> data) {
+    _events.add(WsEvent(type, data));
+    _handleEvent(type, data);
+  }
+
   void leaveChannel(int channelId) {
     _joined.remove(channelId);
     _send('channel.leave', {'channel_id': channelId});

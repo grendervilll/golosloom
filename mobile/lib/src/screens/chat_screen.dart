@@ -3,18 +3,23 @@ library;
 
 import 'package:flutter/material.dart';
 
+import '../call_service.dart';
 import '../chat_store.dart';
 import '../session.dart';
+import 'call_picker.dart';
+import 'call_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   final Session session;
   final ChatStore chat;
+  final CallService calls;
   final Map<String, dynamic> channel;
 
   const ChatScreen({
     super.key,
     required this.session,
     required this.chat,
+    required this.calls,
     required this.channel,
   });
 
@@ -84,6 +89,24 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  Future<void> _startCall() async {
+    final targetIds = await showCallPicker(context, widget.session, _channelId);
+    if (targetIds == null || targetIds.isEmpty || !mounted) return;
+    final ok = await widget.calls.initiate(_channelId, targetIds);
+    if (!mounted) return;
+    if (ok) {
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => CallScreen(session: widget.session, calls: widget.calls),
+        ),
+      );
+    } else if (widget.calls.callError != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(widget.calls.callError!)),
+      );
+    }
+  }
+
   void _startEdit(ChatMessage m) {
     setState(() {
       _editingId = m.id;
@@ -139,6 +162,13 @@ class _ChatScreenState extends State<ChatScreen> {
       appBar: AppBar(
         backgroundColor: panel,
         title: Text('# $channelName', style: const TextStyle(color: text, fontSize: 18)),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.call, color: Color(0xFF23A55A)),
+            tooltip: 'Позвонить участникам канала',
+            onPressed: _startCall,
+          ),
+        ],
       ),
       body: Column(
         children: [

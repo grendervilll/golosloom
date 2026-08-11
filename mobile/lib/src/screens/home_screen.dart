@@ -5,10 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../api_client.dart';
+import '../call_service.dart';
 import '../chat_store.dart';
 import '../session.dart';
 import '../settings.dart';
 import '../update_dialog.dart';
+import 'call_screen.dart';
 import 'chat_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -24,6 +26,7 @@ class _HomeScreenState extends State<HomeScreen> {
   late final ApiClient _api;
   late final Session _session;
   late final ChatStore _chat;
+  late final CallService _calls;
   String _myNick = '';
 
   @override
@@ -34,7 +37,9 @@ class _HomeScreenState extends State<HomeScreen> {
     _myNick = widget.settings.user?.nick ?? '';
     _session = Session(widget.settings, _api);
     _chat = ChatStore(_session);
+    _calls = CallService(_session);
     _session.addListener(_onSessionChanged);
+    _calls.addListener(_onCallsChanged);
     _session.start();
     _checkUpdate();
   }
@@ -42,6 +47,8 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _session.removeListener(_onSessionChanged);
+    _calls.removeListener(_onCallsChanged);
+    _calls.dispose();
     _chat.dispose();
     _session.stop();
     super.dispose();
@@ -49,6 +56,56 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _onSessionChanged() {
     if (mounted) setState(() {});
+  }
+
+  void _onCallsChanged() {
+    if (!mounted) return;
+    final ring = _calls.ringing;
+    if (ring != null && ring.incoming && !_calls.inCall) {
+      _showIncomingCall(ring);
+    }
+  }
+
+  Future<void> _showIncomingCall(CallInfo ring) async {
+    final accepted = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF2B2D31),
+        title: const Text('📞 Входящий звонок', textAlign: TextAlign.center),
+        content: Text(
+          '${ring.initiatorNick ?? 'Кто-то'} звонит в канале',
+          textAlign: TextAlign.center,
+          style: const TextStyle(color: Color(0xFFDBDEE1)),
+        ),
+        actionsAlignment: MainAxisAlignment.center,
+        actions: [
+          TextButton(
+            onPressed: () {
+              _calls.decline(ring);
+              Navigator.of(ctx).pop(false);
+            },
+            child: const Text('Отклонить', style: TextStyle(color: Color(0xFF949BA4))),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFF23A55A)),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Принять'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (accepted == true) {
+      final ok = await _calls.accept(ring);
+      if (ok && mounted) {
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => CallScreen(session: _session, calls: _calls),
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _checkUpdate() async {
@@ -129,7 +186,12 @@ class _HomeScreenState extends State<HomeScreen> {
                     onTap: () {
                       Navigator.of(context).push(
                         MaterialPageRoute(
-                          builder: (_) => ChatScreen(session: _session, chat: _chat, channel: ch),
+                          builder: (_) => ChatScreen(
+                            session: _session,
+                            chat: _chat,
+                            calls: _calls,
+                            channel: ch,
+                          ),
                         ),
                       );
                     },

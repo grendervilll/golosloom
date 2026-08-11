@@ -42,6 +42,7 @@ dependencies:
   package_info_plus: ^10.2.1
   url_launcher: ^6.3.2
   flutter_secure_storage: ^10.0.0
+  livekit_client: ^2.11.0
 
 dev_dependencies:
   flutter_test:

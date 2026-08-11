@@ -179,11 +179,13 @@ class ApiClient {
     });
   }
 
-  // --- Звонки ---
-  Future<Map<String, dynamic>> createCall(int channelId, List<int> targetUserIds) async {
+  // --- Звонки (device_id обязателен: из него собирается identity LiveKit) ---
+  Future<Map<String, dynamic>> createCall(
+      int channelId, List<int> targetUserIds, String deviceId) async {
     return await _request('POST', '/api/calls', {
       'channel_id': channelId,
-      'target_user_ids': targetUserIds,
+      'target_ids': targetUserIds,
+      'device_id': deviceId,
     }) as Map<String, dynamic>;
   }
 
@@ -191,16 +193,18 @@ class ApiClient {
     return await _request('GET', '/api/channels/$channelId/calls') as List<dynamic>;
   }
 
-  Future<Map<String, dynamic>> acceptCall(int callId) async {
-    return await _request('POST', '/api/calls/$callId/accept') as Map<String, dynamic>;
+  Future<Map<String, dynamic>> acceptCall(int callId, String deviceId) async {
+    return await _request('POST', '/api/calls/$callId/accept', {'device_id': deviceId})
+        as Map<String, dynamic>;
   }
 
   Future<void> declineCall(int callId) async {
     await _request('POST', '/api/calls/$callId/decline');
   }
 
-  Future<Map<String, dynamic>> joinCall(int callId) async {
-    return await _request('POST', '/api/calls/$callId/join') as Map<String, dynamic>;
+  Future<Map<String, dynamic>> joinCall(int callId, String deviceId) async {
+    return await _request('POST', '/api/calls/$callId/join', {'device_id': deviceId})
+        as Map<String, dynamic>;
   }
 
   Future<void> leaveCall(int callId) async {
