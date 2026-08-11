@@ -22,6 +22,7 @@ import RegistrationInviteModal from '../components/RegistrationInviteModal.vue'
 import CallModal from '../components/CallModal.vue'
 import UpdateModal from '../components/UpdateModal.vue'
 import MobileTabBar from '../components/MobileTabBar.vue'
+import CallBar from '../components/CallBar.vue'
 import { initPush } from '../utils/push'
 
 const router = useRouter()
@@ -149,6 +150,10 @@ function onTabChat() {
       @chat="onTabChat"
       @members="openMembersDrawer"
     />
+
+    <!-- Плашка звонка: длительность, участники, подсветка говорящего,
+         тап — вернуться к звонку. -->
+    <CallBar @return="mobileCallChat = false" />
 
     <IncomingCallOverlay />
     <AdminPanel v-if="showAdmin" @close="showAdmin = false" />

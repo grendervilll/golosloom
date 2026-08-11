@@ -20,6 +20,9 @@ export const useCallStore = defineStore('calls', {
     calls: [] as ActiveCall[],
     room: null as Room | null,
     connectedCallId: 0,
+    // Время начала звонка (для таймера на плашке) и говорящие в данный момент.
+    connectedAt: 0 as number,
+    speakers: [] as { identity: string; level: number }[],
     micOn: false,
     camOn: false,
     screenOn: false,
@@ -29,6 +32,10 @@ export const useCallStore = defineStore('calls', {
   }),
   getters: {
     inCall: (s) => s.connectedCallId > 0,
+    // Участники звонка (для плашки и подсветки говорящих).
+    remoteParticipants(s) {
+      return s.room ? [...s.room.remoteParticipants.values()] : []
+    },
     currentCall(): ActiveCall | undefined {
       return this.calls.find((c) => c.id === this.connectedCallId)
     },
@@ -226,6 +233,13 @@ export const useCallStore = defineStore('calls', {
           /* не фатально */
         }
       }
+      // Кто говорит прямо сейчас (для зелёной подсветки аватаров).
+      room.on(RoomEvent.ActiveSpeakersChanged, (speakers: any[]) => {
+        this.speakers = (speakers || []).map((sp) => ({
+          identity: sp.identity,
+          level: sp.audioLevel || 0,
+        }))
+      })
       room.on(RoomEvent.TrackSubscribed, attachAudio)
       room.on(RoomEvent.TrackUnsubscribed, (track: any) => {
         try {
@@ -246,6 +260,7 @@ export const useCallStore = defineStore('calls', {
         }
       })
       await room.connect(settings.serverConfig!.livekit_url, token)
+      this.connectedAt = Date.now()
       // Сканируем уже подписанные аудио-треки (на случай пропущенных событий).
       const scanAudio = () => {
         try {
@@ -295,6 +310,8 @@ export const useCallStore = defineStore('calls', {
         this.room = null
       }
       this.connectedCallId = 0
+      this.connectedAt = 0
+      this.speakers = []
     },
     async toggleMic() {
       if (!this.room) return

@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 
 import 'crypto.dart';
 import 'session.dart';
+import 'sounds.dart';
 
 class ChatMessage {
   final int id;
@@ -189,6 +190,10 @@ class ChatStore extends ChangeNotifier {
     final list = _byChannel[ch] ?? [];
     if (list.any((x) => x.id == m.id)) return;
     _byChannel[ch] = [...list, m];
+    // Звук на чужое сообщение в открытом канале.
+    if (ch == session.currentChannelId && m.senderId != session.settings.user?.id) {
+      AppSounds().message();
+    }
     notifyListeners();
   }
 

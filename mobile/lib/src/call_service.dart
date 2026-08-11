@@ -64,6 +64,8 @@ class CallService extends ChangeNotifier {
   CallInfo? currentCall; // активный звонок (мы в комнате)
   CallInfo? ringing; // входящий/исходящий звонок в ожидании
   bool micEnabled = true;
+  bool camEnabled = false;
+  bool speakersMuted = false;
   String? callError;
   int _lastPunch = 0;
 
@@ -219,6 +221,33 @@ class CallService extends ChangeNotifier {
     try {
       await _room?.localParticipant?.setMicrophoneEnabled(micEnabled);
     } catch (_) {}
+  }
+
+  Future<void> toggleCam() async {
+    camEnabled = !camEnabled;
+    notifyListeners();
+    try {
+      await _room?.localParticipant?.setCameraEnabled(camEnabled);
+    } catch (_) {}
+  }
+
+  /// Глушит/возвращает звук всех собеседников (без микрофона).
+  Future<void> toggleSpeakers() async {
+    speakersMuted = !speakersMuted;
+    notifyListeners();
+    for (final p in remoteParticipants) {
+      for (final pub in p.audioTrackPublications) {
+        final track = pub.track;
+        if (track == null) continue;
+        try {
+          if (speakersMuted) {
+            await track.disable();
+          } else {
+            await track.enable();
+          }
+        } catch (_) {}
+      }
+    }
   }
 
   // ---------- LiveKit ----------

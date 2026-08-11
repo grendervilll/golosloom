@@ -8,6 +8,7 @@ import { useCallStore } from '../stores/calls'
 import { toast } from 'vue-sonner'
 import { roleIcon, roleLabel } from '../utils/roles'
 import type { Role } from '../api/types'
+import Avatar from './Avatar.vue'
 
 const emit = defineEmits<{ (e: 'close'): void }>()
 
@@ -112,7 +113,7 @@ function setVolume(userId: number, v: number) {
     </div>
     <div class="members-list">
       <div v-for="m in channels.members" :key="m.user_id" class="member" :class="{ 'in-call': inCall && inCallIds.includes(m.user_id) }">
-        <span class="role-icon">{{ roleIcon(undefined, m.is_server_admin ? 'server_admin' : m.role) }}</span>
+        <Avatar :user-id="m.user_id" :nick="m.nick" :avatar="m.avatar" :size="30" />
         <div class="member-info">
           <span class="nick">{{ m.nick }}</span>
           <span class="muted small">ID: {{ m.user_id }} · {{ roleLabel(m.is_server_admin ? 'server_admin' : m.role) }}</span>

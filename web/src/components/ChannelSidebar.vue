@@ -3,6 +3,7 @@
 import { computed, ref } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useChannelsStore } from '../stores/channels'
+import { useSettingsStore } from '../stores/settings'
 import { toast } from 'vue-sonner'
 import { roleIcon } from '../utils/roles'
 import { Button } from './ui/button'
@@ -13,6 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from './ui/dialog'
+import Avatar from './Avatar.vue'
 
 const emit = defineEmits<{
   (e: 'open-invite'): void
@@ -76,6 +78,36 @@ async function acceptInvite(id: number) {
 async function declineInvite(id: number) {
   await channels.declineInvite(id)
 }
+
+// Смена/удаление своего аватара (ограничение сервера — 5 МБ).
+async function changeAvatar(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  if (!file) return
+  if (file.size > 5 * 1024 * 1024) {
+    toast.error('Аватар слишком большой: максимум 5 МБ')
+    return
+  }
+  try {
+    await useSettingsStore().api.uploadAvatar(file)
+    const me = await useSettingsStore().api.me()
+    auth.user = { ...auth.user!, ...me }
+    toast.info('Аватар обновлён')
+  } catch (err: any) {
+    toast.error(String(err?.message || err).slice(0, 150))
+  } finally {
+    ;(e.target as HTMLInputElement).value = ''
+  }
+}
+async function removeAvatar() {
+  try {
+    await useSettingsStore().api.deleteAvatar()
+    const me = await useSettingsStore().api.me()
+    auth.user = { ...auth.user!, ...me }
+    toast.info('Аватар удалён')
+  } catch (err: any) {
+    toast.error(String(err?.message || err).slice(0, 150))
+  }
+}
 </script>
 
 <template>
@@ -120,10 +152,16 @@ async function declineInvite(id: number) {
 
     <div class="sidebar-footer">
       <div class="user-chip">
-        <span class="role-icon">{{ roleIcon(auth.user) }}</span>
+        <span class="avatar-wrap" title="Сменить аватар (до 5 МБ)">
+          <Avatar :user-id="auth.user?.id || 0" :nick="auth.user?.nick || '?'" :avatar="auth.user?.avatar" :size="32" />
+          <label class="avatar-overlay">
+            <input type="file" accept="image/*" @change="changeAvatar" />
+          </label>
+        </span>
         <div class="user-info">
           <b>{{ auth.user?.nick }}</b>
           <span class="muted">ID: {{ auth.user?.id }}</span>
+          <button class="tiny" title="Удалить аватар" @click="removeAvatar">✕ аватар</button>
         </div>
       </div>
     </div>
@@ -322,6 +360,18 @@ async function declineInvite(id: number) {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+.avatar-wrap {
+  position: relative;
+  cursor: pointer;
+}
+.avatar-overlay input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  width: 100%;
+  height: 100%;
 }
 .user-info {
   display: flex;

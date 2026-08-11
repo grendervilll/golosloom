@@ -47,7 +47,19 @@ class _CallScreenState extends State<CallScreen> {
     return h > 0 ? '$h:${two(m)}:${two(s)}' : '$m:${two(s)}';
   }
 
+  Room? _listenedRoom;
+
   void _onChanged() {
+    final room = widget.calls.room;
+    if (room != null && !identical(room, _listenedRoom)) {
+      _listenedRoom?.removeListener(_onRoom);
+      _listenedRoom = room;
+      room.addListener(_onRoom);
+    }
+    if (mounted) setState(() {});
+  }
+
+  void _onRoom() {
     if (mounted) setState(() {});
   }
 
@@ -91,20 +103,48 @@ class _CallScreenState extends State<CallScreen> {
           Expanded(
             child: calls.inCall
                 ? ListView(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.all(12),
                     children: [
+                      // Демонстрации экранов — крупно, камеры — под ними.
                       for (final p in calls.remoteParticipants)
-                        ListTile(
-                          leading: SpeakingAvatar(
-                            session: widget.session,
-                            room: calls.room!,
-                            participant: p,
-                            size: 40,
-                          ),
-                          title: Text(p.name.isEmpty ? p.identity : p.name,
-                              style: const TextStyle(color: text)),
-                          trailing: _MicState(p: p),
-                        ),
+                        for (final pub in p.videoTrackPublications)
+                          if (pub.source == TrackSource.screenShareVideo)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: _VideoTile(pub: pub, big: true,
+                                  label: '🖥️ ${p.name.isEmpty ? p.identity : p.name}'),
+                            ),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          for (final p in calls.remoteParticipants)
+                            for (final pub in p.videoTrackPublications)
+                              if (pub.source == TrackSource.camera)
+                                _VideoTile(pub: pub, big: false,
+                                    label: p.name.isEmpty ? p.identity : p.name),
+                          for (final p in calls.remoteParticipants)
+                            if (!p.videoTrackPublications.any((x) => x.source == TrackSource.camera))
+                              Padding(
+                                padding: const EdgeInsets.only(top: 8),
+                                child: Row(
+                                  children: [
+                                    SpeakingAvatar(
+                                      session: widget.session,
+                                      room: calls.room!,
+                                      participant: p,
+                                      size: 36,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(p.name.isEmpty ? p.identity : p.name,
+                                        style: const TextStyle(color: text)),
+                                    const SizedBox(width: 8),
+                                    _MicState(p: p),
+                                  ],
+                                ),
+                              ),
+                        ],
+                      ),
                       if (calls.remoteParticipants.isEmpty)
                         const Padding(
                           padding: EdgeInsets.only(top: 60),
@@ -126,6 +166,18 @@ class _CallScreenState extends State<CallScreen> {
                   icon: calls.micEnabled ? Icons.mic : Icons.mic_off,
                   color: calls.micEnabled ? const Color(0xFF383A40) : accent,
                   onTap: calls.toggleMic,
+                ),
+                const SizedBox(width: 12),
+                _CallButton(
+                  icon: calls.camEnabled ? Icons.videocam : Icons.videocam_off,
+                  color: calls.camEnabled ? const Color(0xFF383A40) : accent,
+                  onTap: calls.toggleCam,
+                ),
+                const SizedBox(width: 12),
+                _CallButton(
+                  icon: calls.speakersMuted ? Icons.volume_off : Icons.volume_up,
+                  color: calls.speakersMuted ? accent : const Color(0xFF383A40),
+                  onTap: calls.toggleSpeakers,
                 ),
                 const SizedBox(width: 24),
                 _CallButton(
@@ -173,6 +225,47 @@ class _CallButton extends StatelessWidget {
         backgroundColor: color,
         minimumSize: const Size(64, 64),
       ),
+    );
+  }
+}
+
+class _VideoTile extends StatelessWidget {
+  final RemoteTrackPublication<RemoteVideoTrack> pub;
+  final bool big;
+  final String label;
+
+  const _VideoTile({required this.pub, required this.big, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    final track = pub.track;
+    final w = big ? double.infinity : 150.0;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: w,
+          height: big ? 220 : 100,
+          decoration: BoxDecoration(
+            color: Colors.black,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: track == null
+              ? const Center(
+                  child: SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF949BA4)),
+                  ),
+                )
+              : VideoTrackRenderer(track, fit: VideoViewFit.cover),
+        ),
+        const SizedBox(height: 2),
+        Text(label,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Color(0xFF949BA4), fontSize: 11)),
+      ],
     );
   }
 }

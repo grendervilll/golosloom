@@ -6,6 +6,7 @@ import type { Role } from '../api/types'
 import { roleIcon } from '../utils/roles'
 import { useAuthStore } from '../stores/auth'
 import { useChannelsStore } from '../stores/channels'
+import Avatar from './Avatar.vue'
 
 const props = defineProps<{
   msg: ChatMessage
@@ -19,6 +20,8 @@ const channels = useChannelsStore()
 
 const isMine = computed(() => props.msg.senderId === props.myId)
 const member = computed(() => channels.members.find((m) => m.user_id === props.msg.senderId))
+// Аватар отправителя (если есть) — из списка участников канала.
+const senderAvatar = computed(() => member.value?.avatar || null)
 // Иконка роли отправителя сообщения, а не текущего пользователя.
 const role = computed<Role>(() => {
   if (member.value?.is_server_admin) return 'server_admin'
@@ -48,6 +51,13 @@ function openMore(e: MouseEvent) {
     <span class="role-icon" :style="{ filter: 'grayscale(0.6)' }">{{ roleIcon(undefined, role) }}</span>
     <div class="body">
       <div class="head">
+        <Avatar
+          class="msg-avatar"
+          :user-id="msg.senderId"
+          :nick="msg.senderNick"
+          :avatar="senderAvatar"
+          :size="22"
+        />
         <b>{{ msg.senderNick }}</b>
         <span class="muted small">{{ new Date(msg.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) }}</span>
         <span v-if="msg.edited" class="muted small">(изменено)</span>
@@ -81,6 +91,10 @@ function openMore(e: MouseEvent) {
   display: flex;
   gap: 8px;
   align-items: baseline;
+}
+.msg-avatar {
+  align-self: center;
+  margin-right: 2px;
 }
 .small {
   font-size: 11px;

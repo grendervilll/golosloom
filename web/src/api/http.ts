@@ -122,6 +122,28 @@ export class ApiClient {
     }
   }
 
+  // --- Аватары (ограничение сервера — 5 МБ) ---
+  async uploadAvatar(file: File): Promise<void> {
+    const form = new FormData()
+    form.append('file', file)
+    const headers: Record<string, string> = {}
+    if (this.token) headers['Authorization'] = `Bearer ${this.token}`
+    const res = await fetch(this.baseUrl + '/api/me/avatar', { method: 'POST', headers, body: form })
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      throw new Error(text || `Ошибка загрузки: ${res.status}`)
+    }
+  }
+  async deleteAvatar(): Promise<void> {
+    const headers: Record<string, string> = {}
+    if (this.token) headers['Authorization'] = `Bearer ${this.token}`
+    const res = await fetch(this.baseUrl + '/api/me/avatar', { method: 'DELETE', headers })
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      throw new Error(text || `Ошибка удаления: ${res.status}`)
+    }
+  }
+
   // --- Аутентификация ---
   register(nick: string, password: string, invite?: string) {
     return this.post('/api/register', { nick, password, invite: invite || undefined })

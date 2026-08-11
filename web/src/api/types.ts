@@ -7,6 +7,7 @@ export interface User {
   server_banned: boolean
   server_ban_reason?: string
   created_at: string
+  avatar?: string | null
 }
 
 export interface PublicUser {
@@ -35,6 +36,7 @@ export interface ChannelMember {
   is_server_admin?: boolean
   online: boolean
   joined_at: string
+  avatar?: string | null
 }
 
 export interface Message {

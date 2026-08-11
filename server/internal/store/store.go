@@ -1539,3 +1539,25 @@ func (s *Store) CallInvitesForCall(callID int64) ([]models.CallInvite, error) {
 	}
 	return out, rows.Err()
 }
+
+// ActiveCalls — все активные (не завершённые) звонки.
+func (s *Store) ActiveCalls() ([]models.Call, error) {
+	rows, err := s.db.Query(`SELECT id, channel_id, initiator_id, status, created_at, ended_at
+		FROM calls WHERE status != 'ended' ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []models.Call
+	for rows.Next() {
+		var c models.Call
+		var endedAt sql.NullString
+		var createdAt string
+		if err := rows.Scan(&c.ID, &c.ChannelID, &c.InitiatorID, &c.Status, &createdAt, &endedAt); err != nil {
+			return nil, err
+		}
+		c.CreatedAt, _ = parseTime(createdAt)
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}

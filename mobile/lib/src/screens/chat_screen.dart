@@ -43,12 +43,14 @@ class _ChatScreenState extends State<ChatScreen> {
     widget.session.joinChannel(_channelId);
     // Ключ мог появиться после последней проверки — пересинхронизируемся.
     widget.session.syncKeys(_channelId);
+    widget.chat.addListener(_onChatChanged);
     widget.chat.loadHistory(_channelId);
     _scroll.addListener(_onScroll);
   }
 
   @override
   void dispose() {
+    widget.chat.removeListener(_onChatChanged);
     widget.session.leaveChannel(_channelId);
     if (widget.session.currentChannelId == _channelId) {
       widget.session.currentChannelId = null;
@@ -56,6 +58,25 @@ class _ChatScreenState extends State<ChatScreen> {
     _input.dispose();
     _scroll.dispose();
     super.dispose();
+  }
+
+  void _onChatChanged() {
+    if (!mounted) return;
+    setState(() {});
+    // Автопрокрутка вниз, если мы и так у нижнего края.
+    final pos = _scroll.position;
+    if (pos.hasContentDimensions &&
+        pos.maxScrollExtent - pos.pixels < 80) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _scroll.hasClients) {
+          _scroll.animateTo(
+            _scroll.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOut,
+          );
+        }
+      });
+    }
   }
 
   void _onScroll() {
