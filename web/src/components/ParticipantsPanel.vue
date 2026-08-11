@@ -9,7 +9,7 @@ import { toast } from 'vue-sonner'
 import { roleIcon, roleLabel } from '../utils/roles'
 import type { Role } from '../api/types'
 
-defineEmits<{ (e: 'close'): void }>()
+const emit = defineEmits<{ (e: 'close'): void }>()
 
 const auth = useAuthStore()
 const channels = useChannelsStore()

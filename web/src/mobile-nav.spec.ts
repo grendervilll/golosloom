@@ -8,6 +8,34 @@ import { useCallStore } from './stores/calls'
 import { router } from './router'
 
 describe('мобильная навигация', () => {
+  it('кнопка ✕ закрывает шторку участников', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const auth = useAuthStore()
+    auth.token = 't'
+    auth.user = { id: 1, nick: 'me', is_server_admin: false, server_banned: false, created_at: '' } as any
+    const settings = useSettingsStore()
+    settings.api = {} as any
+    const wrapper = mount(MainView, { global: { plugins: [pinia, router] }, attachTo: document.body })
+    await router.isReady()
+    await wrapper.vm.$nextTick()
+    await new Promise((r) => setTimeout(r, 30))
+
+    const tabs = wrapper.find('.mobile-tabbar').findAll('button')
+    await tabs[2].trigger('click') // Участники
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.members-panel').exists()).toBe(true)
+
+    await wrapper.find('.close-btn').trigger('click')
+    await wrapper.vm.$nextTick()
+    // Шторка закрыта: бэкдроп исчез, у панели снят класс open.
+    expect(wrapper.find('.mobile-backdrop').exists()).toBe(false)
+    expect(wrapper.find('.right-col').classes()).not.toContain('open')
+
+    wrapper.unmount()
+    document.body.innerHTML = ''
+  })
+
   it('во время звонка таб «Чат» показывает чат и кнопку возврата к звонку', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
