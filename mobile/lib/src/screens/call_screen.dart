@@ -1,11 +1,14 @@
 // Экран активного звонка: участники, микрофон, завершение.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:livekit_client/livekit_client.dart' hide Session;
 
 import '../call_service.dart';
 import '../session.dart';
+import '../widgets/avatar.dart';
 
 class CallScreen extends StatefulWidget {
   final Session session;
@@ -18,16 +21,30 @@ class CallScreen extends StatefulWidget {
 }
 
 class _CallScreenState extends State<CallScreen> {
+  Timer? _timer;
+
   @override
   void initState() {
     super.initState();
     widget.calls.addListener(_onChanged);
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
   void dispose() {
     widget.calls.removeListener(_onChanged);
+    _timer?.cancel();
     super.dispose();
+  }
+
+  String _fmt(Duration d) {
+    final h = d.inHours;
+    final m = d.inMinutes % 60;
+    final s = d.inSeconds % 60;
+    String two(int v) => v.toString().padLeft(2, '0');
+    return h > 0 ? '$h:${two(m)}:${two(s)}' : '$m:${two(s)}';
   }
 
   void _onChanged() {
@@ -47,16 +64,16 @@ class _CallScreenState extends State<CallScreen> {
     const red = Color(0xFFDA373C);
 
     final calls = widget.calls;
-    final call = calls.currentCall;
-    final callId = call?.id;
 
     return Scaffold(
       backgroundColor: const Color(0xFF1E1F22),
       appBar: AppBar(
         backgroundColor: const Color(0xFF2B2D31),
         automaticallyImplyLeading: false,
-        title: Text(callId == null ? 'Звонок' : 'Звонок #$callId',
-            style: const TextStyle(color: text, fontSize: 18)),
+        title: Text(
+          calls.inCall ? 'Разговор · ${_fmt(calls.callDuration)}' : 'Звонок',
+          style: const TextStyle(color: text, fontSize: 18),
+        ),
         actions: [
           TextButton(
             onPressed: _leave,
@@ -78,12 +95,11 @@ class _CallScreenState extends State<CallScreen> {
                     children: [
                       for (final p in calls.remoteParticipants)
                         ListTile(
-                          leading: CircleAvatar(
-                            backgroundColor: const Color(0xFF383A40),
-                            child: Text(
-                              p.identity.isEmpty ? '?' : p.identity.split(':').last,
-                              style: const TextStyle(color: text),
-                            ),
+                          leading: SpeakingAvatar(
+                            session: widget.session,
+                            room: calls.room!,
+                            participant: p,
+                            size: 40,
                           ),
                           title: Text(p.name.isEmpty ? p.identity : p.name,
                               style: const TextStyle(color: text)),

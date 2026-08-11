@@ -2,6 +2,7 @@
 library;
 
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
@@ -228,6 +229,27 @@ class ApiClient {
   WebSocketChannel connectWs() {
     final wsUrl = baseUrl.replaceFirst('https://', 'wss://').replaceFirst('http://', 'ws://');
     return WebSocketChannel.connect(Uri.parse('$wsUrl/ws?token=${token ?? ''}'));
+  }
+
+  // --- Аватары ---
+  Future<List<dynamic>> users() async {
+    return await _request('GET', '/api/users') as List<dynamic>;
+  }
+
+  /// Загрузка аватара (multipart, ограничение сервера — 5 МБ).
+  Future<void> uploadAvatar(Uint8List bytes, String filename) async {
+    final req = http.MultipartRequest('POST', _uri('/api/me/avatar'));
+    if (token != null) req.headers['Authorization'] = 'Bearer $token';
+    req.files.add(http.MultipartFile.fromBytes('file', bytes, filename: filename));
+    final streamed = await _http.send(req).timeout(const Duration(seconds: 30));
+    final res = await http.Response.fromStream(streamed);
+    if (res.statusCode >= 400) {
+      throw ApiException(res.statusCode, _errorText(res.body));
+    }
+  }
+
+  Future<void> deleteAvatar() async {
+    await _request('DELETE', '/api/me/avatar');
   }
 
   // --- Нативные пуши (FCM) ---

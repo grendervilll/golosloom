@@ -20,9 +20,15 @@ class WsEvent {
 }
 
 class Session extends ChangeNotifier {
+  /// Глобальная точка доступа (для плашки звонка на любом экране).
+  static Session? instance;
+
   final AppSettings settings;
   final ApiClient api;
   final KeyStore keyStore = KeyStore();
+
+  /// Кэш пользователей: userId → {nick, avatarAt} для аватаров.
+  final Map<int, Map<String, String>> users = {};
 
   late final DeviceKeys device;
 
@@ -42,15 +48,34 @@ class Session extends ChangeNotifier {
   int _backoffSeconds = 2;
   bool _stopped = false;
 
-  Session(this.settings, this.api);
+  Session(this.settings, this.api) {
+    instance = this;
+  }
 
   Future<void> start() async {
     device = await generateDeviceKeys();
     await api.uploadKey(device.deviceId, bytesToB64(device.publicKey));
     await refreshChannels();
+    await refreshUsers();
     await syncAllKeys();
     connectWs();
     startKeyPoll();
+  }
+
+  /// Обновление кэша пользователей (ники и аватары).
+  Future<void> refreshUsers() async {
+    try {
+      final list = (await api.users()).cast<Map<String, dynamic>>();
+      for (final u in list) {
+        final id = (u['id'] as num?)?.toInt();
+        if (id == null) continue;
+        users[id] = {
+          'nick': (u['nick'] as String?) ?? '',
+          'avatarAt': (u['avatar'] as String?) ?? '',
+        };
+      }
+      notifyListeners();
+    } catch (_) {}
   }
 
   Future<void> refreshChannels() async {

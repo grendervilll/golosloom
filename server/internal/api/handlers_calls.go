@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"golosloom/server/internal/hub"
@@ -39,16 +40,46 @@ func (s *Server) handleCreateCall(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "выберите хотя бы одного пользователя")
 		return
 	}
-	// Двойной вызов не допускается: у инициатора не может быть двух активных
-	// звонков в одном канале одновременно.
-	n, err := s.Store.CountCallsByInitiator(channelID, userIDFrom(r))
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+	// Занятые пользователи: уже разговаривают в другом звонке или
+	// ждут ответа на другое приглашение.
+	var busy []string
+	for _, targetID := range req.TargetIDs {
+		if targetID == userIDFrom(r) {
+			continue
+		}
+		inCall, err1 := s.Store.ActiveCallForUser(targetID)
+		ringing, err2 := s.Store.HasActiveRingingInvite(targetID)
+		if err1 == nil && inCall != nil {
+			busy = append(busy, s.nickOf(targetID))
+		} else if err2 == nil && ringing {
+			busy = append(busy, s.nickOf(targetID))
+		}
+	}
+	if len(busy) > 0 {
+		writeErr(w, http.StatusConflict,
+			"этот пользователь уже с кем-то разговаривает: "+strings.Join(busy, ", "))
 		return
 	}
-	if n > 0 {
-		writeErr(w, http.StatusConflict, "у вас уже есть активный звонок в этом канале")
-		return
+	// Двойной вызов не допускается: у инициатора не может быть двух активных
+	// звонков в одном канале одновременно. Звонок-«зомби» (все вышли, но
+	// соединения оборвались) завершаем автоматически.
+	if n, err := s.Store.CountCallsByInitiator(channelID, userIDFrom(r)); err == nil && n > 0 {
+		blocked := false
+		if calls, err := s.Store.ActiveCallsByInitiator(channelID, userIDFrom(r)); err == nil {
+			for _, c := range calls {
+				count, _ := s.Store.CallParticipantCount(c.ID)
+				ringing, _ := s.Store.RingingInvites(c.ID)
+				if count > 1 || len(ringing) > 0 || c.Status == models.CallRinging {
+					blocked = true
+				} else {
+					s.finishCall(c, "звонок завершён (все участники вышли)")
+				}
+			}
+		}
+		if blocked {
+			writeErr(w, http.StatusConflict, "у вас уже есть активный звонок в этом канале")
+			return
+		}
 	}
 
 	call, err := s.Store.CreateCall(channelID, userIDFrom(r))
@@ -61,6 +92,8 @@ func (s *Server) handleCreateCall(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	// Пользователь может быть только в одном активном звонке.
+	s.leaveOtherCalls(call.ID, userIDFrom(r))
 	callerNick := s.nickOf(userIDFrom(r))
 
 	invited := 0
@@ -255,6 +288,7 @@ func (s *Server) handleAcceptCall(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.leaveOtherCalls(callID, userIDFrom(r))
 	firstAccept := call.Status == models.CallRinging
 	if firstAccept {
 		if err := s.Store.UpdateCallStatus(callID, models.CallActive); err != nil {
@@ -337,6 +371,7 @@ func (s *Server) handleJoinCall(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.leaveOtherCalls(callID, userIDFrom(r))
 	if call.Status == models.CallRinging {
 		_ = s.Store.UpdateCallStatus(callID, models.CallActive)
 		s.Hub.SendToChannel(call.ChannelID, hub.NewEvent("call.started", map[string]int64{"call_id": callID}))
@@ -375,6 +410,21 @@ func (s *Server) broadcastParticipants(callID int64) {
 	s.Hub.SendToChannel(call.ChannelID, hub.NewEvent("call.participants", map[string]interface{}{
 		"call_id": callID, "participants": participants,
 	}))
+}
+
+// leaveOtherCalls — пользователь может быть только в одном активном звонке:
+// входя в новый, он выходит из остальных (чинит «зомби» от оборванных
+// соединений, из-за которых звонок никогда не завершался).
+func (s *Server) leaveOtherCalls(callID, userID int64) {
+	call, err := s.Store.ActiveCallForUser(userID)
+	if err != nil || call == nil || call.ID == callID {
+		return
+	}
+	_ = s.Store.RemoveCallParticipant(call.ID, userID)
+	s.maybeFinishSoloCall(call)
+	if c2, err := s.Store.GetCall(call.ID); err == nil && c2.Status != models.CallEnded {
+		s.broadcastParticipants(call.ID)
+	}
 }
 
 func (s *Server) finishCall(call models.Call, reason string) {

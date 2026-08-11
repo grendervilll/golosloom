@@ -101,8 +101,23 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       );
     } else if (widget.calls.callError != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(widget.calls.callError!)),
+      // Занятые/ошибки — попапом, как просили.
+      final err = widget.calls.callError!;
+      final isBusy = err.contains('уже с кем-то разговаривает');
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: const Color(0xFF2B2D31),
+          title: Text(isBusy ? '👤 Пользователь занят' : 'Не удалось позвонить'),
+          content: Text(err, style: const TextStyle(color: Color(0xFFDBDEE1))),
+          actions: [
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: const Color(0xFF5865F2)),
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Ок'),
+            ),
+          ],
+        ),
       );
     }
   }

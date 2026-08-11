@@ -277,8 +277,12 @@ CREATE INDEX IF NOT EXISTS idx_call_participants_user ON call_participants(user_
 `
 
 func (s *Store) migrate() error {
-	_, err := s.db.Exec(schema)
-	return err
+	if _, err := s.db.Exec(schema); err != nil {
+		return err
+	}
+	// Миграция: колонка аватара (для старых БД).
+	_, _ = s.db.Exec(`ALTER TABLE users ADD COLUMN avatar_at TEXT`)
+	return nil
 }
 
 func parseTime(s string) (time.Time, error) {
@@ -412,12 +416,12 @@ func (s *Store) CreateUser(nick, passwordHash string) (*models.User, error) {
 }
 
 func (s *Store) GetUserByID(id int64) (*models.User, error) {
-	row := s.db.QueryRow(`SELECT id, nick, is_server_admin, server_banned, server_ban_reason, created_at FROM users WHERE id = ?`, id)
+	row := s.db.QueryRow(`SELECT id, nick, is_server_admin, server_banned, server_ban_reason, created_at, avatar_at FROM users WHERE id = ?`, id)
 	return scanUser(row)
 }
 
 func (s *Store) GetUserByNick(nick string) (*models.User, error) {
-	row := s.db.QueryRow(`SELECT id, nick, is_server_admin, server_banned, server_ban_reason, created_at FROM users WHERE nick = ?`, nick)
+	row := s.db.QueryRow(`SELECT id, nick, is_server_admin, server_banned, server_ban_reason, created_at, avatar_at FROM users WHERE nick = ?`, nick)
 	return scanUser(row)
 }
 
@@ -425,7 +429,8 @@ func scanUser(row *sql.Row) (*models.User, error) {
 	var u models.User
 	var banned int
 	var createdAt string
-	err := row.Scan(&u.ID, &u.Nick, &u.IsServerAdmin, &banned, &u.ServerBanReason, &createdAt)
+	var avatarAt sql.NullString
+	err := row.Scan(&u.ID, &u.Nick, &u.IsServerAdmin, &banned, &u.ServerBanReason, &createdAt, &avatarAt)
 	if err == sql.ErrNoRows {
 		return nil, ErrNotFound
 	}
@@ -436,11 +441,16 @@ func scanUser(row *sql.Row) (*models.User, error) {
 	if t, err := parseTime(createdAt); err == nil {
 		u.CreatedAt = t
 	}
+	if avatarAt.Valid {
+		if t, err := parseTime(avatarAt.String); err == nil {
+			u.AvatarAt = &t
+		}
+	}
 	return &u, nil
 }
 
 func (s *Store) ListUsers() ([]models.User, error) {
-	rows, err := s.db.Query(`SELECT id, nick, is_server_admin, server_banned, server_ban_reason, created_at FROM users ORDER BY id`)
+	rows, err := s.db.Query(`SELECT id, nick, is_server_admin, server_banned, server_ban_reason, created_at, avatar_at FROM users ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -450,12 +460,18 @@ func (s *Store) ListUsers() ([]models.User, error) {
 		var u models.User
 		var banned int
 		var createdAt string
-		if err := rows.Scan(&u.ID, &u.Nick, &u.IsServerAdmin, &banned, &u.ServerBanReason, &createdAt); err != nil {
+		var avatarAt sql.NullString
+		if err := rows.Scan(&u.ID, &u.Nick, &u.IsServerAdmin, &banned, &u.ServerBanReason, &createdAt, &avatarAt); err != nil {
 			return nil, err
 		}
 		u.ServerBanned = banned == 1
 		if t, err := parseTime(createdAt); err == nil {
 			u.CreatedAt = t
+		}
+		if avatarAt.Valid {
+			if t, err := parseTime(avatarAt.String); err == nil {
+				u.AvatarAt = &t
+			}
 		}
 		out = append(out, u)
 	}
@@ -1437,4 +1453,68 @@ func (s *Store) FcmTokens(userID int64) ([]string, error) {
 		out = append(out, t)
 	}
 	return out, rows.Err()
+}
+
+// ActiveCallForUser — активный (не завершённый) звонок, где пользователь
+// сейчас участник. Используется для проверки занятости.
+func (s *Store) ActiveCallForUser(userID int64) (*models.Call, error) {
+	var c models.Call
+	var endedAt sql.NullString
+	var createdAt string
+	err := s.db.QueryRow(`
+		SELECT c.id, c.channel_id, c.initiator_id, c.status, c.created_at, c.ended_at
+		FROM calls c
+		JOIN call_participants cp ON cp.call_id = c.id AND cp.user_id = ? AND cp.left_at IS NULL
+		WHERE c.status != 'ended' ORDER BY c.id DESC LIMIT 1`, userID).
+		Scan(&c.ID, &c.ChannelID, &c.InitiatorID, &c.Status, &createdAt, &endedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	c.CreatedAt, _ = parseTime(createdAt)
+	return &c, nil
+}
+
+// ActiveCallsByInitiator — активные звонки инициатора в канале (список).
+func (s *Store) ActiveCallsByInitiator(channelID, userID int64) ([]models.Call, error) {
+	rows, err := s.db.Query(`SELECT id, channel_id, initiator_id, status, created_at, ended_at
+		FROM calls WHERE channel_id = ? AND initiator_id = ? AND status != 'ended' ORDER BY id`,
+		channelID, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []models.Call
+	for rows.Next() {
+		var c models.Call
+		var endedAt sql.NullString
+		var createdAt string
+		if err := rows.Scan(&c.ID, &c.ChannelID, &c.InitiatorID, &c.Status, &createdAt, &endedAt); err != nil {
+			return nil, err
+		}
+		c.CreatedAt, _ = parseTime(createdAt)
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) SetUserAvatarAt(userID int64) error {
+	_, err := s.db.Exec(`UPDATE users SET avatar_at = ? WHERE id = ?`, now(), userID)
+	return err
+}
+
+func (s *Store) ClearUserAvatarAt(userID int64) error {
+	_, err := s.db.Exec(`UPDATE users SET avatar_at = NULL WHERE id = ?`, userID)
+	return err
+}
+
+// HasActiveRingingInvite — есть ли у пользователя звонок, где он ждёт ответа.
+func (s *Store) HasActiveRingingInvite(userID int64) (bool, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM call_invites ci
+		JOIN calls c ON c.id = ci.call_id AND c.status != 'ended'
+		WHERE ci.user_id = ? AND ci.status = 'ringing'`, userID).Scan(&n)
+	return n > 0, err
 }

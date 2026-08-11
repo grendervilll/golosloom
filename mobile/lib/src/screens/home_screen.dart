@@ -2,6 +2,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../api_client.dart';
@@ -11,6 +12,7 @@ import '../push_service.dart';
 import '../session.dart';
 import '../settings.dart';
 import '../update_dialog.dart';
+import '../widgets/avatar.dart';
 import 'call_screen.dart';
 import 'chat_screen.dart';
 
@@ -127,6 +129,64 @@ class _HomeScreenState extends State<HomeScreen> {
     if (mounted) Navigator.of(context).pushReplacementNamed('/login');
   }
 
+  /// Меню аватара: сменить (до 5 МБ) или удалить.
+  Future<void> _avatarMenu() async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: const Color(0xFF2B2D31),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(12),
+              child: Text('Аватар (максимум 5 МБ)',
+                  style: TextStyle(color: Color(0xFF949BA4), fontSize: 12)),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo, color: Color(0xFFDBDEE1)),
+              title: const Text('Изменить аватар', style: TextStyle(color: Color(0xFFDBDEE1))),
+              onTap: () => Navigator.pop(ctx, 'change'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete, color: Color(0xFFDA373C)),
+              title: const Text('Удалить аватар', style: TextStyle(color: Color(0xFFDA373C))),
+              onTap: () => Navigator.pop(ctx, 'remove'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || action == null) return;
+    if (action == 'remove') {
+      try {
+        await _api.deleteAvatar();
+        await _session.refreshUsers();
+      } catch (e) {
+        _showError(e.toString());
+      }
+      return;
+    }
+    final picked = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 1024, maxHeight: 1024);
+    if (picked == null) return;
+    final bytes = await picked.readAsBytes();
+    if (bytes.length > 5 * 1024 * 1024) {
+      _showError('Аватар слишком большой: максимум 5 МБ');
+      return;
+    }
+    try {
+      await _api.uploadAvatar(bytes, 'avatar.jpg');
+      await _session.refreshUsers();
+    } catch (e) {
+      _showError(e.toString());
+    }
+  }
+
+  void _showError(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
   @override
   Widget build(BuildContext context) {
     const bg = Color(0xFF1E1F22);
@@ -141,6 +201,16 @@ class _HomeScreenState extends State<HomeScreen> {
         backgroundColor: panel,
         title: const Text('Golosloom', style: TextStyle(color: text, fontSize: 18)),
         actions: [
+          IconButton(
+            onPressed: _avatarMenu,
+            tooltip: 'Аватар',
+            icon: AvatarWidget(
+              session: _session,
+              userId: widget.settings.user?.id ?? 0,
+              nick: _myNick,
+              size: 30,
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.logout, color: dim),
             tooltip: 'Выйти',

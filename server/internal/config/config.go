@@ -28,6 +28,7 @@ type Config struct {
 	VAPIDPrivateKey   string
 	VAPIDSubject      string
 	FCMServiceAccount string
+	AvatarDir          string
 }
 
 func Load() Config {
@@ -52,6 +53,7 @@ func Load() Config {
 		VAPIDPrivateKey:   getenv("VAPID_PRIVATE_KEY", ""),
 		VAPIDSubject:      getenv("VAPID_SUBJECT", "mailto:admin@localhost"),
 		FCMServiceAccount: getenv("FCM_SERVICE_ACCOUNT_FILE", ""),
+		AvatarDir:          getenv("AVATAR_DIR", "data/avatars"),
 	}
 }
 

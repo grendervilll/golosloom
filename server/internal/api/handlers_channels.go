@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"time"
 
 	"golosloom/server/internal/auth"
 	"golosloom/server/internal/hub"
@@ -362,16 +363,19 @@ func (s *Server) handleListMembers(w http.ResponseWriter, r *http.Request) {
 	for _, m := range members {
 		nick := s.nickOf(m.UserID)
 		isAdmin := false
+		var avatar *time.Time
 		if u, err := s.Store.GetUserByID(m.UserID); err == nil {
 			isAdmin = u.IsServerAdmin
+			avatar = u.AvatarAt
 		}
 		out = append(out, map[string]interface{}{
-			"user_id":        m.UserID,
-			"nick":           nick,
-			"role":           m.Role,
+			"user_id":         m.UserID,
+			"nick":            nick,
+			"role":            m.Role,
 			"is_server_admin": isAdmin,
-			"online":         s.Hub.IsOnline(m.UserID),
-			"joined_at":      m.JoinedAt,
+			"online":          s.Hub.IsOnline(m.UserID),
+			"joined_at":       m.JoinedAt,
+			"avatar":          avatar,
 		})
 	}
 	writeJSON(w, http.StatusOK, out)

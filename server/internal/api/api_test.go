@@ -889,29 +889,38 @@ func TestCallDuplicateInviteAndEmptyJoin(t *testing.T) {
 
 	a.do(t, http.MethodPost, "/api/calls", caller.token,
 		map[string]interface{}{"channel_id": ch, "target_ids": []int64{u3.id}})
+	// u3 уже ждёт ответа на другое приглашение — вызов занятого отклоняется.
 	code, body := a.do(t, http.MethodPost, "/api/calls", u2.token,
 		map[string]interface{}{"channel_id": ch, "target_ids": []int64{u3.id, u4.id}})
+	if code != http.StatusConflict {
+		t.Fatalf("звонок занятому: ожидали 409, получили %d %v", code, body)
+	}
+	if msg, _ := body["error"].(string); !strings.Contains(msg, "уже с кем-то разговаривает") {
+		t.Fatalf("сообщение о занятости: %q", msg)
+	}
+	// Без занятого — звонок создаётся.
+	code, body = a.do(t, http.MethodPost, "/api/calls", u2.token,
+		map[string]interface{}{"channel_id": ch, "target_ids": []int64{u4.id}})
 	if code != http.StatusCreated {
-		t.Fatalf("звонок с дублирующим участником: %d %v", code, body)
+		t.Fatalf("звонок без занятого: %d %v", code, body)
 	}
 	callID := int64(body["call"].(map[string]interface{})["id"].(float64))
-	if _, err := a.srv.Store.GetCallInvite(callID, u3.id); err == nil {
-		t.Fatal("u3 не должен быть приглашён дважды")
-	}
 	if inv, err := a.srv.Store.GetCallInvite(callID, u4.id); err != nil || inv.Status != "ringing" {
 		t.Fatal("u4 должен быть приглашён")
 	}
 
 	// Пустой звонок: инициатор ушёл — звонок завершён, вход даёт ошибку.
-	// Инициатор — u3 (у caller уже есть активный звонок).
+	// (все предыдущие участники уже заняты — нужен свежий пользователь)
+	u5 := a.register(t, "User5")
+	a.join(t, u5.token, ch)
 	code, body = a.do(t, http.MethodPost, "/api/calls", u3.token,
-		map[string]interface{}{"channel_id": ch, "target_ids": []int64{u2.id}})
+		map[string]interface{}{"channel_id": ch, "target_ids": []int64{u5.id}})
 	if code != http.StatusCreated {
 		t.Fatalf("создание звонка: %d %v", code, body)
 	}
 	emptyCall := int64(body["call"].(map[string]interface{})["id"].(float64))
 	a.do(t, http.MethodPost, fmt.Sprintf("/api/calls/%d/leave", emptyCall), u3.token, nil)
-	code, _ = a.do(t, http.MethodPost, fmt.Sprintf("/api/calls/%d/join", emptyCall), u2.token, nil)
+	code, _ = a.do(t, http.MethodPost, fmt.Sprintf("/api/calls/%d/join", emptyCall), u5.token, nil)
 	if code != http.StatusGone {
 		t.Fatalf("вход в пустой звонок: ожидали 410, получили %d", code)
 	}

@@ -53,6 +53,9 @@ class CallInfo {
 }
 
 class CallService extends ChangeNotifier {
+  /// Глобальная точка доступа для плашки звонка на любом экране.
+  static CallService? instance;
+
   final Session session;
   ServerConfig? _config;
 
@@ -66,11 +69,17 @@ class CallService extends ChangeNotifier {
 
   CallService(this.session) {
     _sub = session.events.listen(_onEvent);
+    instance = this;
   }
 
   bool get inCall => _room != null;
+  Room? get room => _room;
   List<RemoteParticipant> get remoteParticipants =>
       _room?.remoteParticipants.values.toList() ?? [];
+
+  DateTime? _startedAt;
+  Duration get callDuration =>
+      _startedAt == null ? Duration.zero : DateTime.now().difference(_startedAt!);
 
   @override
   void dispose() {
@@ -222,6 +231,7 @@ class CallService extends ChangeNotifier {
     final room = Room();
     _room = room;
     try {
+      _startedAt = DateTime.now();
       await room.connect(
         config.livekitUrl,
         token,
@@ -251,6 +261,7 @@ class CallService extends ChangeNotifier {
     final r = _room;
     _room = null;
     currentCall = null;
+    _startedAt = null;
     notifyListeners();
     if (r != null) {
       try {

@@ -1,8 +1,12 @@
 package api
 
 import (
+	"bytes"
 	"fmt"
+	"mime/multipart"
 	"net/http"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -535,5 +539,95 @@ func TestFcmTokenSubscribeAndRemove(t *testing.T) {
 	code, _ = a.do(t, http.MethodPost, "/api/push/fcm", "", map[string]string{"token": "x"})
 	if code != http.StatusUnauthorized {
 		t.Fatalf("без токена: ожидали 401, получили %d", code)
+	}
+}
+
+func TestCallBusyUserRejected(t *testing.T) {
+	a := newTestApp(t, nil)
+	caller := a.register(t, "CallerB")
+	u2 := a.register(t, "BusyUser")
+	u3 := a.register(t, "ThirdUser")
+	ch := a.mustChannel(t, caller.token, "Канал", false)
+	a.join(t, u2.token, ch)
+	a.join(t, u3.token, ch)
+
+	// u3 уже разговаривает (звонок от u2 с участием u3).
+	code, _ := a.do(t, http.MethodPost, "/api/calls", u2.token,
+		map[string]interface{}{"channel_id": ch, "target_ids": []int64{u3.id}})
+	if code != http.StatusCreated {
+		t.Fatalf("создание звонка: %d", code)
+	}
+
+	// caller звонит занятому u3 — 409 с понятным сообщением.
+	code, body := a.do(t, http.MethodPost, "/api/calls", caller.token,
+		map[string]interface{}{"channel_id": ch, "target_ids": []int64{u3.id}})
+	if code != http.StatusConflict {
+		t.Fatalf("звонок занятому: ожидали 409, получили %d", code)
+	}
+	if msg, _ := body["error"].(string); !strings.Contains(msg, "уже с кем-то разговаривает") {
+		t.Fatalf("сообщение о занятости: %q", msg)
+	}
+}
+
+func TestAvatarUploadGetDelete(t *testing.T) {
+	a := newTestApp(t, nil)
+	u := a.register(t, "AvatarUser")
+
+	// Аватара нет.
+	code, _ := a.doRaw(t, http.MethodGet, "/api/avatars/"+strconv.FormatInt(u.id, 10), "", nil)
+	if code != http.StatusNotFound {
+		t.Fatalf("аватар без загрузки: ожидали 404, получили %d", code)
+	}
+
+	// Загрузка через multipart.
+	uploadAvatar := func(token string) int {
+		var buf bytes.Buffer
+		mw := multipart.NewWriter(&buf)
+		fw, _ := mw.CreateFormFile("file", "a.jpg")
+		_, _ = fw.Write([]byte("fake-jpeg-bytes"))
+		_ = mw.Close()
+		req, err := http.NewRequest(http.MethodPost, a.ts.URL+"/api/me/avatar", &buf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", mw.FormDataContentType())
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	if code := uploadAvatar(""); code != http.StatusUnauthorized {
+		t.Fatalf("загрузка без токена: ожидали 401, получили %d", code)
+	}
+	if code := uploadAvatar(u.token); code != http.StatusOK {
+		t.Fatalf("загрузка аватара: %d", code)
+	}
+
+	// Аватар отдаётся публично.
+	code, raw := a.doRaw(t, http.MethodGet, "/api/avatars/"+strconv.FormatInt(u.id, 10), "", nil)
+	_ = raw
+	if code != http.StatusOK {
+		t.Fatalf("раздача аватара: %d", code)
+	}
+
+	// В /api/me появился avatar.
+	code, me := a.do(t, http.MethodGet, "/api/me", u.token, nil)
+	if code != http.StatusOK || me["avatar"] == nil {
+		t.Fatalf("в /api/me нет avatar: %d %v", code, me)
+	}
+
+	// Удаление.
+	code, _ = a.do(t, http.MethodDelete, "/api/me/avatar", u.token, nil)
+	if code != http.StatusOK {
+		t.Fatalf("удаление аватара: %d", code)
+	}
+	code, _ = a.doRaw(t, http.MethodGet, "/api/avatars/"+strconv.FormatInt(u.id, 10), "", nil)
+	if code != http.StatusNotFound {
+		t.Fatalf("аватар после удаления: ожидали 404, получили %d", code)
 	}
 }

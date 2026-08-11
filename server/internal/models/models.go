@@ -39,6 +39,9 @@ type User struct {
 	ServerBanned   bool      `json:"server_banned"`
 	ServerBanReason string   `json:"server_ban_reason,omitempty"`
 	CreatedAt      time.Time `json:"created_at"`
+	// AvatarAt — время последнего обновления аватара (null — аватара нет).
+	// Клиенты строят URL /api/avatars/{id}?v=<timestamp>.
+	AvatarAt *time.Time `json:"avatar"`
 }
 
 type Device struct {

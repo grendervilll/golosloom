@@ -15,6 +15,10 @@ func (s *Server) Router() http.Handler {
 
 	mux.HandleFunc("GET /api/config", s.handleConfig)
 	mux.HandleFunc("GET /api/health", s.handleHealth)
+	// Аватары
+	mux.HandleFunc("POST /api/me/avatar", s.requireAuth(s.handleAvatarUpload))
+	mux.HandleFunc("DELETE /api/me/avatar", s.requireAuth(s.handleAvatarDelete))
+	mux.HandleFunc("GET /api/avatars/{userID}", s.handleAvatarGet)
 	mux.HandleFunc("POST /api/register", func(w http.ResponseWriter, r *http.Request) {
 		s.registerLimiter.handle(w, r, s.handleRegister)
 	})
@@ -136,6 +140,7 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 			"nick":            u.Nick,
 			"is_server_admin": u.IsServerAdmin,
 			"online":          s.Hub.IsOnline(u.ID),
+			"avatar":          u.AvatarAt,
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
