@@ -321,3 +321,42 @@ func TestTimeParsing(t *testing.T) {
 		t.Fatal("невалидная дата должна давать nil")
 	}
 }
+
+func TestPruneDevices(t *testing.T) {
+	st := openTest(t)
+	u := mustUser(t, st, "pruneuser")
+
+	// 10 устройств.
+	for i := 0; i < 10; i++ {
+		if err := st.UpsertDevice(u.ID, "dev-"+string(rune('a'+i)), "pub"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// У устройства "dev-a" есть обёрнутый ключ канала.
+	ch, err := st.CreateChannel("ch", false, u.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertChannelKey(ch.ID, u.ID, "dev-a", []byte("wrapped")); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := st.PruneDevices(u.ID, 3); err != nil {
+		t.Fatal(err)
+	}
+	devices, err := st.UserDevices(u.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(devices) != 3 {
+		t.Fatalf("после прунинга должно остаться 3 устройства, осталось %d", len(devices))
+	}
+	// Ключ старого устройства удалён, последнего — остался.
+	if _, err := st.GetChannelKey(ch.ID, u.ID, "dev-a"); err == nil {
+		t.Fatal("ключ удалённого устройства должен был удалиться")
+	}
+	last := devices[len(devices)-1]
+	if _, err := st.GetChannelKey(ch.ID, u.ID, last.DeviceID); err != ErrNotFound {
+		t.Fatalf("у последнего устройства ключа быть не должно: %v", err)
+	}
+}

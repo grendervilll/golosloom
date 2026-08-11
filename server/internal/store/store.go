@@ -1386,3 +1386,18 @@ func (s *Store) PushSubscriptions(userID int64) ([]PushSubscription, error) {
 	}
 	return out, rows.Err()
 }
+
+// PruneDevices удаляет старые устройства пользователя, оставляя keep последних,
+// вместе с их обёрнутыми ключами каналов (у channel_keys нет FK на devices).
+func (s *Store) PruneDevices(userID int64, keep int) error {
+	if _, err := s.db.Exec(`DELETE FROM channel_keys
+		WHERE user_id = ? AND device_id IN (
+			SELECT device_id FROM devices WHERE user_id = ? ORDER BY id DESC LIMIT -1 OFFSET ?
+		)`, userID, userID, keep); err != nil {
+		return err
+	}
+	_, err := s.db.Exec(`DELETE FROM devices WHERE user_id = ? AND id NOT IN (
+		SELECT id FROM devices WHERE user_id = ? ORDER BY id DESC LIMIT ?
+	)`, userID, userID, keep)
+	return err
+}
