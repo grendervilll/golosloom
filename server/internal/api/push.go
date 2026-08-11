@@ -5,6 +5,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -38,18 +39,26 @@ func (p *pushService) sendNotification(payload []byte, sub store.PushSubscriptio
 // pushNotify отправляет пуш пользователю, если у него нет активного
 // WS-соединения (приложение открыто — уведомление не нужно).
 func (s *Server) pushNotify(userID int64, title, body, tag string) {
-	if s.push == nil {
-		return
-	}
 	// Приложение открыто — событие и так придёт по WebSocket.
 	if s.Hub.IsOnline(userID) {
 		return
 	}
-	subs, err := s.Store.PushSubscriptions(userID)
-	if err != nil || len(subs) == 0 {
-		return
-	}
 	payload, _ := json.Marshal(map[string]string{"title": title, "body": body, "tag": tag})
+	if s.push != nil {
+		subs, err := s.Store.PushSubscriptions(userID)
+		if err == nil && len(subs) > 0 {
+			s.sendWebPush(userID, subs, payload)
+		}
+	}
+	if s.fcm != nil {
+		tokens, err := s.Store.FcmTokens(userID)
+		if err == nil && len(tokens) > 0 {
+			s.sendFcm(userID, tokens, title, body, tag)
+		}
+	}
+}
+
+func (s *Server) sendWebPush(userID int64, subs []store.PushSubscription, payload []byte) {
 	// Отправка по сети не должна задерживать обработчик.
 	go func() {
 		for _, sub := range subs {
@@ -61,6 +70,17 @@ func (s *Server) pushNotify(userID int64, title, body, tag string) {
 			// Подписка устарела/удалена у браузера — чистим.
 			if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusGone {
 				_ = s.Store.RemovePushSubscription(userID, sub.Endpoint)
+			}
+		}
+	}()
+}
+
+func (s *Server) sendFcm(userID int64, tokens []string, title, body, tag string) {
+	go func() {
+		for _, token := range tokens {
+			err := s.fcm.send(token, title, body, tag)
+			if errors.Is(err, errFcmGone) {
+				_ = s.Store.RemoveFcmToken(userID, token)
 			}
 		}
 	}()
@@ -123,6 +143,38 @@ func (s *Server) handlePushUnsubscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.Store.RemovePushSubscription(userIDFrom(r), req.Endpoint); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// handleFcmSubscribe — регистрация FCM-токена приложения (авторизован).
+func (s *Server) handleFcmSubscribe(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Token string `json:"token"`
+	}
+	if err := readJSON(r, &req); err != nil || req.Token == "" {
+		writeErr(w, http.StatusBadRequest, "token обязателен")
+		return
+	}
+	if err := s.Store.AddFcmToken(userIDFrom(r), req.Token); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// handleFcmUnsubscribe — удаление FCM-токена.
+func (s *Server) handleFcmUnsubscribe(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Token string `json:"token"`
+	}
+	if err := readJSON(r, &req); err != nil || req.Token == "" {
+		writeErr(w, http.StatusBadRequest, "token обязателен")
+		return
+	}
+	if err := s.Store.RemoveFcmToken(userIDFrom(r), req.Token); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}

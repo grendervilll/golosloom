@@ -7,6 +7,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../api_client.dart';
 import '../call_service.dart';
 import '../chat_store.dart';
+import '../push_service.dart';
 import '../session.dart';
 import '../settings.dart';
 import '../update_dialog.dart';
@@ -27,6 +28,7 @@ class _HomeScreenState extends State<HomeScreen> {
   late final Session _session;
   late final ChatStore _chat;
   late final CallService _calls;
+  late final PushService _push;
   String _myNick = '';
 
   @override
@@ -38,9 +40,11 @@ class _HomeScreenState extends State<HomeScreen> {
     _session = Session(widget.settings, _api);
     _chat = ChatStore(_session);
     _calls = CallService(_session);
+    _push = PushService(_api);
     _session.addListener(_onSessionChanged);
     _calls.addListener(_onCallsChanged);
     _session.start();
+    _push.init();
     _checkUpdate();
   }
 

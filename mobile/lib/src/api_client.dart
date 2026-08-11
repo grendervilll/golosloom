@@ -229,4 +229,9 @@ class ApiClient {
     final wsUrl = baseUrl.replaceFirst('https://', 'wss://').replaceFirst('http://', 'ws://');
     return WebSocketChannel.connect(Uri.parse('$wsUrl/ws?token=${token ?? ''}'));
   }
+
+  // --- Нативные пуши (FCM) ---
+  Future<void> registerFcmToken(String token) async {
+    await _request('POST', '/api/push/fcm', {'token': token});
+  }
 }

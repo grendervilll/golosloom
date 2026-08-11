@@ -43,3 +43,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Секреты Firebase/HMS — не в git
+google-services.json
+agconnect-services.json

@@ -256,6 +256,12 @@ CREATE TABLE IF NOT EXISTS registration_invites (
 	expires_at TEXT NOT NULL,
 	used_at TEXT
 );
+CREATE TABLE IF NOT EXISTS push_tokens (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	token TEXT NOT NULL UNIQUE,
+	created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS push_subscriptions (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -1400,4 +1406,35 @@ func (s *Store) PruneDevices(userID int64, keep int) error {
 		SELECT id FROM devices WHERE user_id = ? ORDER BY id DESC LIMIT ?
 	)`, userID, userID, keep)
 	return err
+}
+
+// ---------- Нативные push-токены (FCM) ----------
+
+func (s *Store) AddFcmToken(userID int64, token string) error {
+	_, err := s.db.Exec(`INSERT INTO push_tokens (user_id, token, created_at) VALUES (?, ?, ?)
+		ON CONFLICT(token) DO UPDATE SET user_id = excluded.user_id`,
+		userID, token, now())
+	return err
+}
+
+func (s *Store) RemoveFcmToken(userID int64, token string) error {
+	_, err := s.db.Exec(`DELETE FROM push_tokens WHERE user_id = ? AND token = ?`, userID, token)
+	return err
+}
+
+func (s *Store) FcmTokens(userID int64) ([]string, error) {
+	rows, err := s.db.Query(`SELECT token FROM push_tokens WHERE user_id = ?`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var t string
+		if err := rows.Scan(&t); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
 }

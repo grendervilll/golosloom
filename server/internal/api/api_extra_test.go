@@ -502,3 +502,38 @@ func TestPushSubscribeAndUnsubscribe(t *testing.T) {
 		t.Fatalf("без токена: ожидали 401, получили %d", code)
 	}
 }
+
+func TestFcmTokenSubscribeAndRemove(t *testing.T) {
+	a := newTestApp(t, nil)
+	u := a.register(t, "FcmUser")
+
+	code, _ := a.do(t, http.MethodPost, "/api/push/fcm", u.token, map[string]string{"token": "fcm-token-1"})
+	if code != http.StatusOK {
+		t.Fatalf("регистрация FCM: ожидали 200, получили %d", code)
+	}
+	tokens, err := a.srv.Store.FcmTokens(u.id)
+	if err != nil || len(tokens) != 1 || tokens[0] != "fcm-token-1" {
+		t.Fatalf("FCM-токен не сохранился: %v, err=%v", tokens, err)
+	}
+
+	// Пустой токен — 400.
+	code, _ = a.do(t, http.MethodPost, "/api/push/fcm", u.token, map[string]string{})
+	if code != http.StatusBadRequest {
+		t.Fatalf("пустой токен: ожидали 400, получили %d", code)
+	}
+
+	code, _ = a.do(t, http.MethodDelete, "/api/push/fcm", u.token, map[string]string{"token": "fcm-token-1"})
+	if code != http.StatusOK {
+		t.Fatalf("удаление FCM: %d", code)
+	}
+	tokens, _ = a.srv.Store.FcmTokens(u.id)
+	if len(tokens) != 0 {
+		t.Fatalf("после удаления токенов быть не должно: %v", tokens)
+	}
+
+	// Без токена — 401.
+	code, _ = a.do(t, http.MethodPost, "/api/push/fcm", "", map[string]string{"token": "x"})
+	if code != http.StatusUnauthorized {
+		t.Fatalf("без токена: ожидали 401, получили %d", code)
+	}
+}

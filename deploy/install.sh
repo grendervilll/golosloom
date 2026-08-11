@@ -471,6 +471,8 @@ do_update() {
     ensure_env_var "VAPID_PRIVATE_KEY" "$VAPID_PRIVATE_KEY"
     ensure_env_var "VAPID_SUBJECT" "mailto:admin@$DOMAIN"
   fi
+  # FCM: путь к файлу сервисного аккаунта Firebase (нативные пуши Android).
+  ensure_env_var "FCM_SERVICE_ACCOUNT_FILE" "$INSTALL_DIR/fcm-service-account.json"
 
   cd "$REPO_DIR"
   log "Скачиваю последние изменения с GitHub..."

@@ -33,6 +33,7 @@ type Server struct {
 	prevCPUTotal  uint64
 
 	push *pushService
+	fcm  *fcmGateway
 }
 
 type bucket struct {
@@ -64,6 +65,8 @@ func New(cfg config.Config, st *store.Store) *Server {
 			subject:    cfg.VAPIDSubject,
 		}
 	}
+	// FCM: только если на сервере лежит файл сервисного аккаунта.
+	s.fcm = newFcmGateway(cfg.FCMServiceAccount)
 	return s
 }
 
