@@ -13,7 +13,6 @@ import 'dart:math';
 import 'package:crypto/crypto.dart' as crypto_pkg;
 import 'package:cryptography/cryptography.dart';
 
-const _channelKeyLen = 32;
 const _ivLen = 12;
 const _tagLen = 16;
 
