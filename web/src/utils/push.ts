@@ -2,10 +2,14 @@
 // Требует https, service worker и PushManager; VAPID-ключ приходит
 // с /api/config (если на сервере пуши настроены).
 import type { ApiClient } from '../api/http'
+import { toast } from 'vue-sonner'
 
 // Pinia разворачивает класс в структурный тип, поэтому принимаем только
 // нужный метод, а не весь ApiClient.
 type PushApi = Pick<ApiClient, 'pushSubscribe'>
+
+// Предупреждение показываем один раз за сессию.
+let pushWarned = false
 
 function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
   const padding = '='.repeat((4 - (base64.length % 4)) % 4)
@@ -47,7 +51,13 @@ export async function initPush(api: PushApi, vapidPublicKey: string | undefined)
       })
     }
     await registerSubscription(api, reg)
-  } catch {
-    /* пуши недоступны — не критично */
+  } catch (e) {
+    // На устройствах без Google Play сервисов (Huawei и т.п.) Web Push
+    // в Chromium-браузерах не работает в принципе — подписка падает.
+    console.warn('Web Push недоступен:', e)
+    if (!pushWarned) {
+      pushWarned = true
+      toast.warning('Пуш-уведомления недоступны в этом браузере на этом устройстве')
+    }
   }
 }
