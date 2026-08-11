@@ -11,10 +11,11 @@ import (
 )
 
 type VideoGrant struct {
-	Room        string `json:"room,omitempty"`
-	RoomJoin    bool   `json:"roomJoin,omitempty"`
-	CanPublish  bool   `json:"canPublish,omitempty"`
-	CanSubscribe bool  `json:"canSubscribe,omitempty"`
+	Room         string `json:"room,omitempty"`
+	RoomJoin     bool   `json:"roomJoin,omitempty"`
+	RoomAdmin    bool   `json:"roomAdmin,omitempty"`
+	CanPublish   bool   `json:"canPublish,omitempty"`
+	CanSubscribe bool   `json:"canSubscribe,omitempty"`
 }
 
 // Token создаёт JWT-токен LiveKit для входа в комнату звонка.
@@ -37,6 +38,24 @@ func Token(apiKey, apiSecret, identity, name, room string, ttl time.Duration) (s
 		},
 		"identity": identity,
 		"name":     name,
+	}
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(apiSecret))
+}
+
+// RoomAdminToken — токен с правами администратора комнаты для серверных
+// вызовов API LiveKit (например, ListParticipants для сверки звонков).
+func RoomAdminToken(apiKey, apiSecret, room string, ttl time.Duration) (string, error) {
+	claims := jwt.MapClaims{
+		"iss": apiKey,
+		"sub": "golosloom-reconciler",
+		"nbf": time.Now().Unix(),
+		"exp": time.Now().Add(ttl).Unix(),
+		"jti": fmt.Sprintf("%d", time.Now().UnixNano()),
+		"video": VideoGrant{
+			Room:      room,
+			RoomAdmin: true,
+		},
+		"identity": "golosloom-reconciler",
 	}
 	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(apiSecret))
 }

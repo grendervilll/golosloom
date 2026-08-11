@@ -89,8 +89,8 @@ func mustParticipantIDs(s *Server, callID int64) []int64 {
 func (s *Server) livekitRoomUserIDs(callID int64) map[int64]bool {
 	out := map[int64]bool{}
 	room := "call-" + itoa(callID)
-	token, err := livekit.Token(s.Cfg.LiveKitAPIKey, s.Cfg.LiveKitAPISecret,
-		"reconciler", "reconciler", room, 2*time.Minute)
+	token, err := livekit.RoomAdminToken(s.Cfg.LiveKitAPIKey, s.Cfg.LiveKitAPISecret,
+		room, 2*time.Minute)
 	if err != nil {
 		return out
 	}

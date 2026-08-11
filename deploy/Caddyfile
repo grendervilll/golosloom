@@ -37,6 +37,10 @@
 	handle /rtc/* {
 		reverse_proxy host.docker.internal:7880
 	}
+	# API LiveKit (сверка участников звонков сервером Go).
+	handle /twirp/* {
+		reverse_proxy host.docker.internal:7880
+	}
 
 	handle /api/* {
 		reverse_proxy server:8080
