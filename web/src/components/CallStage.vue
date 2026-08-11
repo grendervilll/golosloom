@@ -318,4 +318,32 @@ const stageMembers = computed(() => channels.members.filter((m) => callParticipa
   padding: 1px 6px;
   border-radius: 4px;
 }
+
+/* Мобильные: камеры и миниатюры — горизонтальные ленты. */
+@media (max-width: 900px) {
+  .stage {
+    padding: 6px;
+    gap: 6px;
+  }
+  .cam-grid {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .cam-tile {
+    width: 130px;
+    height: 86px;
+    flex: none;
+  }
+  .screen-thumbs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .thumb {
+    flex: none;
+    width: 120px;
+    height: 70px;
+  }
+}
 </style>

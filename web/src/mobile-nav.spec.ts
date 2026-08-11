@@ -4,9 +4,44 @@ import { createPinia, setActivePinia } from 'pinia'
 import MainView from './views/MainView.vue'
 import { useAuthStore } from './stores/auth'
 import { useSettingsStore } from './stores/settings'
+import { useCallStore } from './stores/calls'
 import { router } from './router'
 
 describe('мобильная навигация', () => {
+  it('во время звонка таб «Чат» показывает чат и кнопку возврата к звонку', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const auth = useAuthStore()
+    auth.token = 't'
+    auth.user = { id: 1, nick: 'me', is_server_admin: false, server_banned: false, created_at: '' } as any
+    const settings = useSettingsStore()
+    settings.api = {} as any
+    const calls = useCallStore()
+    calls.connectedCallId = 5
+    const wrapper = mount(MainView, { global: { plugins: [pinia, router] }, attachTo: document.body })
+    await router.isReady()
+    await wrapper.vm.$nextTick()
+    await new Promise((r) => setTimeout(r, 30))
+
+    // Во время звонка сцена — главный экран, чат скрыт.
+    expect(wrapper.find('.stage-wrap').exists()).toBe(true)
+    expect(wrapper.find('.chat-panel').exists()).toBe(false)
+
+    // Таб «Чат» → чат вместо сцены + кнопка возврата.
+    const tabs = wrapper.find('.mobile-tabbar').findAll('button')
+    await tabs[1].trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.chat-panel').exists()).toBe(true)
+    expect(wrapper.find('.stage-wrap').exists()).toBe(false)
+    expect(wrapper.find('.back-to-call').exists()).toBe(true)
+
+    await wrapper.find('.back-to-call').trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.stage-wrap').exists()).toBe(true)
+
+    wrapper.unmount()
+    document.body.innerHTML = ''
+  })
   it('таб «Каналы» открывает шторку, повторный клик закрывает', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)

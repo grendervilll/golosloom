@@ -158,12 +158,28 @@ async function leave() {
 }
 
 @media (max-width: 900px) {
+  .controls {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 8px 10px;
+    gap: 8px;
+  }
+  .left {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+  .left button {
+    width: 100%;
+  }
+  .controls .leave {
+    width: 100%;
+  }
   .popup {
     max-height: 60vh;
     overflow-y: auto;
-  }
-  .controls {
-    padding: 8px 10px;
+    left: 8px;
+    right: 8px;
   }
 }
 </style>

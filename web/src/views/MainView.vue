@@ -1,7 +1,7 @@
 // Главный экран: каналы слева, чат и звонок в центре, участники справа.
 // На мобильных: каналы и участники — выезжающие шторки, внизу — навигация.
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { useChannelsStore } from '../stores/channels'
@@ -38,9 +38,15 @@ const showServerUrl = ref(false)
 const showParticipants = ref(false)
 // Мобильная шторка: 'channels' | 'members' | 'none'.
 const mobilePanel = ref<'none' | 'channels' | 'members'>('none')
+// На мобильных во время звонка: true — показываем чат вместо сцены.
+const mobileCallChat = ref(false)
 
 const inCall = computed(() => calls.connectedCallId > 0)
 const chatHidden = computed(() => settings.chatHidden)
+
+watch(inCall, (v) => {
+  if (!v) mobileCallChat.value = false
+})
 
 onMounted(() => {
   if (!auth.token) router.push('/login')
@@ -71,6 +77,11 @@ function onChatToggleParticipants() {
   showParticipants.value = !showParticipants.value
   mobilePanel.value = showParticipants.value ? 'members' : 'none'
 }
+// Вкладка «Чат» во время звонка на мобильных: переключает чат/сцену.
+function onTabChat() {
+  if (inCall.value) mobileCallChat.value = !mobileCallChat.value
+  closeDrawers()
+}
 </script>
 
 <template>
@@ -90,18 +101,19 @@ function onChatToggleParticipants() {
     />
 
     <div class="center-col">
-      <div v-if="inCall" class="stage-wrap">
+      <!-- На мобильных во время звонка сцена — главный экран, чат — вкладка. -->
+      <div v-if="inCall && !mobileCallChat" class="stage-wrap">
         <CallStage />
       </div>
       <ChatPanel
-        v-if="!chatHidden"
-        :class="{ 'in-call': inCall }"
+        v-if="!chatHidden && (!inCall || mobileCallChat)"
+        :class="{ 'in-call': inCall && mobileCallChat }"
         @toggle-participants="onChatToggleParticipants"
         @open-invite="showInvite = true"
         @open-reg-invite="showRegInvite = true"
         @open-call="showCallPicker = true"
       />
-      <div v-else class="empty-chat muted">Чат скрыт</div>
+      <div v-else-if="chatHidden && (!inCall || mobileCallChat)" class="empty-chat muted">Чат скрыт</div>
       <JoinCallBar v-if="!inCall" />
       <CallControls v-if="inCall" />
     </div>
@@ -115,10 +127,15 @@ function onChatToggleParticipants() {
     <!-- Бэкдроп шторок на мобильных (скрыт на десктопе). -->
     <div v-if="mobilePanel !== 'none'" class="mobile-backdrop" @click="closeDrawers"></div>
 
+    <!-- Кнопка возврата к звонку, когда на мобильном открыт чат во время звонка. -->
+    <button v-if="inCall && mobileCallChat" class="back-to-call" @click="mobileCallChat = false">
+      📞 Вернуться к звонку
+    </button>
+
     <MobileTabBar
       :active="mobilePanel"
       @channels="openChannelsDrawer"
-      @chat="closeDrawers"
+      @chat="onTabChat"
       @members="openMembersDrawer"
     />
 
@@ -172,6 +189,11 @@ function onChatToggleParticipants() {
   display: none;
 }
 
+/* Кнопка возврата к звонку (мобильные, во время звонка в чате). */
+.back-to-call {
+  display: none;
+}
+
 @media (max-width: 900px) {
   .main-layout {
     flex-direction: column;
@@ -180,9 +202,19 @@ function onChatToggleParticipants() {
     flex: 1;
     min-height: 0;
   }
-  /* Во время звонка на мобильном чат компактнее, сцена — основной экран. */
-  .chat-panel.in-call {
-    flex: 0 0 240px;
+  .back-to-call {
+    display: block;
+    position: fixed;
+    left: 12px;
+    bottom: calc(72px + var(--safe-bottom));
+    z-index: 80;
+    background: var(--accent);
+    color: #fff;
+    border-radius: 999px;
+    padding: 8px 16px;
+    font-weight: 600;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+    min-height: 44px;
   }
   /* Участники — полноэкранная шторка. */
   .right-col.open {
