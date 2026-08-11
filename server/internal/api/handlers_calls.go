@@ -61,15 +61,18 @@ func (s *Server) handleCreateCall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Двойной вызов не допускается: у инициатора не может быть двух активных
-	// звонков в одном канале одновременно. Звонок-«зомби» (все вышли, но
-	// соединения оборвались) завершаем автоматически.
+	// звонков в одном канале одновременно. Звонок-«зомби» (все вышли или
+	// приглашения истекли, а соединения оборвались) завершаем автоматически.
 	if n, err := s.Store.CountCallsByInitiator(channelID, userIDFrom(r)); err == nil && n > 0 {
 		blocked := false
 		if calls, err := s.Store.ActiveCallsByInitiator(channelID, userIDFrom(r)); err == nil {
 			for _, c := range calls {
 				count, _ := s.Store.CallParticipantCount(c.ID)
 				ringing, _ := s.Store.RingingInvites(c.ID)
-				if count > 1 || len(ringing) > 0 || c.Status == models.CallRinging {
+				// Реальный разговор (есть второй участник) или ещё ждут ответа —
+				// блокируем. Инициатор в одиночестве и никто не отвечает —
+				// старый звонок завершаем и разрешаем новый.
+				if count > 1 || len(ringing) > 0 {
 					blocked = true
 				} else {
 					s.finishCall(c, "звонок завершён (все участники вышли)")
@@ -413,17 +416,22 @@ func (s *Server) broadcastParticipants(callID int64) {
 }
 
 // leaveOtherCalls — пользователь может быть только в одном активном звонке:
-// входя в новый, он выходит из остальных (чинит «зомби» от оборванных
+// входя в новый, он выходит из всех остальных (чинит «зомби» от оборванных
 // соединений, из-за которых звонок никогда не завершался).
 func (s *Server) leaveOtherCalls(callID, userID int64) {
-	call, err := s.Store.ActiveCallForUser(userID)
-	if err != nil || call == nil || call.ID == callID {
+	calls, err := s.Store.ActiveCallsForParticipant(userID)
+	if err != nil {
 		return
 	}
-	_ = s.Store.RemoveCallParticipant(call.ID, userID)
-	s.maybeFinishSoloCall(call)
-	if c2, err := s.Store.GetCall(call.ID); err == nil && c2.Status != models.CallEnded {
-		s.broadcastParticipants(call.ID)
+	for _, c := range calls {
+		if c.ID == callID {
+			continue
+		}
+		_ = s.Store.RemoveCallParticipant(c.ID, userID)
+		s.maybeFinishSoloCall(&c)
+		if c2, err := s.Store.GetCall(c.ID); err == nil && c2.Status != models.CallEnded {
+			s.broadcastParticipants(c.ID)
+		}
 	}
 }
 
