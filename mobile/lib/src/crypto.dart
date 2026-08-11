@@ -59,6 +59,9 @@ Future<List<int>> publicKeyFromPrivate(List<int> privateKey) async {
   return pub.bytes;
 }
 
+/// Новый ключ канала (32 случайных байта).
+List<int> generateChannelKey() => List<int>.generate(32, (_) => _random.nextInt(256));
+
 /// Обёртка ключа канала для устройства с публичным ключом peerPublicKey.
 /// Формат: ephemeralPub(32) || iv(12) || ciphertext+tag.
 Future<List<int>> wrapChannelKey(

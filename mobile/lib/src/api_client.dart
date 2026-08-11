@@ -141,6 +141,18 @@ class ApiClient {
     }) as Map<String, dynamic>;
   }
 
+  Future<Map<String, dynamic>> editMessage(
+      int channelId, int messageId, String ciphertext, String iv) async {
+    return await _request('PATCH', '/api/channels/$channelId/messages/$messageId', {
+      'ciphertext': ciphertext,
+      'iv': iv,
+    }) as Map<String, dynamic>;
+  }
+
+  Future<void> deleteMessage(int channelId, int messageId) async {
+    await _request('DELETE', '/api/channels/$channelId/messages/$messageId');
+  }
+
   // --- Ключи ---
   Future<void> uploadKey(String deviceId, String publicKey) async {
     await _request('POST', '/api/users/key', {
