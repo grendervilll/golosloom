@@ -64,17 +64,27 @@ function updateTiles() {
       if (t.kind === 'screen') scr.push(t)
     }
   }
-  // Своя демонстрация экрана.
+  // Своя демонстрация экрана и своя камера — видно, что видит зритель.
   for (const pub of room.localParticipant.videoTrackPublications.values()) {
-    if (!pub.track || !isScreen(pub.track) || pub.track.isMuted) continue
-    const t: VideoTile = {
-      identity: room.localParticipant.identity,
-      nick: 'Вы',
-      kind: 'screen',
-      track: pub.track,
+    if (!pub.track || pub.track.isMuted) continue
+    if (isScreen(pub.track)) {
+      const t: VideoTile = {
+        identity: room.localParticipant.identity,
+        nick: 'Вы',
+        kind: 'screen',
+        track: pub.track,
+      }
+      next.push(t)
+      scr.push(t)
+    } else {
+      const t: VideoTile = {
+        identity: room.localParticipant.identity + ':cam',
+        nick: 'Вы',
+        kind: 'camera',
+        track: pub.track,
+      }
+      next.push(t)
     }
-    next.push(t)
-    scr.push(t)
   }
   tiles.value = next
   screens.value = scr
@@ -93,6 +103,7 @@ function startWatching() {
   watching = true
   room.on(RoomEvent.TrackSubscribed, () => updateTiles())
   room.on(RoomEvent.TrackUnsubscribed, () => updateTiles())
+  room.on(RoomEvent.TrackPublished, () => updateTiles())
   room.on(RoomEvent.TrackMuted, () => updateTiles())
   room.on(RoomEvent.TrackUnmuted, () => updateTiles())
   room.on(RoomEvent.ParticipantDisconnected, () => updateTiles())

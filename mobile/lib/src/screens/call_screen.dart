@@ -67,7 +67,7 @@ class _CallScreenState extends State<CallScreen> {
     );
   }
 
-  void _openFullscreen(RemoteVideoTrack track, String label) {
+  void _openFullscreen(VideoTrack track, String label) {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => Scaffold(
@@ -155,7 +155,7 @@ class _CallScreenState extends State<CallScreen> {
                             Padding(
                               padding: const EdgeInsets.only(bottom: 8),
                               child: _VideoTile(
-                                pub: pub,
+                                track: pub.track,
                                 big: true,
                                 label: '🖥️ ${p.name.isEmpty ? p.identity : p.name}',
                                 onTap: (t) => _openFullscreen(t, '🖥️ ${p.name.isEmpty ? p.identity : p.name}'),
@@ -165,11 +165,22 @@ class _CallScreenState extends State<CallScreen> {
                         spacing: 8,
                         runSpacing: 8,
                         children: [
+                          // Своя камера — видно, что видит зритель.
+                          for (final pub
+                              in calls.room?.localParticipant?.videoTrackPublications ??
+                                  const <LocalTrackPublication<LocalVideoTrack>>[])
+                            if (pub.source == TrackSource.camera)
+                              _VideoTile(
+                                track: pub.track,
+                                big: false,
+                                label: 'Вы',
+                                onTap: (t) => _openFullscreen(t, '📷 Вы'),
+                              ),
                           for (final p in calls.remoteParticipants)
                             for (final pub in p.videoTrackPublications)
                               if (pub.source == TrackSource.camera)
                                 _VideoTile(
-                                  pub: pub,
+                                  track: pub.track,
                                   big: false,
                                   label: p.name.isEmpty ? p.identity : p.name,
                                   onTap: (t) => _openFullscreen(t, '📷 ${p.name.isEmpty ? p.identity : p.name}'),
@@ -287,13 +298,13 @@ class _CallButton extends StatelessWidget {
 }
 
 class _VideoTile extends StatelessWidget {
-  final RemoteTrackPublication<RemoteVideoTrack> pub;
+  final VideoTrack? track;
   final bool big;
   final String label;
-  final void Function(RemoteVideoTrack track) onTap;
+  final void Function(VideoTrack track) onTap;
 
   const _VideoTile({
-    required this.pub,
+    required this.track,
     required this.big,
     required this.label,
     required this.onTap,
@@ -301,13 +312,12 @@ class _VideoTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final track = pub.track;
     final w = big ? double.infinity : 150.0;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         InkWell(
-          onTap: track == null ? null : () => onTap(track),
+          onTap: track == null ? null : () => onTap(track!),
           borderRadius: BorderRadius.circular(10),
           child: Container(
           width: w,
@@ -325,7 +335,7 @@ class _VideoTile extends StatelessWidget {
                     child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF949BA4)),
                   ),
                 )
-              : VideoTrackRenderer(track, fit: VideoViewFit.cover),
+              : VideoTrackRenderer(track!, fit: VideoViewFit.cover),
           ),
         ),
         const SizedBox(height: 2),
