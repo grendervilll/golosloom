@@ -353,8 +353,10 @@ if ! sqlite3 "\$db" "PRAGMA integrity_check;" | grep -q "^ok\$"; then
   echo "\$(date) FAIL integrity" >> "\$LOG"; rm -f "\$db"; exit 1
 fi
 [ -f "\$DEPLOY/.env" ] && cp "\$DEPLOY/.env" "\$env" && chmod 600 "\$env"
+[ -f "$INSTALL_DIR/fcm-service-account.json" ] && cp "$INSTALL_DIR/fcm-service-account.json" "\$BK/fcm-\$stamp.json" && chmod 600 "\$BK/fcm-\$stamp.json"
 ls -1t "\$BK"/db-*.sqlite3 2>/dev/null | tail -n +8 | xargs -r rm -f
 ls -1t "\$BK"/env-* 2>/dev/null | tail -n +8 | xargs -r rm -f
+ls -1t "\$BK"/fcm-* 2>/dev/null | tail -n +8 | xargs -r rm -f
 size=\$(du -h "\$db" | cut -f1)
 echo "\$(date) OK db=\$size env=\$(basename "\$env") total=\$(ls "\$BK" | wc -l) files" >> "\$LOG"
 EOF
