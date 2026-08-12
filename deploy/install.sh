@@ -325,8 +325,49 @@ EOF
 }
 
 remove_cron() {
-  rm -f /etc/cron.d/golosloom "$INSTALL_DIR/update-certs.sh"
+  rm -f /etc/cron.d/golosloom /etc/cron.d/golosloom-backup "$INSTALL_DIR/update-certs.sh" "$INSTALL_DIR/backup.sh"
   log "Cron-задачи удалены"
+}
+
+# -----------------------------------------------------------------------------
+# Ежедневный бэкап: БД (безопасный .backup — корректно работает с WAL при
+# живом сервере) + .env с секретами, ротация 7 дней. Идемпотентно, можно
+# вызывать при каждом update.
+# -----------------------------------------------------------------------------
+setup_backup() {
+  cat > "$INSTALL_DIR/backup.sh" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+DEPLOY=$DEPLOY_DIR
+DATA=$DATA_DIR
+BK=$INSTALL_DIR/backups
+LOG=/var/log/golosloom-backup.log
+mkdir -p "\$BK"
+chmod 700 "\$BK"
+stamp=\$(date +%Y%m%d-%H%M)
+db="\$BK/db-\$stamp.sqlite3"
+env="\$BK/env-\$stamp"
+sqlite3 "\$DATA/golosloom.db" ".backup \"\$db\"" || { echo "\$(date) FAIL db backup" >> "\$LOG"; exit 1; }
+if ! sqlite3 "\$db" "PRAGMA integrity_check;" | grep -q "^ok\$"; then
+  echo "\$(date) FAIL integrity" >> "\$LOG"; rm -f "\$db"; exit 1
+fi
+[ -f "\$DEPLOY/.env" ] && cp "\$DEPLOY/.env" "\$env" && chmod 600 "\$env"
+ls -1t "\$BK"/db-*.sqlite3 2>/dev/null | tail -n +8 | xargs -r rm -f
+ls -1t "\$BK"/env-* 2>/dev/null | tail -n +8 | xargs -r rm -f
+size=\$(du -h "\$db" | cut -f1)
+echo "\$(date) OK db=\$size env=\$(basename "\$env") total=\$(ls "\$BK" | wc -l) files" >> "\$LOG"
+EOF
+  chmod +x "$INSTALL_DIR/backup.sh"
+  if [ ! -f /etc/cron.d/golosloom-backup ]; then
+    cat > /etc/cron.d/golosloom-backup <<EOF
+# Ежедневный бэкап базы данных и .env (7 дней ротации).
+10 3 * * * root $INSTALL_DIR/backup.sh >/dev/null 2>&1
+EOF
+    chmod 644 /etc/cron.d/golosloom-backup
+    log "Ежедневный бэкап установлен (/etc/cron.d/golosloom-backup, 03:10)"
+  else
+    log "Ежедневный бэкап уже настроен"
+  fi
 }
 
 # -----------------------------------------------------------------------------
@@ -428,6 +469,7 @@ install_fresh() {
   check_ports
   open_ports
   setup_cron
+  setup_backup
   save_state
   docker compose -f "$DEPLOY_DIR/docker-compose.yml" up -d --build
   sleep 5
@@ -497,6 +539,7 @@ do_update() {
   # Caddyfile монтируется bind-mount'ом: контейнер читает его при старте,
   # а up -d не перезапускает уже работающие контейнеры — перезапускаем явно.
   docker compose -f "$DEPLOY_DIR/docker-compose.yml" restart caddy
+  setup_backup
   log "Обновление завершено. База данных сохранена."
 }
 
