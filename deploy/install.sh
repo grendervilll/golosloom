@@ -208,6 +208,7 @@ TURN_URLS=turn:$DOMAIN:3478?transport=udp,turn:$DOMAIN:3478?transport=tcp
 ALLOW_ORIGINS=https://$DOMAIN,tauri://localhost,http://tauri.localhost,http://localhost:5173
 DATA_DIR=$DATA_DIR
 LIVEKIT_CONFIG=$LIVEKIT_CONFIG
+FCM_SERVICE_ACCOUNT_FILE=/fcm-service-account.json
 EOF
   chmod 600 "$DEPLOY_DIR/.env"
   log "Секреты сгенерированы и сохранены в $DEPLOY_DIR/.env (права 600)"
@@ -520,7 +521,11 @@ do_update() {
     ensure_env_var "VAPID_SUBJECT" "mailto:admin@$DOMAIN"
   fi
   # FCM: путь к файлу сервисного аккаунта Firebase (нативные пуши Android).
-  ensure_env_var "FCM_SERVICE_ACCOUNT_FILE" "$INSTALL_DIR/fcm-service-account.json"
+  # Путь контейнерный: файл монтируется в контейнер из $INSTALL_DIR.
+  ensure_env_var "FCM_SERVICE_ACCOUNT_FILE" "/fcm-service-account.json"
+  # Заглушка: docker-compose монтирует файл как ro; если файла нет — docker
+  # создал бы каталог на его месте. Пустой файл безопасен: гейтвей не включится.
+  [ -f "$INSTALL_DIR/fcm-service-account.json" ] || : > "$INSTALL_DIR/fcm-service-account.json"
 
   cd "$REPO_DIR"
   log "Скачиваю последние изменения с GitHub..."

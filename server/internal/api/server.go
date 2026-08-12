@@ -67,6 +67,11 @@ func New(cfg config.Config, st *store.Store) *Server {
 	}
 	// FCM: только если на сервере лежит файл сервисного аккаунта.
 	s.fcm = newFcmGateway(cfg.FCMServiceAccount)
+	if s.fcm != nil {
+		log.Printf("FCM gateway: включён (%s)", cfg.FCMServiceAccount)
+	} else {
+		log.Printf("FCM gateway: выключен (файл %s не найден или невалиден)", cfg.FCMServiceAccount)
+	}
 	// Сверка участников звонков с комнатами LiveKit.
 	s.startCallReconciler()
 	return s
