@@ -19,6 +19,22 @@ jobs:
         with:
           channel: stable
 
+      # google-services.json в git не хранится (секрет). Секрет
+      # GOOGLE_SERVICES_JSON — это его содержимое в base64:
+      #   base64 -i mobile/android/app/google-services.json | pbcopy
+      # (Settings → Secrets and variables → Actions)
+      - name: Подготовка google-services.json из секрета
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -n "$GOOGLE_SERVICES_JSON" ]; then
+            echo "$GOOGLE_SERVICES_JSON" | base64 -d > mobile/android/app/google-services.json
+            echo "google-services.json подготовлен"
+          else
+            echo "::error::Секрет GOOGLE_SERVICES_JSON не задан — сборка невозможна без Firebase-конфига"
+            exit 1
+          fi
+
       - name: Сборка APK (по архитектурам)
         working-directory: mobile
         run: flutter build apk --release --split-per-abi
