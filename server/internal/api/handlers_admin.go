@@ -41,7 +41,7 @@ func (s *Server) handleAdminStats(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"uptime_sec":    int64(time.Since(s.startedAt).Seconds()),
-		"version":       "1.2.0",
+		"version":       "1.2.5",
 		"go":            runtime.Version(),
 		"users":         users,
 		"channels":      channels,
