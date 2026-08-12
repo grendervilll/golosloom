@@ -23,6 +23,8 @@ export const useCallStore = defineStore('calls', {
     // Время начала звонка (для таймера на плашке) и говорящие в данный момент.
     connectedAt: 0 as number,
     speakers: [] as { identity: string; level: number }[],
+    // Есть ли активные видео (камеры/демонстрации) — управляет раскладкой.
+    videoCount: 0 as number,
     micOn: false,
     camOn: false,
     screenOn: false,
@@ -243,7 +245,30 @@ export const useCallStore = defineStore('calls', {
           /* не фатально */
         }
       }
-    // Кто говорит прямо сейчас (для зелёной подсветки аватаров).
+      // Активные видео: пересчитываем при любых изменениях треков.
+      const refreshVideo = () => {
+        let n = 0
+        try {
+          const check = (pubs: any) =>
+            [...pubs.values()].forEach((pub: any) => {
+              if (pub.track && !pub.track.isMuted) n++
+            })
+          const locals = room.localParticipant?.videoTrackPublications
+          if (locals) check(locals)
+          for (const p of room.remoteParticipants.values()) check(p.videoTrackPublications)
+        } catch {
+          /* ignore */
+        }
+        this.videoCount = n
+      }
+      refreshVideo()
+      room.on(RoomEvent.TrackSubscribed, refreshVideo)
+      room.on(RoomEvent.TrackUnsubscribed, refreshVideo)
+      room.on(RoomEvent.TrackMuted, refreshVideo)
+      room.on(RoomEvent.TrackUnmuted, refreshVideo)
+      room.on(RoomEvent.TrackPublished, refreshVideo)
+      room.on(RoomEvent.ParticipantDisconnected, refreshVideo)
+      // Кто говорит прямо сейчас (для зелёной подсветки аватаров).
       room.on(RoomEvent.ActiveSpeakersChanged, (speakers: any[]) => {
         this.speakers = (speakers || []).map((sp) => ({
           identity: sp.identity,
@@ -322,6 +347,7 @@ export const useCallStore = defineStore('calls', {
       this.connectedCallId = 0
       this.connectedAt = 0
       this.speakers = []
+      this.videoCount = 0
     },
     async toggleMic() {
       if (!this.room) return

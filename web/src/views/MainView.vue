@@ -44,6 +44,8 @@ const mobilePanel = ref<'none' | 'channels' | 'members'>('none')
 const mobileCallChat = ref(false)
 
 const inCall = computed(() => calls.connectedCallId > 0)
+// Видео активно — сцена занимает 3/4, чат сворачивается в 1/4 внизу.
+const hasVideo = computed(() => calls.videoCount > 0)
 const chatHidden = computed(() => settings.chatHidden)
 
 watch(inCall, (v) => {
@@ -113,20 +115,26 @@ function onTabChat() {
     />
 
     <div class="center-col">
-      <!-- Сцена звонка: на мобильном скрывается, когда открыт чат. -->
-      <div v-if="inCall" class="stage-wrap" :class="{ hidden: mobileCallChat }">
+      <!-- Сцена звонка: только при активном видео (камеры/демонстрации);
+           на мобильном скрывается, когда открыт чат. -->
+      <div v-if="inCall && hasVideo" class="stage-wrap" :class="{ hidden: mobileCallChat }">
         <CallStage />
       </div>
-      <!-- Чат доступен и во время звонка (на мобильном — через вкладку). -->
+      <!-- Чат: во время звонка без видео занимает всю рабочую зону,
+           с видео — 1/4 внизу; на мобильном переключается вкладкой. -->
       <ChatPanel
         v-if="!chatHidden"
-        :class="{ 'in-call': inCall, hidden: inCall && !mobileCallChat }"
+        :class="{
+          'in-call': inCall,
+          'call-video': inCall && hasVideo,
+          hidden: inCall && hasVideo && !mobileCallChat,
+        }"
         @toggle-participants="onChatToggleParticipants"
         @open-invite="showInvite = true"
         @open-reg-invite="showRegInvite = true"
         @open-call="showCallPicker = true"
       />
-      <div v-if="chatHidden && (!inCall || mobileCallChat)" class="empty-chat muted">Чат скрыт</div>
+      <div v-if="chatHidden && !(inCall && hasVideo && !mobileCallChat)" class="empty-chat muted">Чат скрыт</div>
       <CallBar
         v-if="inCall"
         class="call-bar-row"
@@ -193,10 +201,15 @@ function onTabChat() {
   align-items: center;
   justify-content: center;
 }
-/* Во время звонка чат — компактная колонка под сценой. */
+/* Во время звонка: без видео чат занимает всю рабочую зону,
+   с видео — 1/4 внизу. */
 .chat-panel.in-call {
-  flex: 0 0 300px;
+  flex: 1;
+  min-height: 0;
   border-top: 1px solid var(--border);
+}
+.chat-panel.in-call.call-video {
+  flex: 0 0 25%;
 }
 .call-bar-row {
   flex: none;

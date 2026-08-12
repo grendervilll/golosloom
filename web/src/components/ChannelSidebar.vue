@@ -140,14 +140,28 @@ async function removeAvatar() {
       <img class="server-logo" src="/logo.png" alt="Golosloom" />
       <span class="server-name">Golosloom</span>
       <span class="chevron">{{ menuOpen ? '▲' : '▼' }}</span>
-      <button class="sidebar-close" title="Закрыть" @click.stop="emit('close')">✕</button>
+      <button class="sidebar-close" title="Закрыть" @click.stop="emit('close')">
+        <svg class="ico" viewBox="0 0 384 512"><path d="M342.6 150.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L192 210.7 86.6 105.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3L146.7 256 41.4 361.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0L192 301.3 297.4 406.6c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L237.3 256 342.6 150.6z" /></svg>
+      </button>
     </div>
 
     <div v-if="menuOpen" class="server-menu">
-      <button v-if="auth.isServerAdmin" @click="emit('open-admin')">Админ панель сервера</button>
-      <button @click="showCreate = true">Создать канал</button>
-      <button @click="emit('open-settings')">Настройки</button>
-      <button class="danger" @click="emit('logout')">Выйти</button>
+      <button v-if="auth.isServerAdmin" @click="emit('open-admin')">
+        <svg class="ico" viewBox="0 0 512 512"><path d="M256 0c4.6 0 9.2 1 13.4 2.9L457.7 82.8c22 9.3 38.4 31 38.3 57.2c-.5 99.2-41.3 280.7-213.6 363.2c-16.7 8-36.1 8-52.8 0C57.3 420.7 16.5 239.2 16 140c-.1-26.2 16.3-47.9 38.3-57.2L242.7 2.9C246.8 1 251.4 0 256 0zm0 66.8l0 378.1C394 378 431.1 230.1 432 141.4L256 66.8s0 0 0 0z" /></svg>
+        Админ панель сервера
+      </button>
+      <button @click="showCreate = true">
+        <svg class="ico" viewBox="0 0 448 512"><path d="M256 80c0-17.7-14.3-32-32-32s-32 14.3-32 32l0 144L48 224c-17.7 0-32 14.3-32 32s14.3 32 32 32l144 0 0 144c0 17.7 14.3 32 32 32s32-14.3 32-32l0-144 144 0c17.7 0 32-14.3 32-32s-14.3-32-32-32l-144 0 0-144z" /></svg>
+        Создать канал
+      </button>
+      <button @click="emit('open-settings')">
+        <svg class="ico" viewBox="0 0 512 512"><path d="M495.9 166.6c3.2 8.7 .5 18.4-6.4 24.6l-43.3 39.4c1.1 8.3 1.7 16.8 1.7 25.4s-.6 17.1-1.7 25.4l43.3 39.4c6.9 6.2 9.6 15.9 6.4 24.6c-4.4 11.9-9.7 23.3-15.8 34.3l-4.7 8.1c-6.6 11-14 21.4-22.1 31.2c-5.9 7.2-15.7 9.6-24.5 6.8l-55.7-17.7c-13.4 10.3-28.2 18.9-44 25.4l-12.5 57.1c-2 9.1-9.3 15.9-18.6 15.9l-84.1 0c-9.3 0-16.6-6.8-18.6-15.9l-12.5-57.1c-15.8-6.6-30.6-15.2-44-25.4l-55.7 17.7c-8.8 2.8-18.6.4-24.5-6.8c-8.1-9.8-15.5-20.2-22.1-31.2l-4.7-8.1c-6.1-11-11.4-22.4-15.8-34.3c-3.2-8.7-.5-18.4 6.4-24.6l43.3-39.4C92.6 273.1 92 264.6 92 256s.6-17.1 1.7-25.4l-43.3-39.4c-6.9-6.2-9.6-15.9-6.4-24.6c4.4-11.9 9.7-23.3 15.8-34.3l4.7-8.1c6.6-11 14-21.4 22.1-31.2c5.9-7.2 15.7-9.6 24.5-6.8l55.7 17.7c13.4-10.3 28.2-18.9 44-25.4l12.5-57.1c2-9.1 9.3-15.9 18.6-15.9l84.1 0c9.3 0 16.6 6.8 18.6 15.9l12.5 57.1c15.8 6.6 30.6 15.2 44 25.4l55.7-17.7c8.8-2.8 18.6-.4 24.5 6.8c8.1 9.8 15.5 20.2 22.1 31.2l4.7 8.1c6.1 11 11.4 22.4 15.8 34.3zM256 336a80 80 0 1 0 0-160 80 80 0 1 0 0 160z" /></svg>
+        Настройки
+      </button>
+      <button class="danger" @click="emit('logout')">
+        <svg class="ico" viewBox="0 0 512 512"><path d="M377.9 105.9L500.7 228.7c7.2 7.2 11.3 17.1 11.3 27.3s-4.1 20.1-11.3 27.3L377.9 406.1c-6.4 6.4-15 9.9-24 9.9c-18.7 0-33.9-15.2-33.9-33.9l0-62.1-128 0c-17.7 0-32-14.3-32-32l0-64c0-17.7 14.3-32 32-32l128 0 0-62.1c0-18.7 15.2-33.9 33.9-33.9c9 0 17.6 3.6 24 9.9zM160 96L96 96c-17.7 0-32 14.3-32 32l0 256c0 17.7 14.3 32 32 32l64 0c17.7 0 32 14.3 32 32s-14.3 32-32 32l-64 0c-53 0-96-43-96-96L0 128C0 75 43 32 96 32l64 0c17.7 0 32 14.3 32 32s-14.3 32-32 32z" /></svg>
+        Выйти
+      </button>
     </div>
 
     <div class="channel-list">
@@ -177,22 +191,13 @@ async function removeAvatar() {
     <div class="sidebar-footer">
       <div class="user-chip">
         <input ref="avatarInput" type="file" accept="image/*" class="hidden-input" @change="changeAvatar" />
-        <PopupMenuButton
-          tooltip="Аватар"
-          position="over"
-          color="#111214"
-          :offset="6"
-          @on-selected="onAvatarMenu"
-        >
-          <span class="avatar-menu">
-            <Avatar :user-id="auth.user?.id || 0" :nick="auth.user?.nick || '?'" :avatar="auth.user?.avatar" :size="32" />
-          </span>
-          <template #item="{ item }">
-            <span class="menu-item" :class="{ danger: item.key === 'remove' }">
-              {{ item.label }}
-            </span>
-          </template>
-        </PopupMenuButton>
+        <div class="avatar-menu" @click.stop="avatarMenuOpen = !avatarMenuOpen">
+          <Avatar :user-id="auth.user?.id || 0" :nick="auth.user?.nick || '?'" :avatar="auth.user?.avatar" :size="32" />
+          <div v-if="avatarMenuOpen" class="avatar-dropdown" @click.stop>
+            <button @click.stop="onAvatarMenu('set')">📷 Установить аватар</button>
+            <button class="danger" @click.stop="onAvatarMenu('remove')">🗑 Удалить аватар</button>
+          </div>
+        </div>
         <div class="user-info">
           <b>{{ auth.user?.nick }}</b>
           <span class="muted">ID: {{ auth.user?.id }}</span>
@@ -286,14 +291,39 @@ async function removeAvatar() {
   text-align: center;
 }
 .create-channel-btn {
+  width: 40px;
+  height: 40px;
+  padding: 0;
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: 50%;
+  background: var(--green);
+  margin: 0 auto 8px;
+}
+.create-channel-btn .ico {
+  width: 16px;
+  height: 16px;
+  fill: #fff;
+}
+.server-menu button {
+  display: flex;
+  align-items: center;
   gap: 8px;
-  width: 100%;
-  margin-bottom: 4px;
-  font-weight: 600;
-  border-radius: 6px;
+  text-align: left;
+}
+.server-menu button .ico {
+  width: 14px;
+  height: 14px;
+  fill: var(--text-dim);
+}
+.server-menu button.danger .ico {
+  fill: var(--red);
+}
+.sidebar-close .ico {
+  width: 14px;
+  height: 14px;
+  fill: var(--text-dim);
 }
 
 .sidebar-close {

@@ -51,9 +51,16 @@ describe('мобильная навигация', () => {
     await wrapper.vm.$nextTick()
     await new Promise((r) => setTimeout(r, 30))
 
-    // Во время звонка сцена — главный экран, чат скрыт классом hidden.
+    // Без видео сцена не показывается — чат занимает всю рабочую зону.
+    expect(wrapper.find('.stage-wrap').exists()).toBe(false)
+    expect(wrapper.find('.chat-panel').classes()).not.toContain('hidden')
+    expect(wrapper.find('.chat-panel').classes()).not.toContain('call-video')
+
+    // Видео появилось → сцена на 3/4, чат свёрнут в 1/4 (на мобильном скрыт).
+    calls.videoCount = 2
+    await wrapper.vm.$nextTick()
     expect(wrapper.find('.stage-wrap').exists()).toBe(true)
-    expect(wrapper.find('.stage-wrap').classes()).not.toContain('hidden')
+    expect(wrapper.find('.chat-panel').classes()).toContain('call-video')
     expect(wrapper.find('.chat-panel').classes()).toContain('hidden')
 
     // Таб «Чат» → чат вместо сцены + кнопка возврата.
