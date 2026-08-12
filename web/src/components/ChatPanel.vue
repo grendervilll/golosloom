@@ -219,29 +219,8 @@ function onKeydown(e: KeyboardEvent) {
 .small {
   font-size: 12px;
 }
-.members-btn {
-  margin-left: auto;
-  padding: 6px 10px;
-  display: block;
-  border-radius: 999px;
-  background: var(--bg4);
-}
-.invite-btn {
-  margin-left: auto;
-  padding: 6px 12px;
-  background: transparent;
-  border: 1px solid var(--accent);
-  color: var(--text);
-  font-size: 13px;
-  border-radius: 999px;
-}
-.invite-btn:hover {
-  background: var(--accent);
-  color: #fff;
-}
-/* Круглый значок звонка без надписи (как в мобильном). */
-.call-icon-btn {
-  margin-left: auto;
+/* Круглые кнопки-иконки в шапке чата (единый стиль). */
+.icon-btn {
   width: 34px;
   height: 34px;
   padding: 0;
@@ -250,18 +229,22 @@ function onKeydown(e: KeyboardEvent) {
   justify-content: center;
   border-radius: 50%;
   background: var(--bg4);
-  font-size: 16px;
-  border: 1px solid var(--border);
+  flex-shrink: 0;
 }
-.call-icon-btn:hover {
-  background: var(--accent);
+.icon-btn:hover:not(:disabled) {
+  background: #43454d;
 }
-.reg-invite-btn {
-  color: var(--accent, #5865f2);
-  border-color: var(--accent, #5865f2);
+.icon-btn .ico {
+  width: 15px;
+  height: 15px;
+  fill: var(--text-dim);
+  flex-shrink: 0;
 }
-.reg-invite-btn:hover {
-  color: #fff;
+.icon-btn:hover .ico {
+  fill: var(--text);
+}
+.reg-invite-btn .ico {
+  fill: var(--accent);
 }
 .chat-list {
   flex: 1;
@@ -293,9 +276,27 @@ function onKeydown(e: KeyboardEvent) {
   justify-content: flex-end;
   gap: 8px;
 }
-.reg-invite-btn {
-  color: var(--accent, #5865f2);
-  border-color: var(--accent, #5865f2);
+.send-btn {
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+.send-btn:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+.send-btn:disabled {
+  opacity: 0.5;
+}
+.send-btn .ico {
+  width: 15px;
+  height: 15px;
+  fill: #fff;
 }
 .ctx-menu {
   position: fixed;

@@ -140,6 +140,9 @@ async function removeAvatar() {
       <img class="server-logo" src="/logo.png" alt="Golosloom" />
       <span class="server-name">Golosloom</span>
       <span class="chevron">{{ menuOpen ? '▲' : '▼' }}</span>
+      <button class="create-channel-btn" @click.stop="showCreate = true">
+        <svg class="ico" viewBox="0 0 448 512"><path d="M256 80c0-17.7-14.3-32-32-32s-32 14.3-32 32l0 144L48 224c-17.7 0-32 14.3-32 32s14.3 32 32 32l144 0 0 144c0 17.7 14.3 32 32 32s32-14.3 32-32l0-144 144 0c17.7 0 32-14.3 32-32s-14.3-32-32-32l-144 0 0-144z" /></svg>
+      </button>
       <button class="sidebar-close" title="Закрыть" @click.stop="emit('close')">
         <svg class="ico" viewBox="0 0 384 512"><path d="M342.6 150.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L192 210.7 86.6 105.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3L146.7 256 41.4 361.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0L192 301.3 297.4 406.6c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L237.3 256 342.6 150.6z" /></svg>
       </button>
@@ -165,9 +168,6 @@ async function removeAvatar() {
     </div>
 
     <div class="channel-list">
-      <button class="success create-channel-btn" @click="showCreate = true">
-        <span>➕</span> Создать канал
-      </button>
       <div v-for="ch in sortedChannels" :key="ch.id" class="frame channel-item" :class="{ active: ch.id === channels.currentId }" @click="select(ch.id)">
         <span class="channel-icon">{{ ch.private ? '🔒' : '#' }}</span>
         <span class="channel-name">{{ ch.name }}</span>
@@ -291,20 +291,44 @@ async function removeAvatar() {
   text-align: center;
 }
 .create-channel-btn {
-  width: 40px;
-  height: 40px;
+  position: relative;
+  width: 30px;
+  height: 30px;
   padding: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
   background: var(--green);
-  margin: 0 auto 8px;
+  flex-shrink: 0;
+  margin-left: auto;
 }
 .create-channel-btn .ico {
-  width: 16px;
-  height: 16px;
+  width: 13px;
+  height: 13px;
   fill: #fff;
+}
+/* Надпись появляется только при наведении. */
+.create-channel-btn::after {
+  content: 'Создать канал';
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
+  background: #111214;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--text);
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+  z-index: 70;
+}
+.create-channel-btn:hover::after {
+  opacity: 1;
 }
 .server-menu button {
   display: flex;
