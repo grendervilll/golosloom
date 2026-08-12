@@ -163,10 +163,14 @@ class _CallScreenState extends State<CallScreen> {
           style: const TextStyle(color: text, fontSize: 18),
         ),
         actions: [
-          TextButton(
-            onPressed: _leave,
-            child: const Text('Завершить', style: TextStyle(color: red, fontWeight: FontWeight.w700)),
+          _RoundIcon(
+            icon: Icons.call_end,
+            background: red,
+            color: Colors.white,
+            tooltip: 'Завершить звонок',
+            onTap: _leave,
           ),
+          const SizedBox(width: 6),
         ],
       ),
       body: Column(
@@ -230,37 +234,51 @@ class _CallScreenState extends State<CallScreen> {
           ),
           Container(
             color: const Color(0xFF2B2D31),
-            padding: const EdgeInsets.symmetric(vertical: 16),
+            padding: const EdgeInsets.symmetric(vertical: 14),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                _CallButton(
-                  icon: calls.micEnabled ? Icons.mic : Icons.mic_off,
-                  color: calls.micEnabled ? const Color(0xFF383A40) : accent,
+                _IconToggle(
+                  active: calls.micEnabled,
+                  iconOn: Icons.mic,
+                  iconOff: Icons.mic_off,
+                  color: accent,
+                  tooltip: 'Микрофон',
                   onTap: calls.toggleMic,
                 ),
-                const SizedBox(width: 12),
-                _CallButton(
-                  icon: calls.camEnabled ? Icons.videocam : Icons.videocam_off,
-                  color: calls.camEnabled ? const Color(0xFF383A40) : accent,
+                const SizedBox(width: 10),
+                _IconToggle(
+                  active: calls.camEnabled,
+                  iconOn: Icons.videocam,
+                  iconOff: Icons.videocam_off,
+                  color: accent,
+                  tooltip: 'Веб-камера',
                   onTap: calls.toggleCam,
                 ),
-                const SizedBox(width: 12),
-                _CallButton(
-                  icon: calls.speakersMuted ? Icons.volume_off : Icons.volume_up,
-                  color: calls.speakersMuted ? accent : const Color(0xFF383A40),
+                const SizedBox(width: 10),
+                _IconToggle(
+                  active: !calls.speakersMuted,
+                  iconOn: Icons.volume_up,
+                  iconOff: Icons.volume_off,
+                  color: const Color(0xFF23A55A),
+                  tooltip: 'Звук собеседников',
                   onTap: calls.toggleSpeakers,
                 ),
-                const SizedBox(width: 24),
-                _CallButton(
-                  icon: Icons.chat,
-                  color: const Color(0xFF383A40),
+                const SizedBox(width: 10),
+                _IconToggle(
+                  active: false,
+                  iconOn: Icons.chat,
+                  iconOff: Icons.chat,
+                  color: const Color(0xFF949BA4),
+                  tooltip: 'Чат',
                   onTap: _openChat,
                 ),
-                const SizedBox(width: 12),
-                _CallButton(
+                const SizedBox(width: 20),
+                _RoundIcon(
                   icon: Icons.call_end,
-                  color: red,
+                  background: red,
+                  color: Colors.white,
+                  tooltip: 'Завершить звонок',
                   onTap: _leave,
                 ),
               ],
@@ -422,21 +440,87 @@ class _MicState extends StatelessWidget {
   }
 }
 
-class _CallButton extends StatelessWidget {
-  final IconData icon;
+/// Круглая кнопка-переключатель: иконки меняются с анимацией «поп»
+/// (как в примере — микрофон/динамик), без надписей.
+class _IconToggle extends StatelessWidget {
+  final bool active;
+  final IconData iconOn;
+  final IconData iconOff;
   final Color color;
+  final String tooltip;
   final VoidCallback onTap;
 
-  const _CallButton({required this.icon, required this.color, required this.onTap});
+  const _IconToggle({
+    required this.active,
+    required this.iconOn,
+    required this.iconOff,
+    required this.color,
+    required this.tooltip,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return IconButton.filled(
-      onPressed: onTap,
-      icon: Icon(icon, color: Colors.white, size: 28),
-      style: IconButton.styleFrom(
-        backgroundColor: color,
-        minimumSize: const Size(64, 64),
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: Container(
+          width: 46,
+          height: 46,
+          decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF383A40)),
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 250),
+            transitionBuilder: (child, anim) {
+              final pop = Tween(begin: 0.0, end: 1.0)
+                  .chain(CurveTween(curve: Curves.easeOutBack))
+                  .animate(anim);
+              final rot = Tween(begin: -0.12, end: 0.0).animate(anim);
+              return Transform.rotate(angle: rot.value, child: ScaleTransition(scale: pop, child: child));
+            },
+            child: Icon(
+              active ? iconOn : iconOff,
+              key: ValueKey(active),
+              size: 22,
+              color: active ? color : const Color(0xFFA5A5B0),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Круглая кнопка-иконка (завершение звонка).
+class _RoundIcon extends StatelessWidget {
+  final IconData icon;
+  final Color background;
+  final Color color;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  const _RoundIcon({
+    required this.icon,
+    required this.background,
+    required this.color,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: Container(
+          width: 46,
+          height: 46,
+          decoration: BoxDecoration(shape: BoxShape.circle, color: background),
+          child: Icon(icon, color: color, size: 22),
+        ),
       ),
     );
   }
