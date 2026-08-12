@@ -491,6 +491,9 @@ do_update() {
   gen_certs
   log "Пересобираю контейнеры (база данных и порты не изменяются)..."
   docker compose -f "$DEPLOY_DIR/docker-compose.yml" up -d --build
+  # Кэш сборки растёт на ~1-2 ГБ при каждом обновлении и может съесть весь
+  # диск дешёвого VPS — оставляем только последнюю неделю.
+  docker builder prune -f --filter until=168h >/dev/null 2>&1 || true
   # Caddyfile монтируется bind-mount'ом: контейнер читает его при старте,
   # а up -d не перезапускает уже работающие контейнеры — перезапускаем явно.
   docker compose -f "$DEPLOY_DIR/docker-compose.yml" restart caddy
