@@ -65,6 +65,21 @@ func (s *Server) reconcileCalls(absent map[int64]time.Time) {
 			}
 		}
 		if len(remove) == 0 {
+			// Даже без удаления: одиночный звонок (в комнате один участник,
+			// никто не ждёт ответа) завершаем автоматически.
+			presentCount := 0
+			for _, uid := range ids {
+				if present[uid] {
+					presentCount++
+				}
+			}
+			if presentCount <= 1 {
+				ringing, _ := s.Store.RingingInvites(c.ID)
+				if presentCount == 0 || len(ringing) == 0 {
+					s.maybeFinishSoloCall(&c)
+					continue
+				}
+			}
 			continue
 		}
 		for _, uid := range remove {

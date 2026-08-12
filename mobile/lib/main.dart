@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'src/call_service.dart';
@@ -10,6 +11,21 @@ import 'src/widgets/mini_call_bar.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  FlutterForegroundTask.init(
+    androidNotificationOptions: AndroidNotificationOptions(
+      channelId: 'golosloom_call',
+      channelName: 'Звонки Golosloom',
+      channelDescription: 'Звонок продолжается, приложение работает в фоне',
+      channelImportance: NotificationChannelImportance.LOW,
+      priority: NotificationPriority.LOW,
+    ),
+    iosNotificationOptions: const IOSNotificationOptions(),
+    foregroundTaskOptions: ForegroundTaskOptions(
+      eventAction: ForegroundTaskEventAction.nothing(),
+      allowWakeLock: true,
+      allowWifiLock: true,
+    ),
+  );
   final prefs = await SharedPreferences.getInstance();
   runApp(GolosloomApp(settings: AppSettings(prefs)));
 }

@@ -6,6 +6,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 // Session из livekit_client конфликтует с нашей Session — скрываем.
 import 'package:livekit_client/livekit_client.dart' hide Session;
 
@@ -68,10 +69,38 @@ class CallService extends ChangeNotifier {
   bool speakersMuted = false;
   String? callError;
   int _lastPunch = 0;
+  bool _disposed = false;
 
   CallService(this.session) {
     _sub = session.events.listen(_onEvent);
+    session.addListener(_onSessionChanged);
     instance = this;
+  }
+
+  bool _wasConnected = false;
+
+  /// После переподключения WS (например, приложение было в фоне) сверяем,
+  /// что наш звонок ещё существует — сервер мог его завершить.
+  void _onSessionChanged() {
+    final connected = session.wsConnected;
+    if (connected && !_wasConnected && inCall) {
+      _syncCallState();
+    }
+    _wasConnected = connected;
+  }
+
+  Future<void> _syncCallState() async {
+    final call = currentCall;
+    if (call == null || _disposed) return;
+    try {
+      final list = await session.api.calls(call.channelId);
+      final alive = list.any((c) => (c as Map<String, dynamic>)['id'] == call.id);
+      if (!alive) {
+        await _disconnectRoom();
+      }
+    } catch (_) {
+      /* повторим при следующем подключении */
+    }
   }
 
   bool get inCall => _room != null;
@@ -85,7 +114,9 @@ class CallService extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     _sub?.cancel();
+    session.removeListener(_onSessionChanged);
     _room?.disconnect();
     super.dispose();
   }
@@ -93,6 +124,7 @@ class CallService extends ChangeNotifier {
   // ---------- WS-события ----------
 
   void _onEvent(WsEvent e) {
+    if (_disposed) return;
     switch (e.type) {
       case 'call.invite':
         ringing = CallInfo(
@@ -261,6 +293,15 @@ class CallService extends ChangeNotifier {
     _room = room;
     try {
       _startedAt = DateTime.now();
+      // Фоновый сервис: звук звонка не прерывается при свёрнутом приложении.
+      try {
+        await FlutterForegroundTask.startService(
+          serviceId: 1,
+          notificationTitle: 'Golosloom',
+          notificationText: 'Идёт звонок — микрофон и звук работают в фоне',
+          callback: () {},
+        );
+      } catch (_) {}
       await room.connect(
         config.livekitUrl,
         token,
@@ -287,10 +328,15 @@ class CallService extends ChangeNotifier {
   }
 
   Future<void> _disconnectRoom() async {
+    if (_disposed) return;
     final r = _room;
     _room = null;
     currentCall = null;
     _startedAt = null;
+    try {
+      await FlutterForegroundTask.stopService();
+    } catch (_) {}
+    if (_disposed) return;
     notifyListeners();
     if (r != null) {
       try {

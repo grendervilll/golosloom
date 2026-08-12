@@ -131,8 +131,8 @@ function onKeydown(e: KeyboardEvent) {
       >
         ✉️ Пригласить зарегистрироваться
       </button>
-      <button v-if="!calls.inCall" class="invite-btn" title="Позвонить участникам канала" @click="emit('open-call')">
-        📞 Позвонить
+      <button v-if="!calls.inCall" class="call-icon-btn" title="Позвонить участникам канала" @click="emit('open-call')">
+        📞
       </button>
       <button class="members-btn" title="Участники" @click="emit('toggle-participants')">👥</button>
     </div>
@@ -230,6 +230,23 @@ function onKeydown(e: KeyboardEvent) {
 .invite-btn:hover {
   background: var(--accent);
   color: #fff;
+}
+/* Круглый значок звонка без надписи (как в мобильном). */
+.call-icon-btn {
+  margin-left: auto;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--bg4);
+  font-size: 16px;
+  border: 1px solid var(--border);
+}
+.call-icon-btn:hover {
+  background: var(--accent);
 }
 .reg-invite-btn {
   color: var(--accent, #5865f2);

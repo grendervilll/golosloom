@@ -23,6 +23,7 @@ const screens = ref<VideoTile[]>([])
 const focusedScreen = ref<VideoTile | null>(null)
 const focusedCam = ref<VideoTile | null>(null)
 const selectedScreenIdentity = ref('')
+const camPage = ref(0)
 let watching = false
 
 // Директива: привязывает LiveKit-трек к элементу <video>.
@@ -184,6 +185,23 @@ onBeforeUnmount(() => {
 })
 
 const cameras = computed(() => tiles.value.filter((t) => t.kind === 'camera'))
+
+// Камеры — по 4 на экран (сетка 2×2), остальные листаются.
+const visibleCameras = computed(() => {
+  const c = cameras.value
+  const start = Math.min(camPage.value * 4, Math.max(0, c.length - 4))
+  return c.slice(start, start + 4)
+})
+const camPageInfo = computed(() => {
+  const total = cameras.value.length
+  if (total <= 4) return ''
+  const from = Math.min(camPage.value * 4, Math.max(0, total - 4)) + 1
+  const to = Math.min(from + 3, total)
+  return `${from}-${to} из ${total}`
+})
+watch(cameras, () => {
+  if (camPage.value * 4 >= cameras.value.length) camPage.value = 0
+})
 const callParticipants = computed(() => calls.currentCall?.participants ?? [])
 const stageMembers = computed(() => channels.members.filter((m) => callParticipants.value.includes(m.user_id)))
 </script>
@@ -206,12 +224,17 @@ const stageMembers = computed(() => channels.members.filter((m) => callParticipa
     </div>
 
     <div class="cam-grid">
-      <div v-for="t in cameras" :key="t.identity + '-cam'" class="cam-tile frame" @click="focusedCam = t">
+      <div v-for="t in visibleCameras" :key="t.identity + '-cam'" class="cam-tile frame" @click="focusedCam = t">
         <video v-track="t" class="cam-video" autoplay playsinline />
         <span class="cam-nick">{{ roleIcon(auth.user) }}{{ t.nick }}</span>
       </div>
       <div v-if="cameras.length === 0 && stageMembers.length === 0" class="muted">В звонке пока только вы</div>
       <div v-if="cameras.length === 0 && stageMembers.length > 0" class="muted">Камеры участников выключены</div>
+    </div>
+    <div v-if="camPageInfo" class="cam-pager">
+      <button title="Назад" @click="camPage = Math.max(0, camPage - 1)">◀</button>
+      <span>{{ camPageInfo }}</span>
+      <button title="Вперёд" @click="camPage++">▶</button>
     </div>
 
     <div v-if="screens.length > 1" class="screen-thumbs">
@@ -284,18 +307,30 @@ const stageMembers = computed(() => channels.members.filter((m) => callParticipa
   border-radius: 10px;
 }
 .cam-grid {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 8px;
   align-items: center;
 }
 .cam-tile {
   position: relative;
-  width: 200px;
-  height: 130px;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
   background: #000;
   overflow: hidden;
   cursor: pointer;
+}
+.cam-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.cam-pager button {
+  padding: 2px 10px;
 }
 .cam-full {
   object-fit: cover;
