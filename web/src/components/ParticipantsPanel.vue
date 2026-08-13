@@ -182,11 +182,13 @@ function setVolume(userId: number, v: number) {
   min-height: 0;
 }
 .members-head {
-  padding: 14px;
+  height: 60px;
+  padding: 0 14px;
   border-bottom: 1px solid var(--border);
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-shrink: 0;
 }
 .head-title {
   display: flex;

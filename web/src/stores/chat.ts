@@ -85,8 +85,15 @@ export const useChatStore = defineStore('chat', {
         const real = await this.toChatMessage(res, channelId, key, auth.user?.id || 0)
         const cur = this.messages.get(channelId) || []
         const idx = cur.findIndex((x) => x.id === tempId)
-        if (idx >= 0) cur[idx] = real
-        else cur.push(real)
+        const exists = cur.some((x) => x.id === res.id)
+        if (exists) {
+          // Копия уже пришла по WS (message.new) — убираем только временную.
+          if (idx >= 0) cur.splice(idx, 1)
+        } else if (idx >= 0) {
+          cur[idx] = real
+        } else {
+          cur.push(real)
+        }
         this.messages.set(channelId, [...cur])
       } catch {
         const cur = this.messages.get(channelId) || []
@@ -137,7 +144,15 @@ export const useChatStore = defineStore('chat', {
       // а не добавляем второй раз.
       const idx = list.findIndex((x) => x.id === data.id)
       if (idx >= 0) list[idx] = m
-      else list.push(m)
+      else {
+        // Оптимистичное сообщение ещё ждёт ответа HTTP — заменяем его,
+        // чтобы не было дубля (своё сообщение, тот же текст).
+        const pendIdx = list.findIndex(
+          (x) => x.id < 0 && x.senderId === data.sender_id && x.text === m.text,
+        )
+        if (pendIdx >= 0) list[pendIdx] = m
+        else list.push(m)
+      }
       this.messages.set(data.channel_id, [...list])
       // Непрочитанное: чужие сообщения в каналы, которые не открыты.
       const channels = useChannelsStore()

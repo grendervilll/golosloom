@@ -18,6 +18,13 @@ const calls = useCallStore()
 
 let unsubs: (() => void)[] = []
 
+// Применяем тему сразу (до первого рендера) и следим за переключением.
+settings.applyTheme()
+watch(
+  () => settings.theme,
+  () => settings.applyTheme(),
+)
+
 function wireWs() {
   unsubs.forEach((u) => u())
   unsubs = []
@@ -116,5 +123,5 @@ onUnmounted(() => {
   </div>
   <!-- Toaster вне .app-root: его <section> в потоке документа, и правило
        .app-root > * { flex: 1 } сжимало бы интерфейс влево. -->
-  <Toaster theme="dark" position="top-right" :close-button="true" rich-colors />
+  <Toaster :theme="settings.theme" position="top-right" :close-button="true" rich-colors />
 </template>

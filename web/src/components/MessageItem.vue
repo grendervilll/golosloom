@@ -91,7 +91,7 @@ function openMore(e: MouseEvent) {
 }
 .bubble {
   max-width: min(78%, 560px);
-  background: #fff;
+  background: var(--bubble);
   border: 1px solid var(--border);
   border-radius: 14px;
   border-top-left-radius: 4px;

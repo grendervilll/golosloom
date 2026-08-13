@@ -164,6 +164,84 @@ describe('чат', () => {
     expect(msgs.length).toBe(1)
   })
 
+  it('WS-событие раньше ответа HTTP: pending заменяется, дубля нет', async () => {
+    setup(1)
+    const storage = await getKeyStorage()
+    const key = generateChannelKey()
+    await storage.saveChannelKey(10, key)
+    const api = useSettingsStore().api as any
+    let resolveSend!: (v: any) => void
+    api.sendMessage.mockReturnValue(new Promise((res) => (resolveSend = res)))
+    const chat = useChatStore()
+    const p = chat.send(10, 'гоночное')
+    const waitMs = (fn: () => boolean) =>
+      new Promise<void>((res) => {
+        const t = setInterval(() => {
+          if (fn()) {
+            clearInterval(t)
+            res()
+          }
+        }, 5)
+        setTimeout(() => clearInterval(t), 1000)
+      })
+    await waitMs(() => (chat.messages.get(10) || []).length === 1)
+    // WS приносит сообщение раньше, чем ответило HTTP-отправление.
+    const { ciphertext, iv } = await encryptMessage(key, 'гоночное')
+    await chat.handleNew({
+      id: 999,
+      channel_id: 10,
+      sender_id: 1,
+      sender_nick: 'u1',
+      ciphertext: bytesToB64(ciphertext),
+      iv: bytesToB64(iv),
+      created_at: new Date().toISOString(),
+      deleted: false,
+    } as any)
+    expect(chat.messages.get(10)!.length).toBe(1)
+    resolveSend({
+      id: 999,
+      channel_id: 10,
+      sender_id: 1,
+      sender_nick: 'u1',
+      ciphertext: bytesToB64(ciphertext),
+      iv: bytesToB64(iv),
+      created_at: new Date().toISOString(),
+      deleted: false,
+    })
+    await p
+    const msgs = chat.messages.get(10)!
+    expect(msgs.length).toBe(1)
+    expect(msgs[0].id).toBe(999)
+    expect(msgs[0].pending).toBeFalsy()
+  })
+
+  it('ответ HTTP раньше WS: pending заменяется, WS только обновляет', async () => {
+    setup(1)
+    const storage = await getKeyStorage()
+    const key = generateChannelKey()
+    await storage.saveChannelKey(10, key)
+    const { ciphertext, iv } = await encryptMessage(key, 'гоночное')
+    const msgData = {
+      id: 1000,
+      channel_id: 10,
+      sender_id: 1,
+      sender_nick: 'u1',
+      ciphertext: bytesToB64(ciphertext),
+      iv: bytesToB64(iv),
+      created_at: new Date().toISOString(),
+      deleted: false,
+    }
+    const api = useSettingsStore().api as any
+    api.sendMessage.mockResolvedValue(msgData)
+    const chat = useChatStore()
+    await chat.send(10, 'гоночное')
+    // WS-копия приходит после ответа HTTP.
+    await chat.handleNew(msgData as any)
+    const msgs = chat.messages.get(10)!
+    expect(msgs.length).toBe(1)
+    expect(msgs[0].id).toBe(1000)
+  })
+
   it('расшифровывает приходящие сообщения', async () => {
     setup(1)
     const storage = await getKeyStorage()

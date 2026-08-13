@@ -13,6 +13,14 @@ export interface ClientSettings {
   mutedOthers: boolean
   screenQuality: string
   volumes: Record<number, number>
+  theme: 'light' | 'dark'
+}
+
+function defaultTheme(): 'light' | 'dark' {
+  if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+    return 'dark'
+  }
+  return 'light'
 }
 
 function defaultSettings(): ClientSettings {
@@ -23,6 +31,7 @@ function defaultSettings(): ClientSettings {
     mutedOthers: false,
     screenQuality: '1080p60',
     volumes: {},
+    theme: defaultTheme(),
   }
 }
 
@@ -68,8 +77,18 @@ export const useSettingsStore = defineStore('settings', {
           mutedOthers: this.mutedOthers,
           screenQuality: this.screenQuality,
           volumes: this.volumes,
+          theme: this.theme,
         }),
       )
+    },
+    // Применение темы к документу (CSS: :root[data-theme='dark']).
+    applyTheme() {
+      document.documentElement.dataset.theme = this.theme
+    },
+    setTheme(theme: 'light' | 'dark') {
+      this.theme = theme
+      this.persist()
+      this.applyTheme()
     },
     setServerUrl(url: string) {
       this.serverUrl = url.replace(/\/+$/, '')

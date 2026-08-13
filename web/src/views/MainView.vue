@@ -211,7 +211,7 @@ function onTabChat() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f4f7f9;
+  background: var(--welcome-bg);
   position: relative;
   min-height: 0;
 }
