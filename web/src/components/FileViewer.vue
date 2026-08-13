@@ -6,6 +6,7 @@ import { onMounted, onUnmounted } from 'vue'
 const props = defineProps<{
   src: string
   filename: string
+  video?: boolean
 }>()
 const emit = defineEmits<{ (e: 'close'): void }>()
 
@@ -20,7 +21,21 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
   <Teleport to="body">
     <div class="viewer" @click="emit('close')">
       <div class="viewer-box">
-        <img :src="props.src" :alt="props.filename" @click.stop />
+        <video
+          v-if="props.video"
+          class="viewer-media"
+          :src="props.src"
+          controls
+          autoplay
+          @click.stop
+        ></video>
+        <img
+          v-else
+          class="viewer-media"
+          :src="props.src"
+          :alt="props.filename"
+          @click.stop
+        />
       </div>
       <div class="viewer-hint">Клик — закрыть · ПКМ — скачать</div>
     </div>
@@ -51,13 +66,14 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
   max-width: 92vw;
   max-height: 88vh;
 }
-.viewer-box img {
+.viewer-media {
   max-width: 92vw;
   max-height: 88vh;
   object-fit: contain;
   border-radius: 8px;
   box-shadow: 0 12px 60px rgba(0, 0, 0, 0.7);
   cursor: default;
+  display: block;
 }
 .viewer-hint {
   position: absolute;

@@ -145,7 +145,7 @@ func TestMessageQueries(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i := 0; i < 10; i++ {
-		if _, err := st.CreateMessage(ch.ID, u.ID, []byte{byte(i)}, []byte{byte(i)}); err != nil {
+		if _, err := st.CreateMessage(ch.ID, u.ID, []byte{byte(i)}, []byte{byte(i)}, 0); err != nil {
 			t.Fatal(err)
 		}
 	}

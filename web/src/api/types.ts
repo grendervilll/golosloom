@@ -52,6 +52,7 @@ export interface Message {
   deleted: boolean
   deleted_by?: number
   attachment?: Attachment | null
+  reply_to?: number | null
 }
 
 export interface Attachment {

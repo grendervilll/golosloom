@@ -71,6 +71,9 @@ func (s *Server) messageJSON(m models.Message, withHistory bool) map[string]inte
 	if m.Attachment != nil {
 		out["attachment"] = m.Attachment
 	}
+	if m.ReplyTo != nil {
+		out["reply_to"] = *m.ReplyTo
+	}
 	return out
 }
 
@@ -91,6 +94,7 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		Ciphertext   []byte `json:"ciphertext"`
 		IV           []byte `json:"iv"`
 		AttachmentID int64  `json:"attachment_id"`
+		ReplyToID    int64  `json:"reply_to_id"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeErr(w, http.StatusBadRequest, "некорректный запрос")
@@ -103,6 +107,14 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 	if len(req.Ciphertext) > s.Cfg.MaxMessageLen+16 {
 		writeErr(w, http.StatusBadRequest, "сообщение слишком длинное")
 		return
+	}
+	// Ответ на сообщение: оно должно существовать в этом же канале.
+	if req.ReplyToID != 0 {
+		replied, err := s.Store.GetMessage(req.ReplyToID)
+		if err != nil || replied.ChannelID != channelID {
+			writeErr(w, http.StatusNotFound, "сообщение для ответа не найдено")
+			return
+		}
 	}
 	// Вложение: файл должен существовать, принадлежать отправителю и каналу,
 	// и ещё не быть привязанным к сообщению.
@@ -121,7 +133,7 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusConflict, "сообщение уже отправлено")
 		return
 	}
-	m, err := s.Store.CreateMessage(channelID, userIDFrom(r), req.Ciphertext, req.IV)
+	m, err := s.Store.CreateMessage(channelID, userIDFrom(r), req.Ciphertext, req.IV, req.ReplyToID)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return

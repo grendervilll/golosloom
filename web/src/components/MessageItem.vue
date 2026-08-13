@@ -6,6 +6,7 @@ import type { Role } from '../api/types'
 import { roleIcon } from '../utils/roles'
 import { useAuthStore } from '../stores/auth'
 import { useChannelsStore } from '../stores/channels'
+import { useChatStore } from '../stores/chat'
 import { useSettingsStore } from '../stores/settings'
 import { splitMarkdown } from '../utils/markdown'
 import Avatar from './Avatar.vue'
@@ -16,11 +17,23 @@ const props = defineProps<{
   msg: ChatMessage
   myId: number
   canModerate: boolean
+  highlight?: boolean
 }>()
-const emit = defineEmits<{ (e: 'contextmenu', ev: MouseEvent): void }>()
+const emit = defineEmits<{
+  (e: 'contextmenu', ev: MouseEvent): void
+  (e: 'reply'): void
+  (e: 'jump', id: number): void
+}>()
 
 const auth = useAuthStore()
 const channels = useChannelsStore()
+const chat = useChatStore()
+
+// Сообщение, на которое отвечает текущее (для цитаты).
+const replied = computed(() => {
+  if (!props.msg.replyToId) return null
+  return chat.messages.get(props.msg.channelId)?.find((m) => m.id === props.msg.replyToId) || null
+})
 
 const isMine = computed(() => props.msg.senderId === props.myId)
 const member = computed(() => channels.members.find((m) => m.user_id === props.msg.senderId))
@@ -86,11 +99,26 @@ function openMore(e: MouseEvent) {
   <div
     v-else
     class="msg"
-    :class="{ mine: isMine, deleted: msg.deleted, pending: msg.pending }"
+    :class="{ mine: isMine, deleted: msg.deleted, pending: msg.pending, flash: highlight }"
+    :data-msg-id="msg.id"
     @contextmenu.prevent="emit('contextmenu', $event)"
+    @dblclick="emit('reply')"
   >
     <div class="bubble">
       <div v-if="showSender" class="sender">{{ msg.senderNick }}</div>
+      <!-- Цитата сообщения, на которое отвечаем; клик — переход к нему. -->
+      <button
+        v-if="replied && !msg.encrypted"
+        class="reply-quote"
+        :class="{ 'mine-quote': isMine }"
+        @click.stop="emit('jump', replied.id)"
+      >
+        <span class="quote-line"></span>
+        <span class="quote-body">
+          <span class="quote-nick">{{ replied.senderNick || '…' }}</span>
+          <span class="quote-text">{{ replied.text || replied.attachment?.filename || '…' }}</span>
+        </span>
+      </button>
       <!-- Вложение: фото — миниатюра с просмотром по клику, видео — плеер,
            остальное — карточка файла со скачиванием. -->
       <div v-if="att && isImage" class="att">
@@ -275,6 +303,74 @@ function openMore(e: MouseEvent) {
 }
 .msg.mine .file-download:hover {
   background: rgba(255, 255, 255, 0.2);
+}
+/* Цитата ответа. */
+.reply-quote {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  width: 100%;
+  background: var(--bg3);
+  border-radius: 8px;
+  padding: 5px 10px;
+  margin-bottom: 4px;
+  text-align: left;
+  min-height: 28px;
+}
+.reply-quote.mine-quote {
+  background: rgba(255, 255, 255, 0.15);
+}
+.reply-quote:hover {
+  background: var(--bg4);
+}
+.reply-quote.mine-quote:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+.quote-line {
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+.quote-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.quote-nick {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent-hover);
+}
+.mine-quote .quote-nick {
+  color: #fff;
+}
+.quote-text {
+  font-size: 12px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mine-quote .quote-text {
+  color: rgba(255, 255, 255, 0.8);
+}
+/* Подсветка сообщения после перехода к нему. */
+.flash {
+  animation: flash-msg 2.2s ease;
+  border-radius: 10px;
+}
+@keyframes flash-msg {
+  0% {
+    background: rgba(42, 171, 238, 0.35);
+  }
+  60% {
+    background: rgba(42, 171, 238, 0.22);
+  }
+  100% {
+    background: transparent;
+  }
 }
 .msg.mine .text {
   color: #fff;

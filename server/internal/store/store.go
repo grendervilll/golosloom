@@ -201,7 +201,8 @@ CREATE TABLE IF NOT EXISTS messages (
 	deleted_by INTEGER,
 	deleted_at TEXT,
 	created_at TEXT NOT NULL,
-	edited_at TEXT
+	edited_at TEXT,
+	reply_to INTEGER
 );
 CREATE TABLE IF NOT EXISTS channel_invites (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -295,6 +296,8 @@ func (s *Store) migrate() error {
 	}
 	// Миграция: колонка аватара (для старых БД).
 	_, _ = s.db.Exec(`ALTER TABLE users ADD COLUMN avatar_at TEXT`)
+	// Миграция: ответы на сообщения (reply_to).
+	_, _ = s.db.Exec(`ALTER TABLE messages ADD COLUMN reply_to INTEGER`)
 	return nil
 }
 
@@ -873,9 +876,13 @@ func (s *Store) ChannelPermissions(channelID int64) (map[models.Role]map[models.
 
 // ---------- Messages ----------
 
-func (s *Store) CreateMessage(channelID, senderID int64, ciphertext, iv []byte) (*models.Message, error) {
-	res, err := s.db.Exec(`INSERT INTO messages (channel_id, sender_id, ciphertext, iv, created_at)
-		VALUES (?, ?, ?, ?, ?)`, channelID, senderID, ciphertext, iv, now())
+func (s *Store) CreateMessage(channelID, senderID int64, ciphertext, iv []byte, replyTo int64) (*models.Message, error) {
+	var r any
+	if replyTo != 0 {
+		r = replyTo
+	}
+	res, err := s.db.Exec(`INSERT INTO messages (channel_id, sender_id, ciphertext, iv, created_at, reply_to)
+		VALUES (?, ?, ?, ?, ?, ?)`, channelID, senderID, ciphertext, iv, now(), r)
 	if err != nil {
 		return nil, err
 	}
@@ -884,7 +891,7 @@ func (s *Store) CreateMessage(channelID, senderID int64, ciphertext, iv []byte) 
 }
 
 func (s *Store) GetMessage(id int64) (*models.Message, error) {
-	row := s.db.QueryRow(`SELECT id, channel_id, sender_id, ciphertext, iv, history, deleted, deleted_by, deleted_at, created_at, edited_at
+	row := s.db.QueryRow(`SELECT id, channel_id, sender_id, ciphertext, iv, history, deleted, deleted_by, deleted_at, created_at, edited_at, reply_to
 		FROM messages WHERE id = ?`, id)
 	m, err := scanMessage(row)
 	if err != nil {
@@ -904,8 +911,9 @@ func scanMessage(row *sql.Row) (*models.Message, error) {
 	var deleted int
 	var deletedBy sql.NullInt64
 	var deletedAt, createdAt, editedAt sql.NullString
+	var replyTo sql.NullInt64
 	err := row.Scan(&m.ID, &m.ChannelID, &m.SenderID, &m.Ciphertext, &m.IV, &history,
-		&deleted, &deletedBy, &deletedAt, &createdAt, &editedAt)
+		&deleted, &deletedBy, &deletedAt, &createdAt, &editedAt, &replyTo)
 	if err == sql.ErrNoRows {
 		return nil, ErrNotFound
 	}
@@ -915,6 +923,9 @@ func scanMessage(row *sql.Row) (*models.Message, error) {
 	m.Deleted = deleted == 1
 	if deletedBy.Valid {
 		m.DeletedBy = &deletedBy.Int64
+	}
+	if replyTo.Valid {
+		m.ReplyTo = &replyTo.Int64
 	}
 	m.DeletedAt = timeOrNil(deletedAt)
 	if t, err := parseTime(createdAt.String); err == nil {
@@ -929,7 +940,7 @@ func scanMessage(row *sql.Row) (*models.Message, error) {
 
 func (s *Store) ListMessages(channelID, beforeID int64, limit int) ([]models.Message, error) {
 	rows, err := s.db.Query(`
-		SELECT id, channel_id, sender_id, ciphertext, iv, history, deleted, deleted_by, deleted_at, created_at, edited_at
+		SELECT id, channel_id, sender_id, ciphertext, iv, history, deleted, deleted_by, deleted_at, created_at, edited_at, reply_to
 		FROM messages WHERE channel_id = ? AND (? = 0 OR id < ?)
 		ORDER BY id DESC LIMIT ?`, channelID, beforeID, beforeID, limit)
 	if err != nil {
@@ -943,13 +954,17 @@ func (s *Store) ListMessages(channelID, beforeID int64, limit int) ([]models.Mes
 		var deleted int
 		var deletedBy sql.NullInt64
 		var deletedAt, createdAt, editedAt sql.NullString
+		var replyTo sql.NullInt64
 		if err := rows.Scan(&m.ID, &m.ChannelID, &m.SenderID, &m.Ciphertext, &m.IV, &history,
-			&deleted, &deletedBy, &deletedAt, &createdAt, &editedAt); err != nil {
+			&deleted, &deletedBy, &deletedAt, &createdAt, &editedAt, &replyTo); err != nil {
 			return nil, err
 		}
 		m.Deleted = deleted == 1
 		if deletedBy.Valid {
 			m.DeletedBy = &deletedBy.Int64
+		}
+		if replyTo.Valid {
+			m.ReplyTo = &replyTo.Int64
 		}
 		m.DeletedAt = timeOrNil(deletedAt)
 		if t, err := parseTime(createdAt.String); err == nil {

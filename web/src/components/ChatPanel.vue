@@ -11,6 +11,7 @@ import { toast } from 'vue-sonner'
 import MessageItem from './MessageItem.vue'
 import EmojiPicker from './EmojiPicker.vue'
 import Avatar from './Avatar.vue'
+import FileViewer from './FileViewer.vue'
 import type { Attachment } from '../api/types'
 
 const emit = defineEmits<{ (e: 'toggle-participants'): void; (e: 'open-invite'): void; (e: 'open-call'): void; (e: 'open-reg-invite'): void }>()
@@ -59,6 +60,97 @@ function toggleTypersList() {
   showTypersList.value = !showTypersList.value
 }
 
+// --- Меню канала: поиск / фото и видео / участники ---
+const channelMenuOpen = ref(false)
+const channelMenuTab = ref<'main' | 'search' | 'media'>('main')
+const searchQuery = ref('')
+const searchResults = ref<ChatMessage[]>([])
+const searchInputEl = ref<HTMLInputElement | null>(null)
+let searchTimer = 0
+// ID сообщения, которое подсвечиваем после перехода.
+const highlightId = ref(0)
+
+function openChannelMenu() {
+  channelMenuOpen.value = !channelMenuOpen.value
+  if (channelMenuOpen.value) channelMenuTab.value = 'main'
+}
+function closeChannelMenu() {
+  channelMenuOpen.value = false
+  searchQuery.value = ''
+  searchResults.value = []
+}
+
+watch(searchQuery, () => {
+  if (searchTimer) window.clearTimeout(searchTimer)
+  searchTimer = window.setTimeout(() => void runSearch(), 300)
+})
+async function runSearch() {
+  const q = searchQuery.value
+  if (!q.trim()) {
+    searchResults.value = []
+    return
+  }
+  searchResults.value = await chat.searchMessages(channels.currentId, q)
+}
+
+// Переход к сообщению в чате: закрыть меню, проскроллить, подсветить.
+async function scrollToMessage(id: number) {
+  closeChannelMenu()
+  await nextTick()
+  const el = document.querySelector(`[data-msg-id="${id}"]`)
+  if (el) {
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    highlightId.value = id
+    setTimeout(() => (highlightId.value = 0), 2200)
+  }
+}
+
+// --- Ответ на сообщение ---
+function setReply(msg: ChatMessage) {
+  chat.replyTo = { channelId: channels.currentId, messageId: msg.id }
+}
+const replyPreview = computed(() => {
+  const r = chat.replyTo
+  if (!r || r.channelId !== channels.currentId) return null
+  const m = chat.messages.get(r.channelId)?.find((x) => x.id === r.messageId)
+  if (!m) return null
+  return { nick: m.senderNick, text: m.text || m.attachment?.filename || '…' }
+})
+function cancelReply() {
+  chat.replyTo = null
+}
+function replyFromMenu(msg: ChatMessage) {
+  menu.value.msg = null
+  setReply(msg)
+  inputEl.value?.focus()
+}
+
+// --- Фото и видео канала ---
+const mediaItems = computed(() => {
+  const list = chat.messages.get(channels.currentId) || []
+  return list.filter(
+    (m) => m.attachment && (m.attachment.mime.startsWith('image/') || m.attachment.mime.startsWith('video/')),
+  )
+})
+const mediaViewer = ref<{ src: string; filename: string; video?: boolean } | null>(null)
+const mediaMenu = ref({ x: 0, y: 0, msg: null as ChatMessage | null })
+function openMediaMenu(e: MouseEvent, msg: ChatMessage) {
+  e.preventDefault()
+  mediaMenu.value = { x: e.clientX, y: e.clientY, msg }
+}
+function openMedia(msg: ChatMessage) {
+  if (!msg.attachment) return
+  mediaViewer.value = {
+    src: settings.api.fileUrl(msg.attachment.id),
+    filename: msg.attachment.filename,
+    video: msg.attachment.mime.startsWith('video/'),
+  }
+}
+function mediaJump(msg: ChatMessage) {
+  mediaMenu.value.msg = null
+  void scrollToMessage(msg.id)
+}
+
 async function scrollBottom() {
   await nextTick()
   if (listEl.value) listEl.value.scrollTop = listEl.value.scrollHeight
@@ -73,7 +165,16 @@ function autoResize() {
   el.style.height = Math.min(el.scrollHeight, MAX_INPUT_HEIGHT) + 'px'
 }
 
-watch(messages, () => void scrollBottom(), { deep: true })
+watch(messages, async (list, old) => {
+  // Прокручиваем вниз только если были у нижнего края (иначе догрузка
+  // старой истории при поиске не будет дёргать чат).
+  await nextTick()
+  const el = listEl.value
+  if (!el) return
+  const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+  if (nearBottom || (old && old.length === 0)) void scrollBottom()
+  void list
+}, { deep: true })
 onMounted(() => void scrollBottom())
 // При изменении текста (ввод, начало редактирования, очистка) — подгоняем высоту.
 watch(
@@ -96,7 +197,7 @@ function onTyping() {
 
 async function send() {
   const text = chat.draft.trim()
-  if (!text) return
+  if (!text && !chat.replyTo) return
   // Длинное сообщение отклоняется сервером (лимит MAX_MESSAGE_LEN) —
   // предупреждаем заранее и показываем понятную ошибку.
   const max = settings.serverConfig?.max_message_len || 2000
@@ -105,12 +206,13 @@ async function send() {
     toast.error(`Сообщение слишком длинное: максимум ${max} символов`)
     return
   }
+  const replyToId = chat.replyTo?.channelId === channels.currentId ? chat.replyTo.messageId : 0
   try {
     if (chat.editingId) {
       await chat.edit(channels.currentId, chat.editingId, text)
       return
     }
-    const ok = await chat.send(channels.currentId, text)
+    const ok = await chat.send(channels.currentId, text, 0, replyToId)
     if (!ok) {
       toast.warning('Ключ канала ещё не получен, повторите позже')
       return
@@ -120,6 +222,7 @@ async function send() {
     return
   }
   chat.draft = ''
+  chat.replyTo = null
 }
 
 // --- Файлы (вложения, максимум 100 МБ) ---
@@ -158,8 +261,9 @@ async function sendWithAttachment(att: Attachment, localUrl?: string) {
     toast.error(`Сообщение слишком длинное: максимум ${max} символов`)
     return
   }
+  const replyToId = chat.replyTo?.channelId === channels.currentId ? chat.replyTo.messageId : 0
   try {
-    const ok = await chat.send(channels.currentId, text, att.id, localUrl)
+    const ok = await chat.send(channels.currentId, text, att.id, replyToId, localUrl)
     if (!ok) {
       toast.warning('Ключ канала ещё не получен, повторите позже')
       return
@@ -170,6 +274,7 @@ async function sendWithAttachment(att: Attachment, localUrl?: string) {
   }
   chat.draft = ''
   chat.editingId = 0
+  chat.replyTo = null
 }
 
 function insertEmoji(e: string) {
@@ -240,7 +345,11 @@ function onKeydown(e: KeyboardEvent) {
         :size="36"
         :color="'#2aabee'"
       />
-      <button class="head-title" :title="`Участники канала (${channels.members.length})`" @click="emit('toggle-participants')">
+      <button
+        class="head-title"
+        :title="'Меню канала: поиск, фото и видео, участники'"
+        @click="openChannelMenu"
+      >
         <h2>
           {{ channelName }}
           <svg v-if="channels.current?.private" class="lock-ico" viewBox="0 0 448 512"><path d="M144 144v48H304V144c0-44.2-35.8-80-80-80s-80 35.8-80 80zM80 192V144C80 64.5 144.5 0 224 0s144 64.5 144 144v48h16c35.3 0 64 28.7 64 64V448c0 35.3-28.7 64-64 64H64c-35.3 0-64-28.7-64-64V256c0-35.3 28.7-64 64-64H80z" /></svg>
@@ -257,6 +366,78 @@ function onKeydown(e: KeyboardEvent) {
           <div v-for="t in typers" :key="t.userId" class="typer-row">{{ t.nick }}</div>
         </div>
       </button>
+
+      <!-- Меню канала: поиск / фото и видео / участники. -->
+      <div v-if="channelMenuOpen" class="channel-menu" @click.stop>
+        <template v-if="channelMenuTab === 'main'">
+          <button class="menu-item" @click="channelMenuTab = 'search'; nextTick(() => searchInputEl?.focus())">
+            <span class="mi-ico">🔍</span> Поиск сообщений
+          </button>
+          <button class="menu-item" @click="channelMenuTab = 'media'">
+            <span class="mi-ico">🖼</span> Фото и видео
+            <span class="mi-count">{{ mediaItems.length }}</span>
+          </button>
+          <button class="menu-item" @click="emit('toggle-participants'); closeChannelMenu()">
+            <span class="mi-ico">👥</span> Участники
+            <span class="mi-count">{{ channels.members.length }}</span>
+          </button>
+        </template>
+
+        <template v-else-if="channelMenuTab === 'search'">
+          <div class="menu-back">
+            <button class="back-btn" @click="channelMenuTab = 'main'">‹</button>
+            <input ref="searchInputEl" v-model="searchQuery" class="menu-search" placeholder="Поиск по сообщениям…" />
+          </div>
+          <div class="menu-list">
+            <p v-if="chat.searchBusy" class="muted center">Поиск…</p>
+            <p v-else-if="searchQuery && searchResults.length === 0" class="muted center">Ничего не найдено</p>
+            <p v-else-if="!searchQuery" class="muted center">Введите текст для поиска</p>
+            <div
+              v-for="m in searchResults"
+              :key="m.id"
+              class="search-row"
+              @contextmenu.prevent="menu = { x: $event.clientX, y: $event.clientY, msg: m }"
+            >
+              <div class="search-row-info">
+                <span class="search-row-nick">{{ m.senderNick }}</span>
+                <span class="search-row-text">{{ m.text || (m.attachment?.filename || '…') }}</span>
+              </div>
+              <span class="search-row-time">{{ new Date(m.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) }}</span>
+              <button class="jump-btn" title="Перейти к сообщению" @click="scrollToMessage(m.id)">⤴</button>
+            </div>
+          </div>
+        </template>
+
+        <template v-else>
+          <div class="menu-back">
+            <button class="back-btn" @click="channelMenuTab = 'main'">‹</button>
+            <span class="menu-title">Фото и видео</span>
+          </div>
+          <div class="media-grid">
+            <p v-if="mediaItems.length === 0" class="muted center">В этом чате нет фото и видео</p>
+            <div
+              v-for="m in mediaItems"
+              :key="m.id"
+              class="media-thumb"
+              :title="m.attachment?.filename"
+              @click="openMedia(m)"
+              @contextmenu.prevent="openMediaMenu($event, m)"
+            >
+              <img
+                v-if="m.attachment!.mime.startsWith('image/')"
+                class="media-img"
+                :src="m.localUrl || settings.api.fileUrl(m.attachment!.id)"
+                loading="lazy"
+                alt=""
+              />
+              <div v-else class="media-video">
+                <video :src="settings.api.fileUrl(m.attachment!.id)" muted preload="metadata"></video>
+                <span class="play-ico">▶</span>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
       <button
         v-if="channels.current?.private"
         class="icon-btn"
@@ -284,11 +465,20 @@ function onKeydown(e: KeyboardEvent) {
         :msg="m"
         :my-id="auth.user?.id || 0"
         :can-moderate="canModerate"
+        :highlight="m.id === highlightId"
         @contextmenu="(e) => openMenu(e, m)"
+        @reply="setReply(m)"
+        @jump="scrollToMessage"
       />
       <p v-if="messages.length === 0" class="muted empty">Сообщений пока нет</p>
     </div>
     <div class="chat-input">
+      <!-- Панель ответа на сообщение. -->
+      <div v-if="replyPreview" class="reply-bar">
+        <span class="reply-ico">↩</span>
+        <span class="reply-text"><b>{{ replyPreview.nick }}</b>: {{ replyPreview.text }}</span>
+        <button class="reply-cancel" title="Отменить ответ" @click="cancelReply">✕</button>
+      </div>
       <div v-if="uploading" class="uploading-hint">Загрузка {{ uploading.name }}…</div>
       <div class="input-pill">
         <input ref="fileInput" type="file" class="hidden-input" @change="onPickFile" />
@@ -322,12 +512,32 @@ function onKeydown(e: KeyboardEvent) {
     </div>
 
     <div v-if="menu.msg" class="ctx-menu" :style="{ left: menu.x + 'px', top: menu.y + 'px' }" @click.stop>
+      <button @click="replyFromMenu(menu.msg!)">Ответить</button>
       <button v-if="menu.msg.senderId === auth.user?.id" @click="startEdit(menu.msg!)">Изменить сообщение</button>
       <button v-if="menu.msg.senderId === auth.user?.id || canModerate" class="danger" @click="remove(menu.msg!)">
         Удалить сообщение
       </button>
       <button v-if="canModerate && menu.msg.original" @click="showOriginal(menu.msg!)">Показать оригинал сообщения</button>
     </div>
+
+    <!-- Контекстное меню фото/видео: переход к фото в чате. -->
+    <div
+      v-if="mediaMenu.msg"
+      class="ctx-menu"
+      :style="{ left: mediaMenu.x + 'px', top: mediaMenu.y + 'px' }"
+      @click.stop
+    >
+      <button @click="mediaJump(mediaMenu.msg!)">Перейти к фото</button>
+    </div>
+
+    <!-- Просмотр фото/видео из галереи. -->
+    <FileViewer
+      v-if="mediaViewer"
+      :src="mediaViewer.src"
+      :filename="mediaViewer.filename"
+      :video="mediaViewer.video"
+      @close="mediaViewer = null"
+    />
   </div>
 </template>
 
@@ -444,6 +654,225 @@ function onKeydown(e: KeyboardEvent) {
 }
 .typer-row:hover {
   background: var(--bg3);
+}
+/* Меню канала: поиск / фото и видео / участники. */
+.channel-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(400px, calc(100vw - 24px));
+  max-height: 60vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+  z-index: 120;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: picker-in 0.15s ease-out;
+}
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  background: transparent;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 14px;
+  text-align: left;
+}
+.menu-item:hover {
+  background: var(--bg3);
+}
+.mi-ico {
+  font-size: 16px;
+}
+.mi-count {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-dim);
+  background: var(--bg3);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+.menu-back {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px;
+}
+.menu-back .back-btn {
+  background: transparent;
+  border-radius: 8px;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  flex-shrink: 0;
+}
+.menu-back .back-btn:hover {
+  background: var(--bg3);
+}
+.menu-search {
+  flex: 1;
+  background: var(--bg3);
+  border-radius: 10px;
+  border: none;
+  padding: 8px 12px;
+  font-size: 14px;
+}
+.menu-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+.menu-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+.center {
+  text-align: center;
+  padding: 16px;
+  font-size: 13px;
+}
+.search-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.search-row:hover {
+  background: var(--bg3);
+}
+.search-row-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.search-row-nick {
+  font-size: 13px;
+  font-weight: 600;
+}
+.search-row-text {
+  font-size: 12.5px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.search-row-time {
+  font-size: 11px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+.jump-btn {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  flex-shrink: 0;
+  font-size: 14px;
+}
+.jump-btn:hover {
+  background: var(--accent-hover);
+}
+.media-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+  gap: 4px;
+  max-height: 46vh;
+  overflow-y: auto;
+  padding: 4px;
+}
+.media-thumb {
+  position: relative;
+  border-radius: 8px;
+  overflow: hidden;
+  aspect-ratio: 1;
+  cursor: pointer;
+  background: var(--bg3);
+}
+.media-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.media-video {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+.media-video video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.play-ico {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 20px;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+}
+/* Панель ответа на сообщение. */
+.reply-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg3);
+  border-radius: 10px;
+  padding: 6px 10px;
+  font-size: 12.5px;
+  min-width: 0;
+}
+.reply-ico {
+  flex-shrink: 0;
+}
+.reply-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+}
+.reply-text b {
+  color: var(--accent-hover);
+}
+.reply-cancel {
+  background: transparent;
+  color: var(--text-dim);
+  padding: 2px 8px;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+.reply-cancel:hover {
+  background: var(--bg4);
+  color: var(--text);
 }
 /* Круглые кнопки-иконки в шапке чата. */
 .icon-btn {

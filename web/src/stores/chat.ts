@@ -26,6 +26,7 @@ export interface ChatMessage {
   attachment?: Attachment | null
   // Локальный URL для мгновенного показа картинки до ответа сервера.
   localUrl?: string
+  replyToId?: number
 }
 
 export const useChatStore = defineStore('chat', {
@@ -40,6 +41,11 @@ export const useChatStore = defineStore('chat', {
     typers: new Map<number, Map<number, { nick: string; until: number }>>(),
     // Троттлинг отправки собственного события typing (ms).
     typingLastSent: 0 as number,
+    // Черновик ответа: { channelId, messageId } — показывается над полем ввода.
+    replyTo: null as { channelId: number; messageId: number } | null,
+    // Загружена ли вся история канала (больше страниц нет).
+    historyEnd: new Set<number>(),
+    searchBusy: false as boolean,
   }),
   getters: {
     unreadCount: (state) => (channelId: number) => state.unread.get(channelId) || 0,
@@ -76,6 +82,59 @@ export const useChatStore = defineStore('chat', {
         this.unread.set(channelId, 0)
       }
     },
+    // Загрузка следующей (более старой) страницы истории. Возвращает
+    // добавленные сообщения; false в конце истории.
+    async loadMore(channelId: number): Promise<ChatMessage[]> {
+      if (this.historyEnd.has(channelId)) return []
+      const settings = useSettingsStore()
+      const auth = useAuthStore()
+      const storage = await getKeyStorage()
+      const key = await storage.loadChannelKey(channelId)
+      const cur = this.messages.get(channelId) || []
+      const beforeId = cur.length > 0 ? cur[0].id : 0
+      const msgs: Message[] = await settings.api.listMessages(channelId, beforeId, 50)
+      const decrypted: ChatMessage[] = []
+      for (const m of msgs) {
+        decrypted.push(await this.toChatMessage(m, channelId, key, auth.user?.id || 0))
+      }
+      if (msgs.length < 50) this.historyEnd.add(channelId)
+      if (decrypted.length > 0) {
+        this.messages.set(channelId, [...decrypted, ...cur])
+      } else if (cur.length === 0) {
+        this.historyEnd.add(channelId)
+      }
+      return decrypted
+    },
+    // Поиск по расшифрованным сообщениям канала: догружает историю страницами
+    // до maxPages (или конца), ищет в тексте и именах вложений.
+    async searchMessages(channelId: number, query: string, maxPages = 12): Promise<ChatMessage[]> {
+      const q = query.trim().toLowerCase()
+      if (!q) return []
+      const matches: ChatMessage[] = []
+      const seen = new Set<number>()
+      this.searchBusy = true
+      try {
+        for (let page = 0; page < maxPages; page++) {
+          // Первый проход сканирует уже загруженную историю, дальше —
+          // догруженные страницы.
+          const batch =
+            page === 0 ? this.messages.get(channelId) || [] : await this.loadMore(channelId)
+          for (const m of batch) {
+            if (seen.has(m.id)) continue
+            seen.add(m.id)
+            if (m.encrypted || m.deleted || m.system) continue
+            if (m.text.toLowerCase().includes(q) || (m.attachment?.filename || '').toLowerCase().includes(q)) {
+              matches.push(m)
+            }
+          }
+          if (page > 0 && batch.length < 50) break // конец истории
+          if (matches.length >= 100) break
+        }
+      } finally {
+        this.searchBusy = false
+      }
+      return matches
+    },
     // Сообщить серверу, что печатаем (не чаще раза в 2.5 сек).
     typing(channelId: number) {
       const now = Date.now()
@@ -106,7 +165,7 @@ export const useChatStore = defineStore('chat', {
     },
     // Оптимистичная отправка: своё сообщение появляется сразу (pending),
     // затем заменяется ответом сервера; история НЕ перечитывается целиком.
-    async send(channelId: number, text: string, attachmentId = 0, localUrl?: string): Promise<boolean> {
+    async send(channelId: number, text: string, attachmentId = 0, replyToId = 0, localUrl?: string): Promise<boolean> {
       const settings = useSettingsStore()
       const storage = await getKeyStorage()
       const key = await storage.loadChannelKey(channelId)
@@ -126,11 +185,12 @@ export const useChatStore = defineStore('chat', {
         createdAt: new Date().toISOString(),
         pending: true,
         localUrl,
+        replyToId: replyToId || undefined,
       }
       const list = this.messages.get(channelId) || []
       this.messages.set(channelId, [...list, pending])
       try {
-        const res: Message = await settings.api.sendMessage(channelId, ciphertext, iv, attachmentId)
+        const res: Message = await settings.api.sendMessage(channelId, ciphertext, iv, attachmentId, replyToId)
         const real = await this.toChatMessage(res, channelId, key, auth.user?.id || 0)
         // Локальный предпросмотр больше не нужен — освобождаем blob.
         if (localUrl) URL.revokeObjectURL(localUrl)
@@ -264,6 +324,7 @@ export const useChatStore = defineStore('chat', {
         createdAt: m.created_at,
         editedAt: m.edited_at,
         attachment: m.attachment || null,
+        replyToId: m.reply_to || undefined,
       }
       // Удалённые сообщения скрываются у простых пользователей.
       if (m.deleted && !this.canSeeDeleted()) {
