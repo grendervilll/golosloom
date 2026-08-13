@@ -28,6 +28,7 @@ class AppSettings {
   static const _serverKey = 'server_url';
   static const _tokenKey = 'auth_token';
   static const _userKey = 'auth_user';
+  static const _darkKey = 'dark_theme';
 
   final SharedPreferences _prefs;
   AppSettings(this._prefs);
@@ -35,6 +36,10 @@ class AppSettings {
   String? get serverUrl => _prefs.getString(_serverKey);
   String? get token => _prefs.getString(_tokenKey);
   StoredUser? get user => StoredUser.fromJson(jsonDecode(_prefs.getString(_userKey) ?? 'null'));
+
+  /// Тёмная тема (по умолчанию — светлая); выбор запоминается.
+  bool get darkTheme => _prefs.getBool(_darkKey) ?? false;
+  Future<void> setDarkTheme(bool v) => _prefs.setBool(_darkKey, v);
 
   Future<void> setServerUrl(String url) => _prefs.setString(_serverKey, url);
 

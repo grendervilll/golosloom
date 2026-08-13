@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../api_client.dart';
 import '../settings.dart';
+import '../theme.dart';
 
 class LoginScreen extends StatefulWidget {
   final AppSettings settings;
@@ -89,121 +90,136 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    const bg = Color(0xFF1E1F22);
-    const cardBg = Color(0xFF2B2D31);
-    const accent = Color(0xFF5865F2);
-    const text = Color(0xFFDBDEE1);
-    const dim = Color(0xFF949BA4);
+    final colors = AppColors.of(context);
+    final text = colors.text;
+    final dim = colors.textDim;
+    final accent = colors.accent;
 
     return Scaffold(
-      backgroundColor: bg,
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 400),
-            child: Container(
-              padding: const EdgeInsets.all(28),
-              decoration: BoxDecoration(
-                color: cardBg,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: const Color(0xFF26282C)),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Text('Golosloom',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: text)),
-                  const SizedBox(height: 4),
-                  Text(_registerMode ? 'Регистрация' : 'Вход на сервер',
-                      textAlign: TextAlign.center, style: const TextStyle(color: dim)),
-                  const SizedBox(height: 20),
-                  if (_serverUrl.isEmpty) ...[
-                    TextField(
-                      controller: _serverCtrl,
-                      style: const TextStyle(color: text),
-                      decoration: const InputDecoration(
-                        labelText: 'Адрес сервера',
-                        labelStyle: TextStyle(color: dim),
-                        hintText: 'https://golosloom.example.com',
-                        hintStyle: TextStyle(color: Color(0xFF6D6F78)),
-                        filled: true,
-                        fillColor: Color(0xFF1E1F22),
+      backgroundColor: colors.bg,
+      body: Stack(
+        children: [
+          Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 400),
+                child: Container(
+                  padding: const EdgeInsets.all(28),
+                  decoration: BoxDecoration(
+                    color: colors.surface,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: colors.border),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text('Golosloom',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: text)),
+                      const SizedBox(height: 4),
+                      Text('Мессенджер со звонками',
+                          textAlign: TextAlign.center, style: TextStyle(color: dim, fontSize: 13)),
+                      const SizedBox(height: 20),
+                      if (_serverUrl.isEmpty) ...[
+                        TextField(
+                          controller: _serverCtrl,
+                          style: TextStyle(color: text),
+                          decoration: InputDecoration(
+                            labelText: 'Адрес сервера',
+                            labelStyle: TextStyle(color: dim),
+                            hintText: 'https://golosloom.example.com',
+                            hintStyle: TextStyle(color: dim),
+                            fillColor: colors.bubbleIn,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        FilledButton(
+                          style: FilledButton.styleFrom(backgroundColor: accent),
+                          onPressed: _loadConfig,
+                          child: const Text('Подключиться'),
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+                      TextField(
+                        controller: _nickCtrl,
+                        style: TextStyle(color: text),
+                        decoration: InputDecoration(
+                          labelText: 'Ник',
+                          labelStyle: TextStyle(color: dim),
+                          fillColor: colors.bubbleIn,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    FilledButton(
-                      style: FilledButton.styleFrom(backgroundColor: accent),
-                      onPressed: _loadConfig,
-                      child: const Text('Подключиться'),
-                    ),
-                    const SizedBox(height: 16),
-                  ],
-                  TextField(
-                    controller: _nickCtrl,
-                    style: const TextStyle(color: text),
-                    decoration: const InputDecoration(
-                      labelText: 'Ник',
-                      labelStyle: TextStyle(color: dim),
-                      filled: true,
-                      fillColor: Color(0xFF1E1F22),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _passCtrl,
-                    obscureText: true,
-                    style: const TextStyle(color: text),
-                    decoration: const InputDecoration(
-                      labelText: 'Пароль',
-                      labelStyle: TextStyle(color: dim),
-                      filled: true,
-                      fillColor: Color(0xFF1E1F22),
-                    ),
-                  ),
-                  if (_registerMode) ...[
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: _inviteCtrl,
-                      style: const TextStyle(color: text),
-                      decoration: const InputDecoration(
-                        labelText: 'Приглашение (если регистрация запрещена)',
-                        labelStyle: TextStyle(color: dim),
-                        filled: true,
-                        fillColor: Color(0xFF1E1F22),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: _passCtrl,
+                        obscureText: true,
+                        style: TextStyle(color: text),
+                        decoration: InputDecoration(
+                          labelText: 'Пароль',
+                          labelStyle: TextStyle(color: dim),
+                          fillColor: colors.bubbleIn,
+                        ),
                       ),
-                    ),
-                  ],
-                  if (_error != null) ...[
-                    const SizedBox(height: 12),
-                    Text(_error!, style: const TextStyle(color: Color(0xFFDA373C))),
-                  ],
-                  const SizedBox(height: 16),
-                  FilledButton(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: accent,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                    ),
-                    onPressed: _busy ? null : _submit,
-                    child: Text(_busy ? 'Подождите…' : (_registerMode ? 'Зарегистрироваться' : 'Войти')),
+                      if (_registerMode) ...[
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: _inviteCtrl,
+                          style: TextStyle(color: text),
+                          decoration: InputDecoration(
+                            labelText: 'Приглашение (если регистрация запрещена)',
+                            labelStyle: TextStyle(color: dim),
+                            fillColor: colors.bubbleIn,
+                          ),
+                        ),
+                      ],
+                      if (_error != null) ...[
+                        const SizedBox(height: 12),
+                        Text(_error!, style: TextStyle(color: colors.danger)),
+                      ],
+                      const SizedBox(height: 16),
+                      FilledButton(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: accent,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                        onPressed: _busy ? null : _submit,
+                        child: Text(_busy ? 'Подождите…' : (_registerMode ? 'Зарегистрироваться' : 'Войти')),
+                      ),
+                      TextButton(
+                        onPressed: _busy
+                            ? null
+                            : () => setState(() {
+                                  _registerMode = !_registerMode;
+                                  _error = null;
+                                }),
+                        child: Text(_registerMode ? 'Уже есть аккаунт? Войти' : 'Нет аккаунта? Зарегистрироваться',
+                            style: TextStyle(color: dim)),
+                      ),
+                    ],
                   ),
-                  TextButton(
-                    onPressed: _busy
-                        ? null
-                        : () => setState(() {
-                              _registerMode = !_registerMode;
-                              _error = null;
-                            }),
-                    child: Text(_registerMode ? 'Уже есть аккаунт? Войти' : 'Нет аккаунта? Зарегистрироваться',
-                        style: const TextStyle(color: dim)),
-                  ),
-                ],
+                ),
               ),
             ),
           ),
-        ),
+          // Переключатель темы (светлая/тёмная, запоминается).
+          Positioned(
+            top: 8,
+            right: 8,
+            child: IconButton(
+              tooltip: widget.settings.darkTheme ? 'Светлая тема' : 'Тёмная тема',
+              icon: Icon(
+                widget.settings.darkTheme ? Icons.light_mode : Icons.dark_mode,
+                color: dim,
+              ),
+              onPressed: () async {
+                await widget.settings.setDarkTheme(!widget.settings.darkTheme);
+                if (mounted) setState(() {});
+              },
+            ),
+          ),
+        ],
       ),
     );
   }

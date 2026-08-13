@@ -54,6 +54,7 @@ class ChatMessage {
 class ChatStore extends ChangeNotifier {
   final Session session;
   final Map<int, List<ChatMessage>> _byChannel = {};
+  final Map<int, int> _unread = {};
   final Set<int> _loadingOlder = {};
   StreamSubscription<WsEvent>? _sub;
   int _lastTempId = 0;
@@ -63,6 +64,21 @@ class ChatStore extends ChangeNotifier {
   }
 
   List<ChatMessage> messages(int channelId) => _byChannel[channelId] ?? const [];
+
+  /// Непрочитанные сообщения канала (сбрасываются при открытии/загрузке).
+  int unread(int channelId) => _unread[channelId] ?? 0;
+
+  /// Последнее сообщение канала (для превью в списке чатов).
+  Future<ChatMessage?> fetchLast(int channelId) async {
+    try {
+      final raw = (await session.api.messages(channelId, limit: 1))
+          .cast<Map<String, dynamic>>();
+      if (raw.isEmpty) return null;
+      return await _toMessage(raw.first);
+    } catch (_) {
+      return null;
+    }
+  }
 
   @override
   void dispose() {
@@ -74,6 +90,7 @@ class ChatStore extends ChangeNotifier {
 
   Future<void> loadHistory(int channelId, {bool force = false}) async {
     if (!force && (_byChannel[channelId]?.isNotEmpty ?? false)) return;
+    _unread[channelId] = 0; // канал открыт — прочитан
     try {
       final raw = (await session.api.messages(channelId)).cast<Map<String, dynamic>>();
       final list = <ChatMessage>[];
@@ -190,6 +207,10 @@ class ChatStore extends ChangeNotifier {
     final list = _byChannel[ch] ?? [];
     if (list.any((x) => x.id == m.id)) return;
     _byChannel[ch] = [...list, m];
+    // Непрочитанное: чужое сообщение в канал, который сейчас не открыт.
+    if (ch != session.currentChannelId && m.senderId != session.settings.user?.id) {
+      _unread[ch] = (_unread[ch] ?? 0) + 1;
+    }
     // Звук на чужое сообщение в открытом канале.
     if (ch == session.currentChannelId && m.senderId != session.settings.user?.id) {
       AppSounds().message();

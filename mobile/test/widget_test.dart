@@ -13,6 +13,6 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Golosloom'), findsOneWidget);
-    expect(find.text('Вход на сервер'), findsOneWidget);
+    expect(find.text('Мессенджер со звонками'), findsOneWidget);
   });
 }

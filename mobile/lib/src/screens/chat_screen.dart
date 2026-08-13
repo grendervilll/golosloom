@@ -1,4 +1,5 @@
-// Экран чата: история (пагинация), отправка, правка/удаление по долгому нажатию.
+// Экран чата (по макету active-chat): шапка с аватаром и статусом,
+// пузыри сообщений, поле ввода-капсула с кнопкой отправки.
 library;
 
 import 'package:flutter/material.dart';
@@ -6,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../call_service.dart';
 import '../chat_store.dart';
 import '../session.dart';
+import '../theme.dart';
 import 'call_picker.dart';
 import 'call_screen.dart';
 
@@ -128,12 +130,11 @@ class _ChatScreenState extends State<ChatScreen> {
       await showDialog<void>(
         context: context,
         builder: (ctx) => AlertDialog(
-          backgroundColor: const Color(0xFF2B2D31),
           title: Text(isBusy ? '👤 Пользователь занят' : 'Не удалось позвонить'),
-          content: Text(err, style: const TextStyle(color: Color(0xFFDBDEE1))),
+          content: Text(err),
           actions: [
             FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: const Color(0xFF5865F2)),
+              style: FilledButton.styleFrom(backgroundColor: AppColors.of(ctx).accent),
               onPressed: () => Navigator.pop(ctx),
               child: const Text('Ок'),
             ),
@@ -141,6 +142,47 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       );
     }
+  }
+
+  /// Инфо о канале (по макету contact-profile): аватар, имя, ID, звонок.
+  Future<void> _showInfo() async {
+    final colors = AppColors.of(context);
+    final name = (widget.channel['name'] as String?) ?? '?';
+    final created = widget.channel['created_at'] as String?;
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _LetterAvatar(name: name, size: 100),
+              const SizedBox(height: 16),
+              Text(name, textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 4),
+              Text('Канал · ID: $_channelId', style: TextStyle(color: colors.textDim, fontSize: 14)),
+              if (created != null)
+                Text(
+                  'Создан: ${DateTime.tryParse(created)?.toLocal().toString().substring(0, 10) ?? ''}',
+                  style: TextStyle(color: colors.textDim, fontSize: 13),
+                ),
+              const SizedBox(height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _QuickAction(icon: Icons.call, label: 'Звонок', onTap: () {
+                    Navigator.pop(ctx);
+                    _startCall();
+                  }),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   void _startEdit(ChatMessage m) {
@@ -152,23 +194,23 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _onLongPress(ChatMessage m) async {
+    final colors = AppColors.of(context);
     final myId = widget.session.settings.user?.id;
     if (m.senderId != myId) return;
     final action = await showModalBottomSheet<String>(
       context: context,
-      backgroundColor: const Color(0xFF2B2D31),
       builder: (ctx) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.edit, color: Color(0xFFDBDEE1)),
-              title: const Text('Изменить сообщение', style: TextStyle(color: Color(0xFFDBDEE1))),
+              leading: const Icon(Icons.edit),
+              title: const Text('Изменить сообщение'),
               onTap: () => Navigator.pop(ctx, 'edit'),
             ),
             ListTile(
-              leading: const Icon(Icons.delete, color: Color(0xFFDA373C)),
-              title: const Text('Удалить сообщение', style: TextStyle(color: Color(0xFFDA373C))),
+              leading: Icon(Icons.delete, color: colors.danger),
+              title: Text('Удалить сообщение', style: TextStyle(color: colors.danger)),
               onTap: () => Navigator.pop(ctx, 'delete'),
             ),
           ],
@@ -185,22 +227,46 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    const text = Color(0xFFDBDEE1);
-    const dim = Color(0xFF949BA4);
-    const accent = Color(0xFF5865F2);
-    const panel = Color(0xFF2B2D31);
-
+    final colors = AppColors.of(context);
     final messages = widget.chat.messages(_channelId);
     final channelName = (widget.channel['name'] as String?) ?? '?';
 
     return Scaffold(
-      backgroundColor: const Color(0xFF1E1F22),
+      backgroundColor: colors.bg,
       appBar: AppBar(
-        backgroundColor: panel,
-        title: Text('# $channelName', style: const TextStyle(color: text, fontSize: 18)),
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back, color: colors.text),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        titleSpacing: 0,
+        title: InkWell(
+          onTap: _showInfo,
+          borderRadius: BorderRadius.circular(10),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+            child: Row(
+              children: [
+                _LetterAvatar(name: channelName, size: 36),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(channelName,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                      Text('ID: $_channelId',
+                          style: TextStyle(color: colors.online, fontSize: 12)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.call, color: Color(0xFF23A55A)),
+            icon: Icon(Icons.call, color: colors.online),
             tooltip: 'Позвонить участникам канала',
             onPressed: _startCall,
           ),
@@ -216,64 +282,72 @@ class _ChatScreenState extends State<ChatScreen> {
               itemBuilder: (ctx, i) {
                 final m = messages[i];
                 final mine = m.senderId == widget.session.settings.user?.id;
-                return _MessageItem(m: m, mine: mine, onLongPress: () => _onLongPress(m));
+                return _MessageBubble(m: m, mine: mine, onLongPress: () => _onLongPress(m));
               },
             ),
           ),
           if (_sendError != null)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Text(_sendError!, style: const TextStyle(color: Color(0xFFDA373C), fontSize: 12)),
+              child: Text(_sendError!, style: TextStyle(color: colors.danger, fontSize: 12)),
             ),
           if (_editingId != null)
             Container(
               width: double.infinity,
-              color: const Color(0xFF383A40),
+              color: colors.surface,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               child: Row(
                 children: [
-                  const Expanded(
-                    child: Text('Редактирование сообщения', style: TextStyle(color: dim, fontSize: 13)),
+                  Expanded(
+                    child: Text('Редактирование сообщения', style: TextStyle(color: colors.textDim, fontSize: 13)),
                   ),
                   TextButton(
                     onPressed: () {
                       setState(() => _editingId = null);
                       _input.clear();
                     },
-                    child: const Text('Отмена', style: TextStyle(color: dim)),
+                    child: Text('Отмена', style: TextStyle(color: colors.textDim)),
                   ),
                 ],
               ),
             ),
           Container(
-            color: panel,
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+            color: colors.surface,
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 14),
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Expanded(
                   child: TextField(
                     controller: _input,
                     minLines: 1,
                     maxLines: 4,
-                    style: const TextStyle(color: text),
+                    style: TextStyle(color: colors.text, fontSize: 15),
                     decoration: InputDecoration(
-                      hintText: _editingId != null ? 'Редактирование…' : 'Сообщение в канал…',
-                      hintStyle: const TextStyle(color: dim),
-                      filled: true,
-                      fillColor: const Color(0xFF1E1F22),
+                      hintText: _editingId != null ? 'Редактирование…' : 'Сообщение…',
+                      hintStyle: TextStyle(color: colors.textDim),
+                      fillColor: colors.bubbleIn,
                       isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
                     ),
                     onSubmitted: (_) => _send(),
                     onChanged: (_) => setState(() {}),
                   ),
                 ),
                 const SizedBox(width: 8),
-                IconButton(
-                  icon: const Icon(Icons.send, color: Colors.white),
-                  style: IconButton.styleFrom(backgroundColor: accent, disabledBackgroundColor: accent.withValues(alpha: 0.5)),
-                  onPressed: _input.text.trim().isEmpty ? null : _send,
+                // Круглая кнопка отправки (как в макете).
+                SizedBox(
+                  width: 44,
+                  height: 44,
+                  child: IconButton(
+                    padding: EdgeInsets.zero,
+                    icon: const Icon(Icons.send, color: Colors.white, size: 20),
+                    style: IconButton.styleFrom(
+                      backgroundColor: colors.accent,
+                      disabledBackgroundColor: colors.accent.withValues(alpha: 0.4),
+                    ),
+                    onPressed: _input.text.trim().isEmpty ? null : _send,
+                  ),
                 ),
               ],
             ),
@@ -284,70 +358,156 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 }
 
-class _MessageItem extends StatelessWidget {
+/// Пузырь сообщения: свои — синие справа, чужие — серые слева.
+class _MessageBubble extends StatelessWidget {
   final ChatMessage m;
   final bool mine;
   final VoidCallback onLongPress;
 
-  const _MessageItem({required this.m, required this.mine, required this.onLongPress});
+  const _MessageBubble({required this.m, required this.mine, required this.onLongPress});
 
   @override
   Widget build(BuildContext context) {
-    const text = Color(0xFFDBDEE1);
-    const dim = Color(0xFF949BA4);
-
+    final colors = AppColors.of(context);
     final time = '${m.createdAt.hour.toString().padLeft(2, '0')}:${m.createdAt.minute.toString().padLeft(2, '0')}';
 
     String body;
-    var bodyStyle = const TextStyle(color: text, fontSize: 15);
+    var bodyStyle = TextStyle(color: mine ? Colors.white : colors.text, fontSize: 15, height: 1.35);
     if (m.pending) {
       body = m.text ?? '';
-      bodyStyle = const TextStyle(color: dim, fontStyle: FontStyle.italic, fontSize: 15);
+      bodyStyle = TextStyle(color: colors.textDim, fontStyle: FontStyle.italic, fontSize: 15);
     } else if (m.deleted) {
       body = 'Сообщение удалено';
-      bodyStyle = const TextStyle(color: dim, fontStyle: FontStyle.italic, fontSize: 15);
+      bodyStyle = TextStyle(color: colors.textDim, fontStyle: FontStyle.italic, fontSize: 15);
     } else if (m.encrypted) {
       body = '🔒 Сообщение зашифровано (ключ канала недоступен)';
-      bodyStyle = const TextStyle(color: dim, fontStyle: FontStyle.italic, fontSize: 15);
+      bodyStyle = TextStyle(color: colors.textDim, fontStyle: FontStyle.italic, fontSize: 15);
     } else {
       body = m.text ?? '';
     }
 
-    return InkWell(
-      onLongPress: mine ? onLongPress : null,
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 3),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.baseline,
-              textBaseline: TextBaseline.alphabetic,
+    final bubble = Container(
+      constraints: const BoxConstraints(maxWidth: 300),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+        color: mine ? colors.bubbleOut : colors.bubbleIn,
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(mine ? 16 : 4),
+          topRight: Radius.circular(mine ? 4 : 16),
+          bottomLeft: const Radius.circular(16),
+          bottomRight: const Radius.circular(16),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (!mine)
+            Text(
+              m.senderNick,
+              style: TextStyle(
+                color: colors.accent,
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+              ),
+            ),
+          Text(body, style: bodyStyle),
+          const SizedBox(height: 3),
+          Align(
+            alignment: Alignment.centerRight,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Flexible(
-                  child: Text(
-                    m.senderNick,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: mine ? const Color(0xFF5865F2) : const Color(0xFF23A55A),
-                      fontWeight: FontWeight.w700,
-                      fontSize: 14,
-                    ),
+                Text(
+                  time,
+                  style: TextStyle(
+                    color: mine ? Colors.white.withValues(alpha: 0.8) : colors.textDim,
+                    fontSize: 10,
                   ),
                 ),
-                const SizedBox(width: 6),
-                Text(time, style: const TextStyle(color: dim, fontSize: 11)),
-                if (m.edited) const Padding(
-                  padding: EdgeInsets.only(left: 6),
-                  child: Text('(изменено)', style: TextStyle(color: dim, fontSize: 11)),
-                ),
+                if (mine)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 3),
+                    child: Icon(
+                      m.pending ? Icons.schedule : Icons.done_all,
+                      color: Colors.white.withValues(alpha: 0.8),
+                      size: 13,
+                    ),
+                  ),
               ],
             ),
-            Padding(
-              padding: const EdgeInsets.only(top: 1),
-              child: Text(body, style: bodyStyle),
+          ),
+        ],
+      ),
+    );
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        mainAxisAlignment: mine ? MainAxisAlignment.end : MainAxisAlignment.start,
+        children: [
+          InkWell(
+            onLongPress: mine ? onLongPress : null,
+            borderRadius: BorderRadius.circular(16),
+            child: bubble,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LetterAvatar extends StatelessWidget {
+  final String name;
+  final double size;
+
+  const _LetterAvatar({required this.name, required this.size});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    final letter = name.isEmpty ? '?' : name[0].toUpperCase();
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(color: colors.accent, shape: BoxShape.circle),
+      alignment: Alignment.center,
+      child: Text(
+        letter,
+        style: TextStyle(color: Colors.white, fontSize: size * 0.5, fontWeight: FontWeight.w700),
+      ),
+    );
+  }
+}
+
+class _QuickAction extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _QuickAction({required this.icon, required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: colors.accent.withValues(alpha: 0.08),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: colors.accent, size: 22),
             ),
+            const SizedBox(height: 8),
+            Text(label, style: TextStyle(color: colors.accent, fontSize: 12, fontWeight: FontWeight.w600)),
           ],
         ),
       ),

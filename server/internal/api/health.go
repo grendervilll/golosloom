@@ -15,7 +15,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"status":     "ok",
-		"version":    "1.2.5",
+		"version":    "2.0.0",
 		"uptime_sec": int64(time.Since(s.startedAt).Seconds()),
 	})
 }

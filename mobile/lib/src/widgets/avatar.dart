@@ -58,10 +58,11 @@ class _LetterAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final accent = Theme.of(context).colorScheme.primary;
     return Container(
       width: size,
       height: size,
-      color: const Color(0xFF5865F2),
+      color: accent,
       alignment: Alignment.center,
       child: Text(
         letter,
