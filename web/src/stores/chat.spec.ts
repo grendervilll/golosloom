@@ -242,6 +242,18 @@ describe('чат', () => {
     expect(msgs[0].id).toBe(1000)
   })
 
+  it('печатающие: добавляет чужих, игнорирует себя, сортирует по нику', () => {
+    setup(1)
+    const chat = useChatStore()
+    chat.handleTyping({ channel_id: 10, user_id: 2, nick: 'bob' })
+    chat.handleTyping({ channel_id: 10, user_id: 1, nick: 'u1' }) // себя — игнор
+    chat.handleTyping({ channel_id: 10, user_id: 3, nick: 'alice' })
+    const names = chat.typingUsers(10).map((x) => x.nick)
+    expect(names).toEqual(['alice', 'bob'])
+    // Другой канал — пусто.
+    expect(chat.typingUsers(11)).toEqual([])
+  })
+
   it('расшифровывает приходящие сообщения', async () => {
     setup(1)
     const storage = await getKeyStorage()

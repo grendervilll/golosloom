@@ -33,9 +33,26 @@ export const useChatStore = defineStore('chat', {
     // Непрочитанные сообщения по каналам (локальный счётчик, сбрасывается
     // при открытии канала).
     unread: new Map<number, number>(),
+    // «Печатает…»: channel_id → user_id → { nick, until }. Устаревают по таймеру.
+    typers: new Map<number, Map<number, { nick: string; until: number }>>(),
+    // Троттлинг отправки собственного события typing (ms).
+    typingLastSent: 0 as number,
   }),
   getters: {
     unreadCount: (state) => (channelId: number) => state.unread.get(channelId) || 0,
+    // Список печатающих в канале (актуальные, без себя): user_id → nick.
+    typingUsers: (state) => {
+      return (channelId: number): { userId: number; nick: string }[] => {
+        const now = Date.now()
+        const map = state.typers.get(channelId)
+        if (!map) return []
+        const out: { userId: number; nick: string }[] = []
+        for (const [userId, t] of map) {
+          if (t.until > now) out.push({ userId, nick: t.nick })
+        }
+        return out.sort((a, b) => a.nick.localeCompare(b.nick))
+      }
+    },
   },
   actions: {
     async loadHistory(channelId: number) {
@@ -55,6 +72,34 @@ export const useChatStore = defineStore('chat', {
       if (this.unread.get(channelId)) {
         this.unread.set(channelId, 0)
       }
+    },
+    // Сообщить серверу, что печатаем (не чаще раза в 2.5 сек).
+    typing(channelId: number) {
+      const now = Date.now()
+      if (now - this.typingLastSent < 2500) return
+      this.typingLastSent = now
+      const auth = useAuthStore()
+      auth.ws.send('typing', { channel_id: channelId })
+    },
+    // Событие «печатает…» от другого пользователя.
+    handleTyping(data: { channel_id: number; user_id: number; nick: string }) {
+      const auth = useAuthStore()
+      if (data.user_id === auth.user?.id) return
+      const byChannel = this.typers.get(data.channel_id) || new Map()
+      const until = Date.now() + 5000
+      const prev = byChannel.get(data.user_id)
+      // Обновление не двигает пользователя в конец списка (сортировка по нику).
+      byChannel.set(data.user_id, { nick: data.nick, until: prev && prev.until > until ? prev.until : until })
+      this.typers.set(data.channel_id, new Map(byChannel))
+      // Авто-удаление по истечении срока.
+      setTimeout(() => {
+        const m = this.typers.get(data.channel_id)
+        if (!m) return
+        if ((m.get(data.user_id)?.until || 0) <= Date.now()) {
+          m.delete(data.user_id)
+          this.typers.set(data.channel_id, new Map(m))
+        }
+      }, 5100)
     },
     // Оптимистичная отправка: своё сообщение появляется сразу (pending),
     // затем заменяется ответом сервера; история НЕ перечитывается целиком.

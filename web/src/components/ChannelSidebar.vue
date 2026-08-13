@@ -36,20 +36,11 @@ const settings = useSettingsStore()
 const menuOpen = ref(false)
 const search = ref('')
 const avatarInput = ref<HTMLInputElement | null>(null)
-const avatarMenuOpen = ref(false)
 
 function toggleTheme() {
   settings.setTheme(settings.theme === 'dark' ? 'light' : 'dark')
 }
 
-function closeAvatarMenu() {
-  avatarMenuOpen.value = false
-}
-function openAvatarMenu() {
-  avatarMenuOpen.value = !avatarMenuOpen.value
-}
-// Клик мимо — закрываем меню аватара.
-window.addEventListener('click', closeAvatarMenu)
 const newChannelName = ref('')
 const newChannelPrivate = ref(false)
 const showCreate = ref(false)
@@ -133,17 +124,8 @@ async function declineInvite(id: number) {
 }
 
 // Смена/удаление своего аватара (ограничение сервера — 5 МБ).
-function onAvatarMenu(action: string) {
-  avatarMenuOpen.value = false
-  if (action === 'set') {
-    avatarInput.value?.click()
-  } else if (action === 'remove') {
-    if (!auth.user?.avatar) {
-      toast.error('У вас не установлен аватар')
-      return
-    }
-    void removeAvatar()
-  }
+function changeAvatarClick() {
+  avatarInput.value?.click()
 }
 
 async function changeAvatar(e: Event) {
@@ -195,6 +177,20 @@ async function removeAvatar() {
     </div>
 
     <div v-if="menuOpen" class="server-menu">
+      <div class="menu-user">
+        <input ref="avatarInput" type="file" accept="image/*" class="hidden-input" @change="changeAvatar" />
+        <button class="user-avatar" title="Сменить аватар" @click="changeAvatarClick">
+          <Avatar :user-id="auth.user?.id || 0" :nick="auth.user?.nick || '?'" :avatar="auth.user?.avatar" :size="38" />
+        </button>
+        <div class="user-info">
+          <b>{{ auth.user?.nick }}</b>
+          <span class="muted">ID: {{ auth.user?.id }}</span>
+        </div>
+        <button v-if="auth.user?.avatar" class="icon-btn avatar-del" title="Удалить аватар" @click="removeAvatar()">
+          <svg class="ico" viewBox="0 0 448 512"><path d="M135.2 17.7L128 32 32 32C14.3 32 0 46.3 0 64S14.3 96 32 96l384 0c17.7 0 32-14.3 32-32s-14.3-32-32-32l-96 0-7.2-14.3C307.4 6.8 296.3 0 284.2 0L163.8 0c-12.1 0-23.2 6.8-28.6 17.7zM416 128L32 128 53.2 467c1.6 25.3 22.6 45 47.9 45l306 0c25.3 0 46.3-19.7 47.9-45L416 128z" /></svg>
+        </button>
+      </div>
+      <div class="menu-divider"></div>
       <button v-if="auth.isServerAdmin" @click="emit('open-admin')">
         <svg class="ico" viewBox="0 0 512 512"><path d="M256 0c4.6 0 9.2 1 13.4 2.9L457.7 82.8c22 9.3 38.4 31 38.3 57.2c-.5 99.2-41.3 280.7-213.6 363.2c-16.7 8-36.1 8-52.8 0C57.3 420.7 16.5 239.2 16 140c-.1-26.2 16.3-47.9 38.3-57.2L242.7 2.9C246.8 1 251.4 0 256 0zm0 66.8l0 378.1C394 378 431.1 230.1 432 141.4L256 66.8s0 0 0 0z" /></svg>
         Админ панель сервера
@@ -254,23 +250,6 @@ async function removeAvatar() {
         <div class="row">
           <button class="success" @click="acceptInvite(inv.id)">Принять</button>
           <button @click="declineInvite(inv.id)">Отклонить</button>
-        </div>
-      </div>
-    </div>
-
-    <div class="sidebar-footer">
-      <div class="user-chip">
-        <input ref="avatarInput" type="file" accept="image/*" class="hidden-input" @change="changeAvatar" />
-        <div class="avatar-menu" @click.stop="avatarMenuOpen = !avatarMenuOpen">
-          <Avatar :user-id="auth.user?.id || 0" :nick="auth.user?.nick || '?'" :avatar="auth.user?.avatar" :size="32" />
-          <div v-if="avatarMenuOpen" class="avatar-dropdown" @click.stop>
-            <button @click.stop="onAvatarMenu('set')">📷 Установить аватар</button>
-            <button class="danger" @click.stop="onAvatarMenu('remove')">🗑 Удалить аватар</button>
-          </div>
-        </div>
-        <div class="user-info">
-          <b>{{ auth.user?.nick }}</b>
-          <span class="muted">ID: {{ auth.user?.id }}</span>
         </div>
       </div>
     </div>
@@ -542,55 +521,42 @@ async function removeAvatar() {
   gap: 8px;
   margin-top: 8px;
 }
-.sidebar-footer {
-  height: 64px;
-  padding: 0 12px;
-  background: var(--bg);
-  border-top: 1px solid var(--border);
+/* Пользователь в меню бургера: отдельно от остальных кнопок. */
+.menu-user {
   display: flex;
   align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+}
+.user-avatar {
+  background: transparent;
+  border-radius: 50%;
+  padding: 0;
   flex-shrink: 0;
 }
-.user-chip {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.avatar-menu {
-  position: relative;
-  display: inline-flex;
-  cursor: pointer;
-}
-.hidden-input {
-  display: none;
-}
-.avatar-dropdown {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 0;
-  z-index: 60;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 6px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 190px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-}
-.avatar-dropdown button {
-  text-align: left;
+.user-avatar:hover {
   background: transparent;
-  border-radius: 6px;
-  font-size: 13px;
-  padding: 8px 10px;
+  opacity: 0.85;
 }
-.avatar-dropdown button:hover {
+.avatar-del {
+  margin-left: auto;
+  background: transparent;
+}
+.avatar-del .ico {
+  width: 14px;
+  height: 14px;
+  fill: var(--text-dim);
+}
+.avatar-del:hover {
   background: var(--bg3);
 }
-.avatar-dropdown button.danger {
-  color: var(--red);
+.avatar-del:hover .ico {
+  fill: var(--red);
+}
+.menu-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 2px 12px 8px;
 }
 .user-info {
   display: flex;
@@ -602,6 +568,9 @@ async function removeAvatar() {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.hidden-input {
+  display: none;
 }
 .check {
   display: flex;
@@ -671,9 +640,6 @@ async function removeAvatar() {
   }
   .invite-card {
     flex: none;
-  }
-  .sidebar-footer {
-    display: flex;
   }
   .empty {
     display: block;

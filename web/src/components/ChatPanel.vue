@@ -31,6 +31,31 @@ const canCreateRegInvite = computed(
   () => auth.isServerAdmin || channels.currentRole === 'channel_admin',
 )
 
+// --- «Печатает…» ---
+const typers = ref<{ userId: number; nick: string }[]>([])
+watch(
+  () => chat.typingUsers(channels.currentId),
+  (v) => (typers.value = v),
+  { deep: true },
+)
+const typingSummary = computed(() => {
+  const t = typers.value
+  if (t.length === 0) return ''
+  const visible = t.slice(0, 4).map((x) => x.nick).join(', ')
+  const verb = t.length === 1 ? 'печатает' : 'печатают'
+  if (t.length > 4) {
+    const rest = t.length - 4
+    return `${visible} и ещё ${rest} ${rest === 1 ? 'печатает' : 'печатают'}…`
+  }
+  return `${visible} ${verb}…`
+})
+const showTypersList = ref(false)
+// Список печатающих раскрывается вверх (открытая шторка).
+function toggleTypersList() {
+  if (typers.value.length <= 4) return
+  showTypersList.value = !showTypersList.value
+}
+
 async function scrollBottom() {
   await nextTick()
   if (listEl.value) listEl.value.scrollTop = listEl.value.scrollHeight
@@ -57,8 +82,14 @@ watch(
   () => channels.currentId,
   (id) => {
     if (id) chat.markRead(id)
+    showTypersList.value = false
   },
 )
+
+// Отправка «печатает…» при вводе текста (троттлинг — в сторе).
+function onTyping() {
+  if (chat.draft.trim()) chat.typing(channels.currentId)
+}
 
 async function send() {
   const text = chat.draft.trim()
@@ -148,7 +179,17 @@ function onKeydown(e: KeyboardEvent) {
           {{ channelName }}
           <svg v-if="channels.current?.private" class="lock-ico" viewBox="0 0 448 512"><path d="M144 144v48H304V144c0-44.2-35.8-80-80-80s-80 35.8-80 80zM80 192V144C80 64.5 144.5 0 224 0s144 64.5 144 144v48h16c35.3 0 64 28.7 64 64V448c0 35.3-28.7 64-64 64H64c-35.3 0-64-28.7-64-64V256c0-35.3 28.7-64 64-64H80z" /></svg>
         </h2>
-        <span class="muted small">ID канала: {{ channels.currentId }}</span>
+        <span
+          v-if="typingSummary"
+          class="typing-hint"
+          :class="{ clickable: typers.length > 4 }"
+          @click="toggleTypersList"
+        >{{ typingSummary }}</span>
+        <span v-else class="muted small">ID канала: {{ channels.currentId }}</span>
+        <!-- Список печатающих (при >4) раскрывается вверх от шапки. -->
+        <div v-if="showTypersList" class="typers-drop">
+          <div v-for="t in typers" :key="t.userId" class="typer-row">{{ t.nick }}</div>
+        </div>
       </div>
       <button
         v-if="channels.current?.private"
@@ -191,6 +232,7 @@ function onKeydown(e: KeyboardEvent) {
           ref="inputEl"
           rows="1"
           :placeholder="chat.editingId ? 'Редактирование сообщения...' : 'Сообщение в чат...'"
+          @input="onTyping"
           @keydown="onKeydown"
         ></textarea>
         <button v-if="chat.editingId" class="icon-btn edit-cancel" title="Отменить редактирование" @click="chat.editingId = 0; chat.draft = ''">
@@ -243,6 +285,7 @@ function onKeydown(e: KeyboardEvent) {
   gap: 10px;
   background: var(--bg);
   flex-shrink: 0;
+  position: relative;
 }
 .head-title {
   flex: 1;
@@ -269,6 +312,58 @@ function onKeydown(e: KeyboardEvent) {
 }
 .small {
   font-size: 12px;
+}
+/* Индикатор «печатает…». */
+.typing-hint {
+  font-size: 12.5px;
+  color: var(--accent);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.typing-hint.clickable {
+  cursor: pointer;
+  text-decoration: underline dotted;
+}
+/* Список печатающих при >4: раскрывается вверх от шапки. */
+.typers-drop {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 6px;
+  min-width: 200px;
+  max-width: 260px;
+  max-height: 40vh;
+  overflow-y: auto;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  z-index: 120;
+  animation: typers-in 0.15s ease-out;
+  transform-origin: bottom left;
+}
+@keyframes typers-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.typer-row {
+  padding: 6px 10px;
+  font-size: 13px;
+  border-radius: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.typer-row:hover {
+  background: var(--bg3);
 }
 /* Круглые кнопки-иконки в шапке чата. */
 .icon-btn {

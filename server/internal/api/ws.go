@@ -82,6 +82,8 @@ func (s *Server) readPump(c *hub.Client, nick string) {
 		_ = c.Conn.SetReadDeadline(time.Now().Add(90 * time.Second))
 		return nil
 	})
+	// Последний раз, когда это подключение слало «печатает…» (анти-спам).
+	lastTyping := time.Time{}
 	for {
 		var msg wsMsg
 		if err := c.Conn.ReadJSON(&msg); err != nil {
@@ -111,6 +113,28 @@ func (s *Server) readPump(c *hub.Client, nick string) {
 				continue
 			}
 			s.Hub.LeaveChannel(c, d.ChannelID)
+		case "typing":
+			// Индикатор «печатает…»: рассылаем участникам канала, но не чаще
+			// раза в 2 секунды с одного подключения (иначе спам по каждому
+			// нажатию клавиши).
+			var d struct {
+				ChannelID int64 `json:"channel_id"`
+			}
+			if err := json.Unmarshal(msg.Data, &d); err != nil || d.ChannelID == 0 {
+				continue
+			}
+			if time.Since(lastTyping) < 2*time.Second {
+				continue
+			}
+			lastTyping = time.Now()
+			if !s.Store.IsMember(d.ChannelID, c.UserID) {
+				continue
+			}
+			s.Hub.SendToChannel(d.ChannelID, hub.NewEvent("typing", map[string]interface{}{
+				"channel_id": d.ChannelID,
+				"user_id":    c.UserID,
+				"nick":       nick,
+			}))
 		case "call.punch":
 			var d struct {
 				CallID        int64 `json:"call_id"`

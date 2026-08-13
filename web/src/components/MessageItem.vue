@@ -106,6 +106,7 @@ function openMore(e: MouseEvent) {
 }
 .bubble {
   max-width: min(78%, 560px);
+  min-width: 0;
   background: var(--bubble);
   border: 1px solid var(--border);
   border-radius: 14px;
@@ -127,6 +128,7 @@ function openMore(e: MouseEvent) {
 }
 .text {
   word-break: break-word;
+  overflow-wrap: anywhere;
   font-size: 14px;
   color: var(--text);
 }
