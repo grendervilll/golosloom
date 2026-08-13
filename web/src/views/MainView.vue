@@ -15,7 +15,6 @@ import CallControls from '../components/CallControls.vue'
 import IncomingCallOverlay from '../components/IncomingCallOverlay.vue'
 import JoinCallBar from '../components/JoinCallBar.vue'
 import AdminPanel from '../components/AdminPanel.vue'
-import SettingsModal from '../components/SettingsModal.vue'
 import ServerUrlModal from '../components/ServerUrlModal.vue'
 import InviteModal from '../components/InviteModal.vue'
 import RegistrationInviteModal from '../components/RegistrationInviteModal.vue'
@@ -32,7 +31,6 @@ const calls = useCallStore()
 const settings = useSettingsStore()
 
 const showAdmin = ref(false)
-const showSettings = ref(false)
 const showInvite = ref(false)
 const showRegInvite = ref(false)
 const showCallPicker = ref(false)
@@ -113,7 +111,6 @@ function onTabChat() {
       @toggle-chat="toggleChat"
       @logout="logout"
       @open-admin="showAdmin = true"
-      @open-settings="showSettings = true"
     />
 
     <div class="center-col">
@@ -171,7 +168,6 @@ function onTabChat() {
 
     <IncomingCallOverlay />
     <AdminPanel v-if="showAdmin" @close="showAdmin = false" />
-    <SettingsModal v-if="showSettings" @close="showSettings = false" />
     <InviteModal v-if="showInvite" @close="showInvite = false" />
     <RegistrationInviteModal v-if="showRegInvite" :channel-id="channels.currentId" @close="showRegInvite = false" />
     <CallModal v-if="showCallPicker" @close="showCallPicker = false" />

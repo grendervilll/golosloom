@@ -140,10 +140,12 @@ export const useChatStore = defineStore('chat', {
           cur.push(real)
         }
         this.messages.set(channelId, [...cur])
-      } catch {
+      } catch (e) {
         const cur = this.messages.get(channelId) || []
         this.messages.set(channelId, cur.filter((x) => x.id !== tempId))
-        return false
+        // Пробрасываем реальную ошибку (например, «сообщение слишком длинное»),
+        // чтобы UI показал её, а не общее «ключ канала не получен».
+        throw e
       }
       return true
     },

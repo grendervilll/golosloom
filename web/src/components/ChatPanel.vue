@@ -6,6 +6,7 @@ import { useAuthStore } from '../stores/auth'
 import { useChannelsStore } from '../stores/channels'
 import { useChatStore, type ChatMessage } from '../stores/chat'
 import { useCallStore } from '../stores/calls'
+import { useSettingsStore } from '../stores/settings'
 import { toast } from 'vue-sonner'
 import MessageItem from './MessageItem.vue'
 import EmojiPicker from './EmojiPicker.vue'
@@ -17,6 +18,7 @@ const auth = useAuthStore()
 const channels = useChannelsStore()
 const chat = useChatStore()
 const calls = useCallStore()
+const settings = useSettingsStore()
 const showPicker = ref(false)
 
 const listEl = ref<HTMLElement | null>(null)
@@ -94,13 +96,26 @@ function onTyping() {
 async function send() {
   const text = chat.draft.trim()
   if (!text) return
-  if (chat.editingId) {
-    await chat.edit(channels.currentId, chat.editingId, text)
+  // Длинное сообщение отклоняется сервером (лимит MAX_MESSAGE_LEN) —
+  // предупреждаем заранее и показываем понятную ошибку.
+  const max = settings.serverConfig?.max_message_len || 2000
+  const bytes = new TextEncoder().encode(text).length
+  if (bytes > max) {
+    toast.error(`Сообщение слишком длинное: максимум ${max} символов`)
     return
   }
-  const ok = await chat.send(channels.currentId, text)
-  if (!ok) {
-    toast.warning('Ключ канала ещё не получен, повторите позже')
+  try {
+    if (chat.editingId) {
+      await chat.edit(channels.currentId, chat.editingId, text)
+      return
+    }
+    const ok = await chat.send(channels.currentId, text)
+    if (!ok) {
+      toast.warning('Ключ канала ещё не получен, повторите позже')
+      return
+    }
+  } catch (e: any) {
+    toast.error(e?.message || 'Не удалось отправить сообщение')
     return
   }
   chat.draft = ''

@@ -362,7 +362,7 @@ describe('чат', () => {
     expect(api.listMessages).toHaveBeenCalledWith(10)
   })
 
-  it('отправка, отклонённая сервером, убирает оптимистичное сообщение и возвращает false', async () => {
+  it('отправка, отклонённая сервером, убирает оптимистичное сообщение и пробрасывает ошибку', async () => {
     setup(1)
     const storage = await getKeyStorage()
     const key = generateChannelKey()
@@ -370,8 +370,7 @@ describe('чат', () => {
     const api = useSettingsStore().api as any
     api.sendMessage.mockRejectedValue({ status: 409, message: 'сообщение уже отправлено' })
     const chat = useChatStore()
-    const ok = await chat.send(10, 'дубль')
-    expect(ok).toBe(false)
+    await expect(chat.send(10, 'дубль')).rejects.toMatchObject({ status: 409 })
     const msgs = chat.messages.get(10)
     expect(msgs || []).toHaveLength(0) // оптимистичное сообщение убрано
   })
