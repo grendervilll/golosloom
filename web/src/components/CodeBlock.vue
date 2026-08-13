@@ -1,18 +1,43 @@
-// Код-блок в сообщении: шапка с языком и кнопкой «Скопировать» (как в Telegram).
+// Код-блок в сообщении: подсветка синтаксиса (highlight.js), шапка с языком
+// и кнопкой «Скопировать» (как в Telegram). Блок редактируемый локально:
+// Tab вставляет отступ вместо перехода по кнопкам.
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
+import hljs from 'highlight.js/lib/common'
+import 'highlight.js/styles/github-dark.css'
 
 const props = defineProps<{ lang?: string; code: string }>()
 
+const codeEl = ref<HTMLElement | null>(null)
 const copied = ref(false)
 
-async function copy() {
+// Подсветка: по указанному языку, при ошибке/отсутствии — автоопределение.
+const highlighted = computed(() => {
+  if (props.lang) {
+    try {
+      if (hljs.getLanguage(props.lang)) {
+        return hljs.highlight(props.code, { language: props.lang }).value
+      }
+    } catch {
+      /* автоопределение ниже */
+    }
+  }
   try {
-    await navigator.clipboard.writeText(props.code)
+    return hljs.highlightAuto(props.code).value
+  } catch {
+    return ''
+  }
+})
+
+// Копируем то, что пользователь видит (с учётом локальных правок).
+async function copy() {
+  const text = codeEl.value?.textContent ?? props.code
+  try {
+    await navigator.clipboard.writeText(text)
   } catch {
     // Фолбэк для старых вебвью (Tauri).
     const ta = document.createElement('textarea')
-    ta.value = props.code
+    ta.value = text
     ta.style.position = 'fixed'
     ta.style.opacity = '0'
     document.body.appendChild(ta)
@@ -22,6 +47,14 @@ async function copy() {
   }
   copied.value = true
   setTimeout(() => (copied.value = false), 1500)
+}
+
+// Tab вставляет отступ вместо перехода к следующей кнопке.
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === 'Tab') {
+    e.preventDefault()
+    document.execCommand('insertText', false, '\t')
+  }
 }
 </script>
 
@@ -33,7 +66,14 @@ async function copy() {
         {{ copied ? 'Скопировано ✓' : 'Скопировать' }}
       </button>
     </div>
-    <pre><code>{{ code }}</code></pre>
+    <pre><code
+      ref="codeEl"
+      class="hljs"
+      contenteditable="true"
+      spellcheck="false"
+      @keydown="onKeydown"
+      v-html="highlighted"
+    ></code></pre>
   </div>
 </template>
 
@@ -87,5 +127,11 @@ pre code {
   line-height: 1.5;
   color: #e6edf3;
   white-space: pre;
+  tab-size: 4;
+  display: block;
+}
+/* Редактирование локально: не подсвечиваем фокус как кнопку. */
+pre code:focus {
+  outline: none;
 }
 </style>
