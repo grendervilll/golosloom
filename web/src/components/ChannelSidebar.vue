@@ -506,6 +506,8 @@ async function removeAvatar() {
 .avatar-row .tiny {
   padding: 5px 10px;
   font-size: 12px;
+  width: auto;
+  min-height: 0;
 }
 .theme-row {
   display: flex;
@@ -650,15 +652,24 @@ async function removeAvatar() {
   gap: 10px;
   padding: 10px 12px;
 }
+/* Кнопка-аватар не должна растягиваться правилом .server-menu button
+   (width: 100%) — иначе это «пустая кнопка» на всю ширину меню. */
 .user-avatar {
+  width: 38px;
+  height: 38px;
+  padding: 0;
   background: transparent;
   border-radius: 50%;
-  padding: 0;
   flex-shrink: 0;
+  min-height: 0;
 }
 .user-avatar:hover {
   background: transparent;
   opacity: 0.85;
+}
+.menu-user .user-info {
+  flex: 1;
+  min-width: 0;
 }
 .menu-divider {
   height: 1px;

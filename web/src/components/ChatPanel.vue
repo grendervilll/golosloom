@@ -26,6 +26,8 @@ const showPicker = ref(false)
 const listEl = ref<HTMLElement | null>(null)
 const inputEl = ref<HTMLTextAreaElement | null>(null)
 const menu = ref({ x: 0, y: 0, msg: null as ChatMessage | null })
+const menuEl = ref<HTMLElement | null>(null)
+const mediaMenuEl = ref<HTMLElement | null>(null)
 
 const messages = computed(() => chat.messages.get(channels.currentId) || [])
 const channelName = computed(() => channels.current?.name || '')
@@ -137,6 +139,7 @@ const mediaMenu = ref({ x: 0, y: 0, msg: null as ChatMessage | null })
 function openMediaMenu(e: MouseEvent, msg: ChatMessage) {
   e.preventDefault()
   mediaMenu.value = { x: e.clientX, y: e.clientY, msg }
+  void nextTick(clampMenu)
 }
 function openMedia(msg: ChatMessage) {
   if (!msg.attachment) return
@@ -319,6 +322,25 @@ function openMenu(e: MouseEvent, msg: ChatMessage) {
   e.preventDefault?.()
   if (!canModerate.value && msg.senderId !== auth.user?.id) return
   menu.value = { x: e.clientX, y: e.clientY, msg }
+  void nextTick(clampMenu)
+}
+
+function openSearchMenu(e: MouseEvent, msg: ChatMessage) {
+  menu.value = { x: e.clientX, y: e.clientY, msg }
+  void nextTick(clampMenu)
+}
+
+// Контекстное меню не должно выходить за пределы окна: после рендера
+// замеряем его размер и прижимаем к границам.
+function clampMenu() {
+  const el = menuEl.value || mediaMenuEl.value
+  if (!el) return
+  const r = el.getBoundingClientRect()
+  const m = menu.value || mediaMenu.value
+  if (!m) return
+  const pad = 8
+  m.x = Math.max(pad, Math.min(m.x, window.innerWidth - r.width - pad))
+  m.y = Math.max(pad, Math.min(m.y, window.innerHeight - r.height - pad))
 }
 
 function closeMenu() {
@@ -396,7 +418,7 @@ function onKeydown(e: KeyboardEvent) {
               v-for="m in searchResults"
               :key="m.id"
               class="search-row"
-              @contextmenu.prevent="menu = { x: $event.clientX, y: $event.clientY, msg: m }"
+              @contextmenu.prevent="openSearchMenu($event, m)"
             >
               <div class="search-row-info">
                 <span class="search-row-nick">{{ m.senderNick }}</span>
@@ -511,7 +533,7 @@ function onKeydown(e: KeyboardEvent) {
       />
     </div>
 
-    <div v-if="menu.msg" class="ctx-menu" :style="{ left: menu.x + 'px', top: menu.y + 'px' }" @click.stop>
+    <div v-if="menu.msg" ref="menuEl" class="ctx-menu" :style="{ left: menu.x + 'px', top: menu.y + 'px' }" @click.stop>
       <button @click="replyFromMenu(menu.msg!)">Ответить</button>
       <button v-if="menu.msg.senderId === auth.user?.id" @click="startEdit(menu.msg!)">Изменить сообщение</button>
       <button v-if="menu.msg.senderId === auth.user?.id || canModerate" class="danger" @click="remove(menu.msg!)">
@@ -523,6 +545,7 @@ function onKeydown(e: KeyboardEvent) {
     <!-- Контекстное меню фото/видео: переход к фото в чате. -->
     <div
       v-if="mediaMenu.msg"
+      ref="mediaMenuEl"
       class="ctx-menu"
       :style="{ left: mediaMenu.x + 'px', top: mediaMenu.y + 'px' }"
       @click.stop
