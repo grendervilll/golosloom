@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"net/http"
+	"os"
 	"strconv"
 
 	"golosloom/server/internal/hub"
@@ -67,6 +68,9 @@ func (s *Server) messageJSON(m models.Message, withHistory bool) map[string]inte
 	if withHistory && len(m.History) > 0 {
 		out["history"] = m.History
 	}
+	if m.Attachment != nil {
+		out["attachment"] = m.Attachment
+	}
 	return out
 }
 
@@ -84,8 +88,9 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Ciphertext []byte `json:"ciphertext"`
-		IV         []byte `json:"iv"`
+		Ciphertext   []byte `json:"ciphertext"`
+		IV           []byte `json:"iv"`
+		AttachmentID int64  `json:"attachment_id"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeErr(w, http.StatusBadRequest, "некорректный запрос")
@@ -99,6 +104,19 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "сообщение слишком длинное")
 		return
 	}
+	// Вложение: файл должен существовать, принадлежать отправителю и каналу,
+	// и ещё не быть привязанным к сообщению.
+	if req.AttachmentID != 0 {
+		f, err := s.Store.GetFile(req.AttachmentID)
+		if err != nil {
+			writeErr(w, http.StatusNotFound, "файл не найден")
+			return
+		}
+		if f.UserID != userIDFrom(r) || f.ChannelID != channelID || f.MessageID != 0 {
+			writeErr(w, http.StatusForbidden, "файл нельзя прикрепить к этому сообщению")
+			return
+		}
+	}
 	if s.isDuplicateMessage(channelID, userIDFrom(r), req.Ciphertext, req.IV) {
 		writeErr(w, http.StatusConflict, "сообщение уже отправлено")
 		return
@@ -107,6 +125,14 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if req.AttachmentID != 0 {
+		if err := s.Store.AttachFileToMessage(req.AttachmentID, m.ID); err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		// Перечитываем сообщение, чтобы в ответе был attachment.
+		m, _ = s.Store.GetMessage(m.ID)
 	}
 	s.Hub.SendToChannel(channelID, hub.NewEvent("message.new", s.messageJSON(*m, true)))
 	// Пуши офлайн-участникам канала — в фоне, не задерживаем ответ отправителю.
@@ -189,10 +215,40 @@ func (s *Server) handleDeleteMessage(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	// Файл сообщения удаляется с диска вместе с сообщением.
+	s.deleteMessageFiles(mid)
 	s.Hub.SendToChannel(channelID, hub.NewEvent("message.deleted", map[string]interface{}{
 		"channel_id": channelID, "message_id": mid, "deleted_by": userIDFrom(r),
 	}))
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// deleteMessageFiles удаляет файлы сообщения: записи в БД + файлы с диска.
+func (s *Server) deleteMessageFiles(messageID int64) {
+	files, err := s.Store.FilesByMessage(messageID)
+	if err != nil {
+		return
+	}
+	ids := make([]int64, 0, len(files))
+	for _, f := range files {
+		ids = append(ids, f.ID)
+		_ = os.Remove(f.Path)
+	}
+	_ = s.Store.DeleteFiles(ids)
+}
+
+// deleteChannelFiles удаляет все файлы канала (записи + диск).
+func (s *Server) deleteChannelFiles(channelID int64) {
+	files, err := s.Store.ChannelFiles(channelID)
+	if err != nil {
+		return
+	}
+	ids := make([]int64, 0, len(files))
+	for _, f := range files {
+		ids = append(ids, f.ID)
+		_ = os.Remove(f.Path)
+	}
+	_ = s.Store.DeleteFiles(ids)
 }
 
 func parseQueryInt64(r *http.Request, name string) (int64, error) {

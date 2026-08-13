@@ -11,6 +11,7 @@ import { toast } from 'vue-sonner'
 import MessageItem from './MessageItem.vue'
 import EmojiPicker from './EmojiPicker.vue'
 import Avatar from './Avatar.vue'
+import type { Attachment } from '../api/types'
 
 const emit = defineEmits<{ (e: 'toggle-participants'): void; (e: 'open-invite'): void; (e: 'open-call'): void; (e: 'open-reg-invite'): void }>()
 
@@ -121,6 +122,56 @@ async function send() {
   chat.draft = ''
 }
 
+// --- Файлы (вложения, максимум 100 МБ) ---
+const MAX_FILE_SIZE = 100 * 1024 * 1024
+const fileInput = ref<HTMLInputElement | null>(null)
+const uploading = ref<{ name: string } | null>(null)
+
+async function onPickFile(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file || !channels.currentId) return
+  if (file.size > MAX_FILE_SIZE) {
+    toast.error('Файл слишком большой: максимум 100 МБ')
+    return
+  }
+  // Локальный предпросмотр картинки до ответа сервера.
+  const localUrl = file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined
+  uploading.value = { name: file.name }
+  try {
+    const att = await settings.api.uploadFile(channels.currentId, file)
+    uploading.value = null
+    await sendWithAttachment(att, localUrl)
+  } catch (err: any) {
+    if (localUrl) URL.revokeObjectURL(localUrl)
+    uploading.value = null
+    toast.error(err?.message || 'Не удалось загрузить файл')
+  }
+}
+
+// Отправка сообщения с вложением (текст может быть пустым).
+async function sendWithAttachment(att: Attachment, localUrl?: string) {
+  const text = chat.draft.trim()
+  const max = settings.serverConfig?.max_message_len || 2000
+  if (new TextEncoder().encode(text).length > max) {
+    toast.error(`Сообщение слишком длинное: максимум ${max} символов`)
+    return
+  }
+  try {
+    const ok = await chat.send(channels.currentId, text, att.id, localUrl)
+    if (!ok) {
+      toast.warning('Ключ канала ещё не получен, повторите позже')
+      return
+    }
+  } catch (e: any) {
+    toast.error(e?.message || 'Не удалось отправить сообщение')
+    return
+  }
+  chat.draft = ''
+  chat.editingId = 0
+}
+
 function insertEmoji(e: string) {
   const el = inputEl.value
   const start = el?.selectionStart ?? chat.draft.length
@@ -189,7 +240,7 @@ function onKeydown(e: KeyboardEvent) {
         :size="36"
         :color="'#2aabee'"
       />
-      <div class="head-title">
+      <button class="head-title" :title="`Участники канала (${channels.members.length})`" @click="emit('toggle-participants')">
         <h2>
           {{ channelName }}
           <svg v-if="channels.current?.private" class="lock-ico" viewBox="0 0 448 512"><path d="M144 144v48H304V144c0-44.2-35.8-80-80-80s-80 35.8-80 80zM80 192V144C80 64.5 144.5 0 224 0s144 64.5 144 144v48h16c35.3 0 64 28.7 64 64V448c0 35.3-28.7 64-64 64H64c-35.3 0-64-28.7-64-64V256c0-35.3 28.7-64 64-64H80z" /></svg>
@@ -198,14 +249,14 @@ function onKeydown(e: KeyboardEvent) {
           v-if="typingSummary"
           class="typing-hint"
           :class="{ clickable: typers.length > 4 }"
-          @click="toggleTypersList"
+          @click.stop="toggleTypersList"
         >{{ typingSummary }}</span>
         <span v-else class="muted small">ID канала: {{ channels.currentId }}</span>
         <!-- Список печатающих (при >4) раскрывается вверх от шапки. -->
-        <div v-if="showTypersList" class="typers-drop">
+        <div v-if="showTypersList" class="typers-drop" @click.stop>
           <div v-for="t in typers" :key="t.userId" class="typer-row">{{ t.nick }}</div>
         </div>
-      </div>
+      </button>
       <button
         v-if="channels.current?.private"
         class="icon-btn"
@@ -225,9 +276,6 @@ function onKeydown(e: KeyboardEvent) {
       <button v-if="!calls.inCall" class="icon-btn" title="Позвонить участникам канала" @click="emit('open-call')">
         <svg class="ico" viewBox="0 0 512 512"><path d="M164.9 24.6c-7.7-18.6-28-28.5-47.4-23.2l-88 24C12.1 30.2 0 46 0 64C0 311.4 200.6 512 448 512c18 0 33.8-12.1 38.6-29.5l24-88c5.3-19.4-4.6-39.7-23.2-47.4l-96-40c-16.3-6.8-35.2-2.1-46.3 11.6L304.7 368C234.3 334.7 177.3 277.7 144 207.3L193.3 167c13.7-11.2 18.4-30 11.6-46.3l-40-96z" /></svg>
       </button>
-      <button class="icon-btn" title="Участники" @click="emit('toggle-participants')">
-        <svg class="ico" viewBox="0 0 640 512"><path d="M144 0a80 80 0 1 1 0 160A80 80 0 1 1 144 0zM512 0a80 80 0 1 1 0 160A80 80 0 1 1 512 0zM0 298.7C0 239.8 47.8 192 106.7 192l42.7 0c15.9 0 31 3.5 44.6 9.7c-1.3 7.2-1.9 14.7-1.9 22.3c0 38.2 16.8 72.5 43.3 96c-.2 0-.4 0-.7 0L21.3 320C9.6 320 0 310.4 0 298.7zM405.3 320c-.2 0-.4 0-.7 0c26.5-23.5 43.3-57.8 43.3-96c0-7.6-.6-15.1-1.9-22.3c13.6-6.3 28.7-9.7 44.6-9.7l42.7 0C592.2 192 640 239.8 640 298.7c0 11.7-9.6 21.3-21.3 21.3L405.3 320z" /></svg>
-      </button>
     </div>
     <div ref="listEl" class="chat-list">
       <MessageItem
@@ -241,7 +289,9 @@ function onKeydown(e: KeyboardEvent) {
       <p v-if="messages.length === 0" class="muted empty">Сообщений пока нет</p>
     </div>
     <div class="chat-input">
+      <div v-if="uploading" class="uploading-hint">Загрузка {{ uploading.name }}…</div>
       <div class="input-pill">
+        <input ref="fileInput" type="file" class="hidden-input" @change="onPickFile" />
         <textarea
           v-model="chat.draft"
           ref="inputEl"
@@ -252,6 +302,9 @@ function onKeydown(e: KeyboardEvent) {
         ></textarea>
         <button v-if="chat.editingId" class="icon-btn edit-cancel" title="Отменить редактирование" @click="chat.editingId = 0; chat.draft = ''">
           <svg class="ico" viewBox="0 0 384 512"><path d="M342.6 150.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L192 210.7 86.6 105.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3L146.7 256 41.4 361.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0L192 301.3 297.4 406.6c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L237.3 256 342.6 150.6z" /></svg>
+        </button>
+        <button class="icon-btn clip-btn" title="Прикрепить файл (до 100 МБ)" @click="fileInput?.click()">
+          <svg class="ico" viewBox="0 0 512 512"><path d="M396.2 83.8c-24.4-24.4-64-24.4-88.4 0l-184 184c-48.8 48.8-48.8 128 0 176.8s128 48.8 176.8 0l152-152c10.9-10.9 28.7-10.9 39.6 0s10.9 28.7 0 39.6l-152 152c-70.7 70.7-185.3 70.7-256 0s-70.7-185.3 0-256l184-184c46.3-46.3 121.3-46.3 167.6 0s46.3 121.3 0 167.6l-176 176c-23.6 23.6-61.9 23.6-85.5 0s-23.6-61.9 0-85.5L297.4 170.4c10.9-10.9 28.7-10.9 39.6 0s10.9 28.7 0 39.6l-105.4 105.4c-1.7 1.7-4.5 1.7-6.2 0s-1.7-4.5 0-6.2l176-176c24.4-24.4 64-24.4 88.4 0s24.4 64 0 88.4l-184 184c-48.8 48.8-128 48.8-176.8 0s-48.8-128 0-176.8l184-184c46.3-46.3 121.3-46.3 167.6 0z" /></svg>
         </button>
         <button class="icon-btn emoji-btn" title="Смайлики и GIF" @click.stop="showPicker = !showPicker">
           <svg class="ico" viewBox="0 0 512 512"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM164.1 325.5C182 346.2 212.6 368 256 368s74-21.8 91.9-42.5c5.8-6.7 15.9-7.4 22.6-1.6s7.4 15.9 1.6 22.6C349.8 372.1 311.1 400 256 400s-93.8-27.9-116.1-53.5c-5.8-6.7-5.1-16.8 1.6-22.6s16.8-5.1 22.6 1.6zM144.4 208a32 32 0 1 1 64 0 32 32 0 1 1 -64 0zm192-32a32 32 0 1 1 0 64 32 32 0 1 1 0-64z" /></svg>
@@ -308,6 +361,18 @@ function onKeydown(e: KeyboardEvent) {
   display: flex;
   flex-direction: column;
   gap: 1px;
+  align-items: center;
+  text-align: center;
+  background: transparent;
+  border-radius: 10px;
+  padding: 4px 10px;
+  min-height: 44px;
+  position: relative;
+  max-width: 420px;
+  margin: 0 auto;
+}
+.head-title:hover {
+  background: var(--bg3);
 }
 .chat-head h2 {
   font-size: 16px;
@@ -465,6 +530,21 @@ function onKeydown(e: KeyboardEvent) {
 }
 .emoji-btn {
   flex-shrink: 0;
+}
+.clip-btn {
+  flex-shrink: 0;
+}
+.clip-btn .ico {
+  width: 16px;
+  height: 16px;
+}
+.hidden-input {
+  display: none;
+}
+.uploading-hint {
+  font-size: 12px;
+  color: var(--text-dim);
+  padding: 2px 6px;
 }
 .send-btn {
   width: 38px;

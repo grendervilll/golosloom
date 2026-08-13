@@ -88,6 +88,17 @@ type Message struct {
 	Deleted    bool      `json:"deleted"`
 	DeletedBy  *int64    `json:"deleted_by,omitempty"`
 	DeletedAt  *time.Time `json:"deleted_at,omitempty"`
+	Attachment *Attachment `json:"attachment,omitempty"`
+}
+
+// Attachment — файл, прикреплённый к сообщению. Контент хранится на диске
+// сервера, в БД — только метаданные и путь. Файл удаляется вместе с
+// сообщением (или каналом).
+type Attachment struct {
+	ID       int64  `json:"id"`
+	Filename string `json:"filename"`
+	Mime     string `json:"mime"`
+	Size     int64  `json:"size"`
 }
 
 type ChannelInvite struct {

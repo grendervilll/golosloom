@@ -193,10 +193,12 @@ async function removeAvatar() {
     </div>
 
     <div v-if="menuOpen" class="server-menu">
+      <!-- Общий скрытый input для смены аватара: должен существовать в обоих
+           подменю, поэтому вне v-if-веток. -->
+      <input ref="avatarInput" type="file" accept="image/*" class="hidden-input" @change="changeAvatar" />
       <!-- Основное меню. -->
       <template v-if="!settingsOpen">
         <div class="menu-user">
-          <input ref="avatarInput" type="file" accept="image/*" class="hidden-input" @change="changeAvatar" />
           <button class="user-avatar" title="Сменить аватар" @click="changeAvatarClick">
             <Avatar :user-id="auth.user?.id || 0" :nick="auth.user?.nick || '?'" :avatar="auth.user?.avatar" :size="38" />
           </button>
@@ -204,9 +206,6 @@ async function removeAvatar() {
             <b>{{ auth.user?.nick }}</b>
             <span class="muted">ID: {{ auth.user?.id }}</span>
           </div>
-          <button v-if="auth.user?.avatar" class="icon-btn avatar-del" title="Удалить аватар" @click="removeAvatar()">
-            <svg class="ico" viewBox="0 0 448 512"><path d="M135.2 17.7L128 32 32 32C14.3 32 0 46.3 0 64S14.3 96 32 96l384 0c17.7 0 32-14.3 32-32s-14.3-32-32-32l-96 0-7.2-14.3C307.4 6.8 296.3 0 284.2 0L163.8 0c-12.1 0-23.2 6.8-28.6 17.7zM416 128L32 128 53.2 467c1.6 25.3 22.6 45 47.9 45l306 0c25.3 0 46.3-19.7 47.9-45L416 128z" /></svg>
-          </button>
         </div>
         <div class="menu-divider"></div>
         <button v-if="auth.isServerAdmin" @click="emit('open-admin')">
@@ -660,21 +659,6 @@ async function removeAvatar() {
 .user-avatar:hover {
   background: transparent;
   opacity: 0.85;
-}
-.avatar-del {
-  margin-left: auto;
-  background: transparent;
-}
-.avatar-del .ico {
-  width: 14px;
-  height: 14px;
-  fill: var(--text-dim);
-}
-.avatar-del:hover {
-  background: var(--bg3);
-}
-.avatar-del:hover .ico {
-  fill: var(--red);
 }
 .menu-divider {
   height: 1px;

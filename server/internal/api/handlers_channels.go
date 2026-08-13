@@ -142,6 +142,8 @@ func (s *Server) handleDeleteChannel(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.endChannelCalls(id, "канал удалён")
+	// Файлы канала — до удаления строк, чтобы собрать пути с диска.
+	s.deleteChannelFiles(id)
 	if err := s.Store.DeleteChannel(id); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return

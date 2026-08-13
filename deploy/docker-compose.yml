@@ -17,6 +17,7 @@ services:
     environment:
       - DB_PATH=/data/golosloom.db
       - AVATAR_DIR=/data/avatars
+      - FILES_DIR=/data/files
       # Публичный адрес LiveKit: клиенты подключаются к wss://домен/rtc/...
       # напрямую через Caddy (без префикса), а не к внутреннему адресу контейнера.
       - LIVEKIT_URL=wss://${DOMAIN}

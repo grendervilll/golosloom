@@ -247,10 +247,11 @@ export class ApiClient {
   listMessages(channelId: number, before = 0, limit = 50) {
     return this.get(`/api/channels/${channelId}/messages?before=${before}&limit=${limit}`)
   }
-  sendMessage(channelId: number, ciphertext: Uint8Array, iv: Uint8Array) {
+  sendMessage(channelId: number, ciphertext: Uint8Array, iv: Uint8Array, attachmentId = 0) {
     return this.post(`/api/channels/${channelId}/messages`, {
       ciphertext: Array.from(ciphertext),
       iv: Array.from(iv),
+      attachment_id: attachmentId || undefined,
     })
   }
   editMessage(channelId: number, messageId: number, ciphertext: Uint8Array, iv: Uint8Array) {
@@ -261,6 +262,39 @@ export class ApiClient {
   }
   deleteMessage(channelId: number, messageId: number) {
     return this.delete(`/api/channels/${channelId}/messages/${messageId}`)
+  }
+
+  // --- Файлы (вложения сообщений, максимум 100 МБ) ---
+  // Загрузка файла в канал; вернёт { id, filename, mime, size }.
+  async uploadFile(channelId: number, file: File): Promise<Attachment> {
+    const form = new FormData()
+    form.append('file', file)
+    const headers: Record<string, string> = {}
+    if (this.token) headers['Authorization'] = `Bearer ${this.token}`
+    const res = await fetch(this.baseUrl + `/api/channels/${channelId}/files`, { method: 'POST', headers, body: form })
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      let msg = `Ошибка загрузки файла: ${res.status}`
+      try {
+        const j = JSON.parse(text)
+        if (j?.error) msg = j.error
+      } catch {
+        /* not json */
+      }
+      throw new Error(msg)
+    }
+    return (await res.json()) as Attachment
+  }
+  // URL файла для <img>/<video>/просмотра. Токен в query — браузерные теги
+  // не умеют слать Authorization.
+  fileUrl(fileId: number): string {
+    const token = this.token ? '?token=' + encodeURIComponent(this.token) : ''
+    return this.baseUrl + `/api/files/${fileId}${token}`
+  }
+  // URL принудительного скачивания.
+  downloadUrl(fileId: number): string {
+    const token = this.token ? '&token=' + encodeURIComponent(this.token) : '?token='
+    return this.baseUrl + `/api/files/${fileId}?download=1${this.token ? token : ''}`
   }
 
   // --- Звонки ---

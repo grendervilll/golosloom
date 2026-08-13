@@ -270,6 +270,19 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
 	auth TEXT NOT NULL,
 	created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS files (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	channel_id INTEGER NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+	message_id INTEGER REFERENCES messages(id) ON DELETE CASCADE,
+	user_id INTEGER NOT NULL REFERENCES users(id),
+	filename TEXT NOT NULL,
+	mime TEXT NOT NULL,
+	size INTEGER NOT NULL,
+	path TEXT NOT NULL,
+	created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_files_channel ON files(channel_id);
+CREATE INDEX IF NOT EXISTS idx_files_message ON files(message_id);
 CREATE INDEX IF NOT EXISTS idx_messages_channel ON messages(channel_id, id);
 CREATE INDEX IF NOT EXISTS idx_invites_user ON channel_invites(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_call_invites_user ON call_invites(user_id, status);
@@ -873,7 +886,16 @@ func (s *Store) CreateMessage(channelID, senderID int64, ciphertext, iv []byte) 
 func (s *Store) GetMessage(id int64) (*models.Message, error) {
 	row := s.db.QueryRow(`SELECT id, channel_id, sender_id, ciphertext, iv, history, deleted, deleted_by, deleted_at, created_at, edited_at
 		FROM messages WHERE id = ?`, id)
-	return scanMessage(row)
+	m, err := scanMessage(row)
+	if err != nil {
+		return nil, err
+	}
+	att, err := s.fileByMessage(m.ID)
+	if err != nil && !errors.Is(err, ErrNotFound) {
+		return nil, err
+	}
+	m.Attachment = att
+	return m, nil
 }
 
 func scanMessage(row *sql.Row) (*models.Message, error) {
@@ -943,6 +965,17 @@ func (s *Store) ListMessages(channelID, beforeID int64, limit int) ([]models.Mes
 	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
 		out[i], out[j] = out[j], out[i]
 	}
+	// Вложения: одним запросом для всего канала.
+	if len(out) > 0 {
+		atts, err := s.filesByMessages(channelID, beforeID, limit)
+		if err == nil {
+			for i := range out {
+				if a, ok := atts[out[i].ID]; ok {
+					out[i].Attachment = &a
+				}
+			}
+		}
+	}
 	return out, rows.Err()
 }
 
@@ -970,6 +1003,169 @@ func (s *Store) SetMessageDeleted(id int64, deletedBy int64) error {
 	_, err := s.db.Exec(`UPDATE messages SET deleted = 1, deleted_by = ?, deleted_at = ? WHERE id = ?`,
 		deletedBy, now(), id)
 	return err
+}
+
+// ---------- Files (вложения сообщений) ----------
+
+type StoredFile struct {
+	ID        int64
+	ChannelID int64
+	MessageID int64
+	UserID    int64
+	Filename  string
+	Mime      string
+	Size      int64
+	Path      string
+	CreatedAt string
+}
+
+func (s *Store) CreateFile(channelID, userID int64, filename, mime, path string, size int64) (*StoredFile, error) {
+	res, err := s.db.Exec(`INSERT INTO files (channel_id, message_id, user_id, filename, mime, size, path, created_at)
+		VALUES (?, NULL, ?, ?, ?, ?, ?, ?)`, channelID, userID, filename, mime, size, path, now())
+	if err != nil {
+		return nil, err
+	}
+	id, _ := res.LastInsertId()
+	return s.GetFile(id)
+}
+
+func (s *Store) GetFile(id int64) (*StoredFile, error) {
+	var f StoredFile
+	var messageID sql.NullInt64
+	err := s.db.QueryRow(`SELECT id, channel_id, message_id, user_id, filename, mime, size, path, created_at
+		FROM files WHERE id = ?`, id).
+		Scan(&f.ID, &f.ChannelID, &messageID, &f.UserID, &f.Filename, &f.Mime, &f.Size, &f.Path, &f.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	f.MessageID = messageID.Int64
+	return &f, nil
+}
+
+// AttachFileToMessage привязывает загруженный файл к сообщению.
+func (s *Store) AttachFileToMessage(fileID, messageID int64) error {
+	_, err := s.db.Exec(`UPDATE files SET message_id = ? WHERE id = ?`, messageID, fileID)
+	return err
+}
+
+// fileByMessage — вложение сообщения (одно на сообщение).
+func (s *Store) fileByMessage(messageID int64) (*models.Attachment, error) {
+	var a models.Attachment
+	err := s.db.QueryRow(`SELECT id, filename, mime, size FROM files WHERE message_id = ?`, messageID).
+		Scan(&a.ID, &a.Filename, &a.Mime, &a.Size)
+	if err == sql.ErrNoRows {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &a, nil
+}
+
+// filesByMessages — все вложения канала (ограничение как у сообщений).
+func (s *Store) filesByMessages(channelID, beforeID int64, limit int) (map[int64]models.Attachment, error) {
+	rows, err := s.db.Query(`
+		SELECT f.message_id, f.id, f.filename, f.mime, f.size
+		FROM files f
+		JOIN messages m ON m.id = f.message_id
+		WHERE f.channel_id = ? AND (? = 0 OR m.id < ?)
+		ORDER BY m.id DESC LIMIT ?`, channelID, beforeID, beforeID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[int64]models.Attachment)
+	for rows.Next() {
+		var mid int64
+		var a models.Attachment
+		if err := rows.Scan(&mid, &a.ID, &a.Filename, &a.Mime, &a.Size); err != nil {
+			return nil, err
+		}
+		out[mid] = a
+	}
+	return out, rows.Err()
+}
+
+// FilesByMessage — пути файлов сообщения (для удаления с диска).
+func (s *Store) FilesByMessage(messageID int64) ([]StoredFile, error) {
+	rows, err := s.db.Query(`SELECT id, channel_id, message_id, user_id, filename, mime, size, path, created_at
+		FROM files WHERE message_id = ?`, messageID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []StoredFile
+	for rows.Next() {
+		var f StoredFile
+		var msgID sql.NullInt64
+		if err := rows.Scan(&f.ID, &f.ChannelID, &msgID, &f.UserID, &f.Filename, &f.Mime, &f.Size, &f.Path, &f.CreatedAt); err != nil {
+			return nil, err
+		}
+		f.MessageID = msgID.Int64
+		out = append(out, f)
+	}
+	return out, rows.Err()
+}
+
+// ChannelFiles — все файлы канала (для удаления вместе с каналом).
+func (s *Store) ChannelFiles(channelID int64) ([]StoredFile, error) {
+	rows, err := s.db.Query(`SELECT id, channel_id, message_id, user_id, filename, mime, size, path, created_at
+		FROM files WHERE channel_id = ?`, channelID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []StoredFile
+	for rows.Next() {
+		var f StoredFile
+		var msgID sql.NullInt64
+		if err := rows.Scan(&f.ID, &f.ChannelID, &msgID, &f.UserID, &f.Filename, &f.Mime, &f.Size, &f.Path, &f.CreatedAt); err != nil {
+			return nil, err
+		}
+		f.MessageID = msgID.Int64
+		out = append(out, f)
+	}
+	return out, rows.Err()
+}
+
+// DeleteFiles удаляет записи файлов (строки) по ID.
+func (s *Store) DeleteFiles(ids []int64) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	qs := make([]string, len(ids))
+	args := make([]interface{}, len(ids))
+	for i, id := range ids {
+		qs[i] = "?"
+		args[i] = id
+	}
+	_, err := s.db.Exec(`DELETE FROM files WHERE id IN (`+strings.Join(qs, ",")+`)`, args...)
+	return err
+}
+
+// OrphanFiles — загруженные, но не привязанные к сообщению файлы старше
+// заданного времени (заброшенные загрузки).
+func (s *Store) OrphanFiles(olderThan time.Time) ([]StoredFile, error) {
+	rows, err := s.db.Query(`SELECT id, channel_id, message_id, user_id, filename, mime, size, path, created_at
+		FROM files WHERE message_id IS NULL AND created_at < ?`, olderThan.Format(time.RFC3339))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []StoredFile
+	for rows.Next() {
+		var f StoredFile
+		var msgID sql.NullInt64
+		if err := rows.Scan(&f.ID, &f.ChannelID, &msgID, &f.UserID, &f.Filename, &f.Mime, &f.Size, &f.Path, &f.CreatedAt); err != nil {
+			return nil, err
+		}
+		f.MessageID = msgID.Int64
+		out = append(out, f)
+	}
+	return out, rows.Err()
 }
 
 // ---------- Invites ----------

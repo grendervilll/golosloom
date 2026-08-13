@@ -51,6 +51,14 @@ export interface Message {
   history?: MessageVersion[]
   deleted: boolean
   deleted_by?: number
+  attachment?: Attachment | null
+}
+
+export interface Attachment {
+  id: number
+  filename: string
+  mime: string
+  size: number
 }
 
 export interface MessageVersion {

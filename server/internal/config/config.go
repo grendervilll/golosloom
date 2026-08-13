@@ -29,6 +29,8 @@ type Config struct {
 	VAPIDSubject      string
 	FCMServiceAccount string
 	AvatarDir          string
+	FilesDir           string
+	MaxFileSize        int64
 }
 
 func Load() Config {
@@ -54,7 +56,18 @@ func Load() Config {
 		VAPIDSubject:      getenv("VAPID_SUBJECT", "mailto:admin@localhost"),
 		FCMServiceAccount: getenv("FCM_SERVICE_ACCOUNT_FILE", ""),
 		AvatarDir:          getenv("AVATAR_DIR", "data/avatars"),
+		FilesDir:           getenv("FILES_DIR", "data/files"),
+		MaxFileSize:        getenvInt64("MAX_FILE_SIZE", 100*1024*1024),
 	}
+}
+
+func getenvInt64(key string, def int64) int64 {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+			return n
+		}
+	}
+	return def
 }
 
 func getenv(key, def string) string {

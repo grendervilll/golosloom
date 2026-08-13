@@ -1,14 +1,16 @@
 // Одно сообщение в чате — пузырь: свои справа (синий), чужие слева (белый).
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import type { ChatMessage } from '../stores/chat'
 import type { Role } from '../api/types'
 import { roleIcon } from '../utils/roles'
 import { useAuthStore } from '../stores/auth'
 import { useChannelsStore } from '../stores/channels'
+import { useSettingsStore } from '../stores/settings'
 import { splitMarkdown } from '../utils/markdown'
 import Avatar from './Avatar.vue'
 import CodeBlock from './CodeBlock.vue'
+import FileViewer from './FileViewer.vue'
 
 const props = defineProps<{
   msg: ChatMessage
@@ -44,6 +46,29 @@ const segments = computed(() => {
   if (props.msg.encrypted || props.msg.deleted || gifUrl.value) return []
   return splitMarkdown(props.msg.text)
 })
+// Вложение: URL с токеном (уже привязанного или локальный предпросмотр).
+const settings = useSettingsStore()
+const viewerOpen = ref(false)
+const att = computed(() => props.msg.attachment)
+const attSrc = computed(() => {
+  if (!att.value) return ''
+  return props.msg.localUrl || settings.api.fileUrl(att.value.id)
+})
+const isImage = computed(() => !!att.value && att.value.mime.startsWith('image/'))
+const isVideo = computed(() => !!att.value && att.value.mime.startsWith('video/'))
+// Иконка и человекочитаемый размер для карточки файла.
+function fileIcon(mime: string): string {
+  if (mime.startsWith('text/')) return '📄'
+  if (mime.includes('pdf')) return '📕'
+  if (mime.includes('zip') || mime.includes('tar') || mime.includes('rar')) return '🗜'
+  if (mime.includes('audio')) return '🎵'
+  return '📎'
+}
+function formatSize(bytes: number): string {
+  if (bytes >= 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' МБ'
+  if (bytes >= 1024) return Math.round(bytes / 1024) + ' КБ'
+  return bytes + ' Б'
+}
 
 // Кнопка «⋯» открывает то же меню, что и правая кнопка мыши
 // (работает и на мобильных устройствах).
@@ -66,6 +91,24 @@ function openMore(e: MouseEvent) {
   >
     <div class="bubble">
       <div v-if="showSender" class="sender">{{ msg.senderNick }}</div>
+      <!-- Вложение: фото — миниатюра с просмотром по клику, видео — плеер,
+           остальное — карточка файла со скачиванием. -->
+      <div v-if="att && isImage" class="att">
+        <img class="att-img" :src="attSrc" :alt="att.filename" loading="lazy" @click="viewerOpen = true" />
+      </div>
+      <div v-else-if="att && isVideo" class="att">
+        <video class="att-video" :src="attSrc" controls preload="metadata"></video>
+      </div>
+      <div v-else-if="att" class="att">
+        <div class="file-card">
+          <span class="file-icon">{{ fileIcon(att.mime) }}</span>
+          <div class="file-info">
+            <span class="file-name">{{ att.filename }}</span>
+            <span class="file-size">{{ formatSize(att.size) }} · {{ att.mime.split('/')[1]?.toUpperCase() }}</span>
+          </div>
+          <a class="file-download" :href="settings.api.downloadUrl(att.id)" download>Скачать</a>
+        </div>
+      </div>
       <p v-if="msg.encrypted" class="encrypted">🔒 Сообщение зашифровано (ключ канала недоступен)</p>
       <p v-else-if="msg.deleted && canModerate" class="deleted-text">
         🗑 {{ msg.text || 'Сообщение удалено' }}
@@ -87,6 +130,7 @@ function openMore(e: MouseEvent) {
         <span v-if="msg.edited" class="edited">изменено</span>
       </span>
     </div>
+    <FileViewer v-if="viewerOpen" :src="attSrc" :filename="att?.filename || ''" @close="viewerOpen = false" />
     <button class="more-btn" title="Действия с сообщением" @click.stop="openMore($event)">⋯</button>
   </div>
 </template>
@@ -153,6 +197,84 @@ function openMore(e: MouseEvent) {
 }
 .text :deep(s) {
   opacity: 0.7;
+}
+/* Вложения. */
+.att {
+  margin: 4px 0;
+}
+.att-img {
+  display: block;
+  max-width: min(320px, 100%);
+  max-height: 280px;
+  border-radius: 10px;
+  cursor: zoom-in;
+  object-fit: cover;
+}
+.att-video {
+  display: block;
+  max-width: min(360px, 100%);
+  max-height: 280px;
+  border-radius: 10px;
+  background: #000;
+}
+.file-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--bg3);
+  border-radius: 10px;
+  padding: 10px 12px;
+  min-width: 240px;
+  max-width: 100%;
+}
+.file-icon {
+  font-size: 24px;
+  flex-shrink: 0;
+}
+.file-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.file-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.file-size {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.file-download {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+  flex-shrink: 0;
+  padding: 6px 10px;
+  border-radius: 8px;
+}
+.file-download:hover {
+  background: var(--bg4);
+}
+.msg.mine .file-card {
+  background: rgba(255, 255, 255, 0.15);
+}
+.msg.mine .file-name {
+  color: #fff;
+}
+.msg.mine .file-size {
+  color: rgba(255, 255, 255, 0.75);
+}
+.msg.mine .file-download {
+  color: #fff;
+}
+.msg.mine .file-download:hover {
+  background: rgba(255, 255, 255, 0.2);
 }
 .msg.mine .text {
   color: #fff;

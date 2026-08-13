@@ -4,7 +4,7 @@ import { useSettingsStore } from './settings'
 import { useAuthStore } from './auth'
 import { useChannelsStore } from './channels'
 import { sounds } from '../audio/sounds'
-import type { Message } from '../api/types'
+import type { Attachment, Message } from '../api/types'
 import { getKeyStorage } from '../crypto/storage'
 import { encryptMessage, decryptMessage, b64ToBytes } from '../crypto/crypto'
 
@@ -23,6 +23,9 @@ export interface ChatMessage {
   editedAt?: string
   original?: string // оригинал до изменения (для модераторов)
   pending?: boolean
+  attachment?: Attachment | null
+  // Локальный URL для мгновенного показа картинки до ответа сервера.
+  localUrl?: string
 }
 
 export const useChatStore = defineStore('chat', {
@@ -103,7 +106,7 @@ export const useChatStore = defineStore('chat', {
     },
     // Оптимистичная отправка: своё сообщение появляется сразу (pending),
     // затем заменяется ответом сервера; история НЕ перечитывается целиком.
-    async send(channelId: number, text: string): Promise<boolean> {
+    async send(channelId: number, text: string, attachmentId = 0, localUrl?: string): Promise<boolean> {
       const settings = useSettingsStore()
       const storage = await getKeyStorage()
       const key = await storage.loadChannelKey(channelId)
@@ -122,12 +125,15 @@ export const useChatStore = defineStore('chat', {
         edited: false,
         createdAt: new Date().toISOString(),
         pending: true,
+        localUrl,
       }
       const list = this.messages.get(channelId) || []
       this.messages.set(channelId, [...list, pending])
       try {
-        const res: Message = await settings.api.sendMessage(channelId, ciphertext, iv)
+        const res: Message = await settings.api.sendMessage(channelId, ciphertext, iv, attachmentId)
         const real = await this.toChatMessage(res, channelId, key, auth.user?.id || 0)
+        // Локальный предпросмотр больше не нужен — освобождаем blob.
+        if (localUrl) URL.revokeObjectURL(localUrl)
         const cur = this.messages.get(channelId) || []
         const idx = cur.findIndex((x) => x.id === tempId)
         const exists = cur.some((x) => x.id === res.id)
@@ -141,6 +147,7 @@ export const useChatStore = defineStore('chat', {
         }
         this.messages.set(channelId, [...cur])
       } catch (e) {
+        if (localUrl) URL.revokeObjectURL(localUrl)
         const cur = this.messages.get(channelId) || []
         this.messages.set(channelId, cur.filter((x) => x.id !== tempId))
         // Пробрасываем реальную ошибку (например, «сообщение слишком длинное»),
@@ -256,6 +263,7 @@ export const useChatStore = defineStore('chat', {
         edited: !!m.edited_at,
         createdAt: m.created_at,
         editedAt: m.edited_at,
+        attachment: m.attachment || null,
       }
       // Удалённые сообщения скрываются у простых пользователей.
       if (m.deleted && !this.canSeeDeleted()) {

@@ -42,6 +42,8 @@ func newTestApp(t *testing.T, mutate func(*config.Config)) *testApp {
 	cfg.MessageRatePerSec = 1000
 	cfg.PunchInterval = 10 * time.Second
 	cfg.MaxMessageLen = 2000
+	cfg.AvatarDir = t.TempDir() + "/avatars"
+	cfg.FilesDir = t.TempDir() + "/files"
 	cfg.LiveKitAPIKey = "key"
 	cfg.LiveKitAPISecret = "secret"
 	if mutate != nil {

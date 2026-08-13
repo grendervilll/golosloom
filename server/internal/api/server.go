@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -72,9 +73,34 @@ func New(cfg config.Config, st *store.Store) *Server {
 	} else {
 		log.Printf("FCM gateway: выключен (файл %s не найден или невалиден)", cfg.FCMServiceAccount)
 	}
+	// Уборка заброшенных загрузок (файл загружен, сообщение так и не создано).
+	s.startFileCleanup()
 	// Сверка участников звонков с комнатами LiveKit.
 	s.startCallReconciler()
 	return s
+}
+
+// startFileCleanup удаляет файлы без сообщения старше 24 часов (раз в час).
+func (s *Server) startFileCleanup() {
+	go func() {
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			files, err := s.Store.OrphanFiles(time.Now().Add(-24 * time.Hour))
+			if err != nil {
+				continue
+			}
+			ids := make([]int64, 0, len(files))
+			for _, f := range files {
+				ids = append(ids, f.ID)
+				_ = os.Remove(f.Path)
+			}
+			if len(ids) > 0 {
+				_ = s.Store.DeleteFiles(ids)
+				log.Printf("Файлы: удалено %d заброшенных загрузок", len(ids))
+			}
+		}
+	}()
 }
 
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
