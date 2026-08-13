@@ -132,7 +132,8 @@ async function fetchGifs() {
 .picker {
   position: absolute;
   bottom: 100%;
-  left: 0;
+  right: 0;
+  left: auto;
   width: 360px;
   max-width: 92vw;
   background: var(--bg2);
@@ -143,6 +144,20 @@ async function fetchGifs() {
   flex-direction: column;
   z-index: 90;
   overflow: hidden;
+  /* Плавное появление над кнопкой (правый нижний угол — начало роста). */
+  animation: picker-in 0.16s ease-out;
+  transform-origin: bottom right;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18);
+}
+@keyframes picker-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 .search {
   margin: 10px 10px 4px;

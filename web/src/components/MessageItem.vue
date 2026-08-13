@@ -6,7 +6,9 @@ import type { Role } from '../api/types'
 import { roleIcon } from '../utils/roles'
 import { useAuthStore } from '../stores/auth'
 import { useChannelsStore } from '../stores/channels'
+import { splitMarkdown } from '../utils/markdown'
 import Avatar from './Avatar.vue'
+import CodeBlock from './CodeBlock.vue'
 
 const props = defineProps<{
   msg: ChatMessage
@@ -37,6 +39,11 @@ const gifUrl = computed(() => {
   const m = props.msg.text.match(/!\[gif\]\((https?:\/\/[^)\s]+)\)/)
   return m ? m[1] : ''
 })
+// Markdown-сегменты (код-блоки и форматированный текст).
+const segments = computed(() => {
+  if (props.msg.encrypted || props.msg.deleted || gifUrl.value) return []
+  return splitMarkdown(props.msg.text)
+})
 
 // Кнопка «⋯» открывает то же меню, что и правая кнопка мыши
 // (работает и на мобильных устройствах).
@@ -64,7 +71,15 @@ function openMore(e: MouseEvent) {
         🗑 {{ msg.text || 'Сообщение удалено' }}
       </p>
       <p v-else-if="msg.deleted" class="deleted-text">Сообщение удалено</p>
-      <p v-else-if="!gifUrl" class="text">{{ msg.text }}</p>
+      <template v-else-if="!gifUrl">
+        <div v-for="(seg, i) in segments" :key="i" class="text">
+          <CodeBlock v-if="seg.type === 'code'" :lang="seg.lang" :code="seg.code || ''" />
+          <template v-else>
+            <!-- eslint-disable-next-line vue/no-v-html -- текст экранирован в markdown.ts -->
+            <span v-html="seg.html"></span>
+          </template>
+        </div>
+      </template>
       <img v-if="gifUrl" class="gif-img" :src="gifUrl" alt="GIF" loading="lazy" />
       <span class="meta">
         <span class="role-icon">{{ roleIcon(undefined, role) }}</span>
@@ -112,9 +127,30 @@ function openMore(e: MouseEvent) {
 }
 .text {
   word-break: break-word;
-  white-space: pre-wrap;
   font-size: 14px;
   color: var(--text);
+}
+/* Inline-разметка внутри текста сообщения. */
+.text :deep(code) {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  background: var(--bg4);
+  border-radius: 5px;
+  padding: 1px 5px;
+}
+.msg.mine .text :deep(code) {
+  background: rgba(255, 255, 255, 0.22);
+}
+.text :deep(a) {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+.msg.mine .text :deep(a) {
+  color: #fff;
+  text-decoration: underline;
+}
+.text :deep(s) {
+  opacity: 0.7;
 }
 .msg.mine .text {
   color: #fff;
