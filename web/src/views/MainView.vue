@@ -47,6 +47,8 @@ const inCall = computed(() => calls.connectedCallId > 0)
 // Видео активно — сцена занимает 3/4, чат сворачивается в 1/4 внизу.
 const hasVideo = computed(() => calls.videoCount > 0)
 const chatHidden = computed(() => settings.chatHidden)
+// Нет открытого чата: каналы ещё не созданы или чат скрыт в настройках.
+const noChat = computed(() => !channels.currentId || chatHidden.value)
 
 watch(inCall, (v) => {
   if (!v) mobileCallChat.value = false
@@ -134,7 +136,9 @@ function onTabChat() {
         @open-reg-invite="showRegInvite = true"
         @open-call="showCallPicker = true"
       />
-      <div v-if="chatHidden && !(inCall && hasVideo && !mobileCallChat)" class="empty-chat muted">Чат скрыт</div>
+      <div v-if="noChat && !(inCall && hasVideo && !mobileCallChat)" class="welcome-area">
+        <div class="welcome-bubble">Выберите чат, чтобы начать общение</div>
+      </div>
       <CallBar
         v-if="inCall"
         class="call-bar-row"
@@ -200,6 +204,24 @@ function onTabChat() {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+/* Приветственный экран: светлый фон с плашкой, как в макете. */
+.welcome-area {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f4f7f9;
+  position: relative;
+  min-height: 0;
+}
+.welcome-bubble {
+  background: rgba(0, 0, 0, 0.4);
+  color: #fff;
+  border-radius: 20px;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 500;
 }
 /* Во время звонка: без видео чат занимает всю рабочую зону,
    с видео — 1/4 внизу. */

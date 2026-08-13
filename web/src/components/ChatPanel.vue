@@ -1,4 +1,5 @@
 // Панель чата — главное содержимое центра: история, отправка, редактирование.
+// Мессенджер-стиль: шапка с аватаром, пузыри сообщений.
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useAuthStore } from '../stores/auth'
@@ -8,6 +9,7 @@ import { useCallStore } from '../stores/calls'
 import { toast } from 'vue-sonner'
 import MessageItem from './MessageItem.vue'
 import EmojiPicker from './EmojiPicker.vue'
+import Avatar from './Avatar.vue'
 
 const emit = defineEmits<{ (e: 'toggle-participants'): void; (e: 'open-invite'): void; (e: 'open-call'): void; (e: 'open-reg-invite'): void }>()
 
@@ -36,6 +38,13 @@ async function scrollBottom() {
 
 watch(messages, () => void scrollBottom(), { deep: true })
 onMounted(() => void scrollBottom())
+// При переключении канала — считаем его прочитанным.
+watch(
+  () => channels.currentId,
+  (id) => {
+    if (id) chat.markRead(id)
+  },
+)
 
 async function send() {
   const text = chat.draft.trim()
@@ -113,8 +122,20 @@ function onKeydown(e: KeyboardEvent) {
 <template>
   <div class="chat-panel" @click="closeMenu">
     <div class="chat-head">
-      <h2><span class="hash">#</span> {{ channelName }}</h2>
-      <span class="muted small id-text">ID канала: {{ channels.currentId }}</span>
+      <Avatar
+        :user-id="channels.currentId"
+        :nick="channelName"
+        :avatar="null"
+        :size="36"
+        :color="'#2aabee'"
+      />
+      <div class="head-title">
+        <h2>
+          {{ channelName }}
+          <svg v-if="channels.current?.private" class="lock-ico" viewBox="0 0 448 512"><path d="M144 144v48H304V144c0-44.2-35.8-80-80-80s-80 35.8-80 80zM80 192V144C80 64.5 144.5 0 224 0s144 64.5 144 144v48h16c35.3 0 64 28.7 64 64V448c0 35.3-28.7 64-64 64H64c-35.3 0-64-28.7-64-64V256c0-35.3 28.7-64 64-64H80z" /></svg>
+        </h2>
+        <span class="muted small">ID канала: {{ channels.currentId }}</span>
+      </div>
       <button
         v-if="channels.current?.private"
         class="icon-btn"
@@ -154,7 +175,7 @@ function onKeydown(e: KeyboardEvent) {
         v-model="chat.draft"
         ref="inputEl"
         rows="1"
-        :placeholder="chat.editingId ? 'Редактирование сообщения...' : 'Сообщение в канал...'"
+        :placeholder="chat.editingId ? 'Редактирование сообщения...' : 'Сообщение в чат...'"
         @keydown="onKeydown"
       ></textarea>
       <div class="input-row">
@@ -200,39 +221,53 @@ function onKeydown(e: KeyboardEvent) {
   border-top: 1px solid var(--border);
 }
 .chat-head {
-  padding: 12px 16px;
+  padding: 10px 16px;
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
   gap: 10px;
-  background: var(--bg2);
+  background: var(--bg);
+}
+.head-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
 }
 .chat-head h2 {
   font-size: 16px;
+  font-weight: 600;
   display: flex;
   align-items: center;
   gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.hash {
-  color: var(--text-dim);
+.lock-ico {
+  width: 12px;
+  height: 12px;
+  fill: var(--text-dim);
+  flex-shrink: 0;
 }
 .small {
   font-size: 12px;
 }
-/* Круглые кнопки-иконки в шапке чата (единый стиль). */
+/* Круглые кнопки-иконки в шапке чата. */
 .icon-btn {
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   padding: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  background: var(--bg4);
+  background: var(--bg3);
   flex-shrink: 0;
 }
 .icon-btn:hover:not(:disabled) {
-  background: #43454d;
+  background: var(--bg4);
 }
 .icon-btn .ico {
   width: 15px;
@@ -252,16 +287,17 @@ function onKeydown(e: KeyboardEvent) {
   padding: 10px 16px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
+  background: var(--bg2);
 }
 .empty {
   text-align: center;
   margin-top: 40px;
 }
 .chat-input {
-  padding: 10px 16px;
+  padding: 8px 12px;
   border-top: 1px solid var(--border);
-  background: var(--bg2);
+  background: var(--bg);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -269,7 +305,10 @@ function onKeydown(e: KeyboardEvent) {
 }
 .chat-input textarea {
   resize: none;
-  background: var(--bg);
+  background: var(--bg3);
+  border-radius: 18px;
+  padding: 10px 14px;
+  font-size: 14px;
 }
 .input-row {
   display: flex;
@@ -301,27 +340,29 @@ function onKeydown(e: KeyboardEvent) {
 .ctx-menu {
   position: fixed;
   z-index: 200;
-  background: #111214;
+  background: #fff;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 10px;
   padding: 6px;
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-width: 200px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
   animation: ctx-in 0.1s ease;
 }
 .ctx-menu button {
   text-align: left;
   background: transparent;
-  border-radius: 4px;
+  border-radius: 6px;
   font-size: 13px;
   padding: 8px 10px;
 }
 .ctx-menu button:hover {
-  background: var(--accent);
-  color: #fff;
+  background: var(--bg3);
+}
+.ctx-menu button.danger {
+  color: var(--red);
 }
 @keyframes ctx-in {
   from {
@@ -345,14 +386,6 @@ function onKeydown(e: KeyboardEvent) {
   }
   .chat-list {
     padding: 8px 10px;
-  }
-  /* На сенсорных экранах нет hover — «⋯» видна всегда. */
-  .more-btn {
-    visibility: visible;
-    opacity: 0.55;
-  }
-  .msg:hover {
-    background: var(--bg3);
   }
   .chat-input {
     padding: 8px 10px;

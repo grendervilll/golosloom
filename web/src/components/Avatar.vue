@@ -8,6 +8,7 @@ const props = defineProps<{
   nick: string
   avatar?: string | null
   size?: number
+  color?: string
 }>()
 
 const settings = useSettingsStore()
@@ -32,6 +33,7 @@ const letter = computed(() => (props.nick || '?').charAt(0).toUpperCase())
       width: (size ?? 28) + 'px',
       height: (size ?? 28) + 'px',
       fontSize: ((size ?? 28) * 0.48) + 'px',
+      background: color || 'var(--accent)',
     }"
   >
     <img v-if="src" :src="src" alt="" @error="failed = true" />
@@ -47,7 +49,6 @@ const letter = computed(() => (props.nick || '?').charAt(0).toUpperCase())
   border-radius: 50%;
   overflow: hidden;
   flex-shrink: 0;
-  background: var(--accent);
   color: #fff;
   font-weight: 700;
   user-select: none;

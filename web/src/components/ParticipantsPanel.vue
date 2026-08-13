@@ -108,7 +108,10 @@ function setVolume(userId: number, v: number) {
 <template>
   <aside class="members-panel">
     <div class="members-head">
-      <span>Участники ({{ channels.members.length }})</span>
+      <div class="head-title">
+        <span class="head-name">{{ channels.current?.name || 'Чат' }}</span>
+        <span class="muted small">Участники ({{ channels.members.length }})</span>
+      </div>
       <button class="close-btn" title="Закрыть" @click="emit('close')">✕</button>
     </div>
     <div class="members-list">
@@ -172,22 +175,31 @@ function setVolume(userId: number, v: number) {
 .members-panel {
   width: clamp(240px, 22vw, 380px);
   min-width: 0;
-  background: var(--bg2);
+  background: var(--bg);
   border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   min-height: 0;
 }
 .members-head {
-  padding: 12px 14px;
+  padding: 14px;
   border-bottom: 1px solid var(--border);
   display: flex;
   justify-content: space-between;
   align-items: center;
-  color: var(--text-dim);
+}
+.head-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.head-name {
   font-weight: 700;
-  font-size: 13px;
-  text-transform: uppercase;
+  font-size: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .close-btn {
   display: none;

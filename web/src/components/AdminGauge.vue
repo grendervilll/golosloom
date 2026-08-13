@@ -27,7 +27,7 @@ const color = computed(() => {
 <template>
   <div class="gauge">
     <svg viewBox="0 0 100 60" class="gauge-svg">
-      <path d="M10,55 A40,40 0 0 1 90,55" fill="none" stroke="#26282c" stroke-width="9" stroke-linecap="round" />
+      <path d="M10,55 A40,40 0 0 1 90,55" fill="none" stroke="#e9e9e9" stroke-width="9" stroke-linecap="round" />
       <path
         d="M10,55 A40,40 0 0 1 90,55"
         fill="none"

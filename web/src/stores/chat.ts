@@ -30,7 +30,13 @@ export const useChatStore = defineStore('chat', {
     messages: new Map<number, ChatMessage[]>(),
     draft: '' as string,
     editingId: 0 as number,
+    // Непрочитанные сообщения по каналам (локальный счётчик, сбрасывается
+    // при открытии канала).
+    unread: new Map<number, number>(),
   }),
+  getters: {
+    unreadCount: (state) => (channelId: number) => state.unread.get(channelId) || 0,
+  },
   actions: {
     async loadHistory(channelId: number) {
       const settings = useSettingsStore()
@@ -43,6 +49,12 @@ export const useChatStore = defineStore('chat', {
         decrypted.push(await this.toChatMessage(m, channelId, key, auth.user?.id || 0))
       }
       this.messages.set(channelId, decrypted)
+    },
+    // Открытие канала: прочитанными считаются все сообщения в нём.
+    markRead(channelId: number) {
+      if (this.unread.get(channelId)) {
+        this.unread.set(channelId, 0)
+      }
     },
     // Оптимистичная отправка: своё сообщение появляется сразу (pending),
     // затем заменяется ответом сервера; история НЕ перечитывается целиком.
@@ -127,6 +139,11 @@ export const useChatStore = defineStore('chat', {
       if (idx >= 0) list[idx] = m
       else list.push(m)
       this.messages.set(data.channel_id, [...list])
+      // Непрочитанное: чужие сообщения в каналы, которые не открыты.
+      const channels = useChannelsStore()
+      if (data.sender_id !== auth.user?.id && data.channel_id !== channels.currentId) {
+        this.unread.set(data.channel_id, (this.unread.get(data.channel_id) || 0) + 1)
+      }
       if (data.sender_id !== auth.user?.id && !m.encrypted) {
         sounds.message()
       }

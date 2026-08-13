@@ -106,7 +106,7 @@ async function submit() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: radial-gradient(circle at 30% 20%, #2b2d31, #1e1f22);
+  background: radial-gradient(circle at 30% 20%, #e9e9e9, #d7dde3);
 }
 .auth-card {
   background: var(--bg2);

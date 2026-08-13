@@ -5,28 +5,29 @@
 /*
  * Токены shadcn-компонентов (Dialog, Button, ...) живут в отдельном
  * пространстве --ui-*, чтобы не конфликтовать с собственными переменными
- * приложения (--bg, --accent, --border, --radius). Палитра — Discord.
+ * приложения (--bg, --accent, --border, --radius). Светлая палитра —
+ * Telegram-стиль.
  */
 :root {
-  --ui-background: #313338;
-  --ui-foreground: #dbdee1;
-  --ui-card: #2b2d31;
-  --ui-card-foreground: #dbdee1;
-  --ui-popover: #111214;
-  --ui-popover-foreground: #dbdee1;
-  --ui-primary: #5865f2;
+  --ui-background: #ffffff;
+  --ui-foreground: #172121;
+  --ui-card: #ffffff;
+  --ui-card-foreground: #172121;
+  --ui-popover: #ffffff;
+  --ui-popover-foreground: #172121;
+  --ui-primary: #2aabee;
   --ui-primary-foreground: #ffffff;
-  --ui-secondary: #2b2d31;
-  --ui-secondary-foreground: #dbdee1;
-  --ui-muted: #2b2d31;
-  --ui-muted-foreground: #949ba4;
-  --ui-accent: #404249;
-  --ui-accent-foreground: #dbdee1;
+  --ui-secondary: #f1f5f9;
+  --ui-secondary-foreground: #172121;
+  --ui-muted: #f1f5f9;
+  --ui-muted-foreground: #707579;
+  --ui-accent: #f1f5f9;
+  --ui-accent-foreground: #172121;
   --ui-destructive: #da373c;
   --ui-destructive-foreground: #ffffff;
-  --ui-border: #26282c;
-  --ui-input: #1e1f22;
-  --ui-ring: #5865f2;
+  --ui-border: #e9e9e9;
+  --ui-input: #ffffff;
+  --ui-ring: #2aabee;
   --ui-radius: 8px;
 }
 
@@ -56,20 +57,22 @@
   --color-ring: var(--ui-ring);
 }
 
-/* Собственные токены приложения (не трогать компоненты shadcn). */
+/* Собственные токены приложения (не трогать компоненты shadcn).
+   Светлая палитра в стиле Telegram: белый фон, серые границы,
+   синий акцент, серый вторичный текст. */
 :root {
-  --bg: #1e1f22;
-  --bg2: #2b2d31;
-  --bg3: #313338;
-  --bg4: #383a40;
-  --text: #dbdee1;
-  --text-dim: #949ba4;
-  --accent: #5865f2;
-  --accent-hover: #4752c4;
+  --bg: #ffffff;
+  --bg2: #f7f8fa;
+  --bg3: #f1f5f9;
+  --bg4: #e9e9e9;
+  --text: #172121;
+  --text-dim: #707579;
+  --accent: #2aabee;
+  --accent-hover: #1d97d4;
   --green: #23a55a;
   --red: #da373c;
   --yellow: #f0b232;
-  --border: #26282c;
+  --border: #e9e9e9;
   --radius: 8px;
 }
 
@@ -103,7 +106,7 @@ body {
   color: var(--text);
   font-size: 15px;
   overflow: hidden;
-  color-scheme: dark;
+  color-scheme: light;
   /* Отступы под вырезы/панели iOS: константы переопределяются в компонентах. */
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
@@ -125,8 +128,8 @@ body {
 button {
   font: inherit;
   border: none;
-  background: #4e5058;
-  color: #fff;
+  background: var(--bg3);
+  color: var(--text);
   padding: 8px 14px;
   border-radius: 4px;
   cursor: pointer;
@@ -138,7 +141,7 @@ button {
 }
 
 button:hover:not(:disabled) {
-  background: #6d6f78;
+  background: var(--bg4);
 }
 
 button:active:not(:disabled) {
@@ -152,6 +155,7 @@ button:disabled {
 
 button.primary {
   background: var(--accent);
+  color: #fff;
 }
 button.primary:hover:not(:disabled) {
   background: var(--accent-hover);
@@ -293,9 +297,9 @@ select:focus {
   border-radius: 4px;
 }
 
-/* Тёмный фон у sonner-тостов поверх тёмного интерфейса. */
+/* Светлый фон у sonner-тостов. */
 [data-sonner-toaster] {
-  --normal-bg: #2b2d31;
-  --normal-border: #26282c;
-  --normal-text: #dbdee1;
+  --normal-bg: #ffffff;
+  --normal-border: #e9e9e9;
+  --normal-text: #172121;
 }

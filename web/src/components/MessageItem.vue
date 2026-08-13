@@ -1,4 +1,4 @@
-// Одно сообщение в чате.
+// Одно сообщение в чате — пузырь: свои справа (синий), чужие слева (белый).
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { ChatMessage } from '../stores/chat'
@@ -27,6 +27,11 @@ const role = computed<Role>(() => {
   if (member.value?.is_server_admin) return 'server_admin'
   return member.value?.role || 'user'
 })
+// Имя отправителя в пузыре (для групповых чатов).
+const showSender = computed(() => {
+  const members = channels.members
+  return members.length > 2 && !isMine.value && !props.msg.encrypted
+})
 // GIF-сообщения приходят как ![gif](url) — рендерим картинку.
 const gifUrl = computed(() => {
   const m = props.msg.text.match(/!\[gif\]\((https?:\/\/[^)\s]+)\)/)
@@ -52,20 +57,8 @@ function openMore(e: MouseEvent) {
     :class="{ mine: isMine, deleted: msg.deleted, pending: msg.pending }"
     @contextmenu.prevent="emit('contextmenu', $event)"
   >
-    <span class="role-icon" :style="{ filter: 'grayscale(0.6)' }">{{ roleIcon(undefined, role) }}</span>
-    <div class="body">
-      <div class="head">
-        <Avatar
-          class="msg-avatar"
-          :user-id="msg.senderId"
-          :nick="msg.senderNick"
-          :avatar="senderAvatar"
-          :size="22"
-        />
-        <b>{{ msg.senderNick }}</b>
-        <span class="muted small">{{ new Date(msg.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) }}</span>
-        <span v-if="msg.edited" class="muted small">(изменено)</span>
-      </div>
+    <div class="bubble">
+      <div v-if="showSender" class="sender">{{ msg.senderNick }}</div>
       <p v-if="msg.encrypted" class="encrypted">🔒 Сообщение зашифровано (ключ канала недоступен)</p>
       <p v-else-if="msg.deleted && canModerate" class="deleted-text">
         🗑 {{ msg.text || 'Сообщение удалено' }}
@@ -73,6 +66,11 @@ function openMore(e: MouseEvent) {
       <p v-else-if="msg.deleted" class="deleted-text">Сообщение удалено</p>
       <p v-else-if="!gifUrl" class="text">{{ msg.text }}</p>
       <img v-if="gifUrl" class="gif-img" :src="gifUrl" alt="GIF" loading="lazy" />
+      <span class="meta">
+        <span class="role-icon">{{ roleIcon(undefined, role) }}</span>
+        <span class="time">{{ new Date(msg.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) }}</span>
+        <span v-if="msg.edited" class="edited">изменено</span>
+      </span>
     </div>
     <button class="more-btn" title="Действия с сообщением" @click.stop="openMore($event)">⋯</button>
   </div>
@@ -81,31 +79,45 @@ function openMore(e: MouseEvent) {
 <style scoped>
 .msg {
   display: flex;
-  gap: 8px;
-  padding: 6px 8px;
-  border-radius: 6px;
+  gap: 6px;
+  justify-content: flex-start;
+}
+.msg.mine {
+  justify-content: flex-end;
 }
 .msg:hover {
-  background: var(--bg3);
+  background: var(--bg2);
+  border-radius: 8px;
 }
-.body {
-  min-width: 0;
+.bubble {
+  max-width: min(78%, 560px);
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  border-top-left-radius: 4px;
+  padding: 8px 12px 6px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
-.head {
-  display: flex;
-  gap: 8px;
-  align-items: baseline;
+.msg.mine .bubble {
+  background: var(--accent);
+  border-color: var(--accent);
+  border-radius: 14px;
+  border-top-right-radius: 4px;
 }
-.msg-avatar {
-  align-self: center;
-  margin-right: 2px;
-}
-.small {
-  font-size: 11px;
+.sender {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent-hover);
+  margin-bottom: 2px;
 }
 .text {
   word-break: break-word;
   white-space: pre-wrap;
+  font-size: 14px;
+  color: var(--text);
+}
+.msg.mine .text {
+  color: #fff;
 }
 /* Оптимистично показанное сообщение (ещё не подтверждено сервером). */
 .msg.pending {
@@ -123,6 +135,30 @@ function openMore(e: MouseEvent) {
 .deleted-text {
   color: var(--text-dim);
   font-style: italic;
+  font-size: 13px;
+}
+.msg.mine .encrypted,
+.msg.mine .deleted-text {
+  color: rgba(255, 255, 255, 0.85);
+}
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+}
+.time,
+.edited {
+  font-size: 11px;
+  color: #999999;
+}
+.msg.mine .time,
+.msg.mine .edited {
+  color: rgba(255, 255, 255, 0.75);
+}
+.role-icon {
+  font-size: 11px;
+  opacity: 0.7;
 }
 .msg.system {
   justify-content: center;
@@ -143,13 +179,14 @@ function openMore(e: MouseEvent) {
   color: var(--text-dim);
   font-size: 16px;
   border-radius: 6px;
+  flex-shrink: 0;
 }
 .msg:hover .more-btn,
 .more-btn:focus {
   visibility: visible;
 }
 .more-btn:hover {
-  background: var(--bg4);
+  background: var(--bg3);
   color: var(--text);
 }
 </style>
