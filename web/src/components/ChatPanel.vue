@@ -36,8 +36,22 @@ async function scrollBottom() {
   if (listEl.value) listEl.value.scrollTop = listEl.value.scrollHeight
 }
 
+// Авторасширение поля ввода: растёт до 13 строк, дальше — прокрутка.
+const MAX_INPUT_HEIGHT = 276
+function autoResize() {
+  const el = inputEl.value
+  if (!el) return
+  el.style.height = 'auto'
+  el.style.height = Math.min(el.scrollHeight, MAX_INPUT_HEIGHT) + 'px'
+}
+
 watch(messages, () => void scrollBottom(), { deep: true })
 onMounted(() => void scrollBottom())
+// При изменении текста (ввод, начало редактирования, очистка) — подгоняем высоту.
+watch(
+  () => chat.draft,
+  () => void nextTick(autoResize),
+)
 // При переключении канала — считаем его прочитанным.
 watch(
   () => channels.currentId,
@@ -171,18 +185,18 @@ function onKeydown(e: KeyboardEvent) {
       <p v-if="messages.length === 0" class="muted empty">Сообщений пока нет</p>
     </div>
     <div class="chat-input">
-      <textarea
-        v-model="chat.draft"
-        ref="inputEl"
-        rows="1"
-        :placeholder="chat.editingId ? 'Редактирование сообщения...' : 'Сообщение в чат...'"
-        @keydown="onKeydown"
-      ></textarea>
-      <div class="input-row">
-        <button v-if="chat.editingId" class="icon-btn" title="Отменить редактирование" @click="chat.editingId = 0; chat.draft = ''">
+      <div class="input-pill">
+        <textarea
+          v-model="chat.draft"
+          ref="inputEl"
+          rows="1"
+          :placeholder="chat.editingId ? 'Редактирование сообщения...' : 'Сообщение в чат...'"
+          @keydown="onKeydown"
+        ></textarea>
+        <button v-if="chat.editingId" class="icon-btn edit-cancel" title="Отменить редактирование" @click="chat.editingId = 0; chat.draft = ''">
           <svg class="ico" viewBox="0 0 384 512"><path d="M342.6 150.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L192 210.7 86.6 105.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3L146.7 256 41.4 361.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0L192 301.3 297.4 406.6c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L237.3 256 342.6 150.6z" /></svg>
         </button>
-        <button class="icon-btn" title="Смайлики и GIF" @click.stop="showPicker = !showPicker">
+        <button class="icon-btn emoji-btn" title="Смайлики и GIF" @click.stop="showPicker = !showPicker">
           <svg class="ico" viewBox="0 0 512 512"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM164.1 325.5C182 346.2 212.6 368 256 368s74-21.8 91.9-42.5c5.8-6.7 15.9-7.4 22.6-1.6s7.4 15.9 1.6 22.6C349.8 372.1 311.1 400 256 400s-93.8-27.9-116.1-53.5c-5.8-6.7-5.1-16.8 1.6-22.6s16.8-5.1 22.6 1.6zM144.4 208a32 32 0 1 1 64 0 32 32 0 1 1 -64 0zm192-32a32 32 0 1 1 0 64 32 32 0 1 1 0-64z" /></svg>
         </button>
         <button class="send-btn" title="Отправить" :disabled="!chat.draft.trim()" @click="send">
@@ -300,22 +314,47 @@ function onKeydown(e: KeyboardEvent) {
   padding: 8px 12px;
   border-top: 1px solid var(--border);
   background: var(--bg);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
   position: relative;
 }
-.chat-input textarea {
-  resize: none;
-  background: var(--bg3);
-  border-radius: 18px;
-  padding: 10px 14px;
-  font-size: 14px;
-}
-.input-row {
+/* Капсула ввода: текст + кнопки смайликов и отправки внутри, справа.
+   Поле текста уже всей капсулы (padding-right), текст не доходит до кнопок. */
+.input-pill {
   display: flex;
-  justify-content: flex-end;
-  gap: 8px;
+  align-items: flex-end;
+  gap: 6px;
+  background: var(--bg3);
+  border-radius: 20px;
+  padding: 6px;
+  min-height: 48px;
+}
+.input-pill textarea {
+  flex: 1;
+  min-width: 0;
+  resize: none;
+  background: transparent;
+  border: none;
+  padding: 8px 4px 8px 10px;
+  font-size: 14px;
+  line-height: 1.45;
+  max-height: 276px;
+  overflow-y: auto;
+  box-shadow: none;
+}
+.input-pill textarea:focus {
+  border: none;
+  box-shadow: none;
+}
+.edit-cancel {
+  flex-shrink: 0;
+  align-self: center;
+  background: transparent;
+}
+.edit-cancel .ico {
+  width: 13px;
+  height: 13px;
+}
+.emoji-btn {
+  flex-shrink: 0;
 }
 .send-btn {
   width: 38px;

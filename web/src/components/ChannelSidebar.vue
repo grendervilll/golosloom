@@ -40,7 +40,6 @@ const avatarMenuOpen = ref(false)
 
 function toggleTheme() {
   settings.setTheme(settings.theme === 'dark' ? 'light' : 'dark')
-  menuOpen.value = false
 }
 
 function closeAvatarMenu() {
