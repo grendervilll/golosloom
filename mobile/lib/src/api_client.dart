@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 class ApiException implements Exception {
@@ -135,10 +136,16 @@ class ApiClient {
     return await _request('GET', '/api/channels/$channelId/messages$q') as List<dynamic>;
   }
 
-  Future<Map<String, dynamic>> sendMessage(int channelId, String ciphertext, String iv) async {
+  Future<Map<String, dynamic>> sendMessage(
+    int channelId,
+    String ciphertext,
+    String iv, {
+    List<int> attachmentIds = const [],
+  }) async {
     return await _request('POST', '/api/channels/$channelId/messages', {
       'ciphertext': ciphertext,
       'iv': iv,
+      if (attachmentIds.isNotEmpty) 'attachment_ids': attachmentIds,
     }) as Map<String, dynamic>;
   }
 
@@ -250,6 +257,33 @@ class ApiClient {
 
   Future<void> deleteAvatar() async {
     await _request('DELETE', '/api/me/avatar');
+  }
+
+  // --- Файлы (вложения сообщений) ---
+
+  /// Загрузка файла в канал; вернёт { id, filename, mime, size }.
+  Future<Map<String, dynamic>> uploadFile(
+    int channelId,
+    Uint8List bytes,
+    String filename,
+    String mime,
+  ) async {
+    final req = http.MultipartRequest('POST', _uri('/api/channels/$channelId/files'));
+    if (token != null) req.headers['Authorization'] = 'Bearer $token';
+    req.files.add(http.MultipartFile.fromBytes('file', bytes,
+        filename: filename, contentType: MediaType('application', 'octet-stream')));
+    final streamed = await _http.send(req).timeout(const Duration(minutes: 5));
+    final res = await http.Response.fromStream(streamed);
+    if (res.statusCode >= 400) {
+      throw ApiException(res.statusCode, _errorText(res.body));
+    }
+    return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// URL файла с токеном (для Image.network / видеоплеера).
+  String fileUrl(int fileId) {
+    final t = token == null ? '' : '?token=${Uri.encodeQueryComponent(token!)}';
+    return '$baseUrl/api/files/$fileId$t';
   }
 
   // --- Нативные пуши (FCM) ---

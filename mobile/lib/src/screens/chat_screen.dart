@@ -1,15 +1,30 @@
 // Экран чата (по макету active-chat): шапка с аватаром и статусом,
 // пузыри сообщений, поле ввода-капсула с кнопкой отправки.
+// Длинное нажатие на кнопку отправки переключает режим:
+// отправка текста → запись голоса → запись видео.
 library;
 
-import 'package:flutter/material.dart';
+import 'dart:async';
+import 'dart:io';
 
+import 'package:camera/camera.dart';
+import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
+
+import '../api_client.dart';
 import '../call_service.dart';
 import '../chat_store.dart';
 import '../session.dart';
 import '../theme.dart';
+import '../widgets/message_attachments.dart';
 import 'call_picker.dart';
 import 'call_screen.dart';
+
+// Видео-сообщения ограничены 3 минутами, голосовые — нет.
+const _videoLimitMs = 3 * 60 * 1000;
+
+enum _SendMode { send, mic, cam }
 
 class ChatScreen extends StatefulWidget {
   final Session session;
@@ -32,9 +47,18 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final _input = TextEditingController();
   final _scroll = ScrollController();
+  final AudioRecorder _audioRecorder = AudioRecorder();
   int? _editingId;
   bool _sending = false;
   String? _sendError;
+
+  // Режим кнопки отправки: текст / голос / видео (длинное нажатие).
+  _SendMode _sendMode = _SendMode.send;
+  CameraController? _camera;
+  bool _cameraReady = false;
+  bool _recording = false;
+  Timer? _recTimer;
+  int _recMs = 0;
 
   int get _channelId => (widget.channel['id'] as num?)?.toInt() ?? 0;
 
@@ -57,6 +81,9 @@ class _ChatScreenState extends State<ChatScreen> {
     if (widget.session.currentChannelId == _channelId) {
       widget.session.currentChannelId = null;
     }
+    _recTimer?.cancel();
+    _audioRecorder.dispose();
+    _camera?.dispose();
     _input.dispose();
     _scroll.dispose();
     super.dispose();
@@ -109,6 +136,168 @@ class _ChatScreenState extends State<ChatScreen> {
         _sendError = ok ? null : 'Ключ канала ещё не получен, повторите позже';
       });
       if (ok) _input.clear();
+    }
+  }
+
+  // ---------- Голосовые и видео-сообщения ----------
+
+  /// Длинное нажатие на кнопку отправки: смена режима (текст → голос → видео).
+  Future<void> _cycleMode() async {
+    if (_recording) return;
+    setState(() {
+      _sendMode = _SendMode.values[(_sendMode.index + 1) % _SendMode.values.length];
+    });
+    if (_sendMode == _SendMode.cam) {
+      await _initCamera();
+    }
+  }
+
+  Future<void> _initCamera() async {
+    if (_cameraReady) return;
+    try {
+      final cams = await availableCameras();
+      if (cams.isEmpty) return;
+      final c = CameraController(cams.first, ResolutionPreset.low, enableAudio: true);
+      await c.initialize();
+      _camera = c;
+      _cameraReady = true;
+      if (mounted) setState(() {});
+    } catch (_) {
+      _cameraReady = false;
+    }
+  }
+
+  void _showError(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(msg), duration: const Duration(seconds: 3)));
+  }
+
+  Future<void> _onSendTap() async {
+    switch (_sendMode) {
+      case _SendMode.send:
+        await _send();
+      case _SendMode.mic:
+        if (_recording) {
+          await _stopRecording();
+        } else {
+          await _startAudioRecording();
+        }
+      case _SendMode.cam:
+        if (_recording) {
+          await _stopRecording();
+        } else {
+          await _startVideoRecording();
+        }
+    }
+  }
+
+  Future<void> _startAudioRecording() async {
+    if (!await _audioRecorder.hasPermission()) {
+      _showError('Нет доступа к микрофону — проверьте разрешения');
+      return;
+    }
+    final dir = await getTemporaryDirectory();
+    final path = '${dir.path}/voice-${DateTime.now().millisecondsSinceEpoch}.m4a';
+    try {
+      await _audioRecorder.start(
+        const RecordConfig(encoder: AudioEncoder.aacLc, bitRate: 96000),
+        path: path,
+      );
+    } catch (_) {
+      _showError('Не удалось начать запись');
+      return;
+    }
+    _startRecUi();
+  }
+
+  Future<void> _startVideoRecording() async {
+    if (!_cameraReady) {
+      await _initCamera();
+    }
+    final cam = _camera;
+    if (!_cameraReady || cam == null || !cam.value.isInitialized) {
+      _showError('Камера недоступна — проверьте разрешения');
+      return;
+    }
+    try {
+      await cam.startVideoRecording();
+    } catch (_) {
+      _showError('Не удалось начать запись видео');
+      return;
+    }
+    _startRecUi();
+  }
+
+  void _startRecUi() {
+    setState(() {
+      _recording = true;
+      _recMs = 0;
+    });
+    _recTimer?.cancel();
+    _recTimer = Timer.periodic(const Duration(milliseconds: 250), (_) {
+      if (!mounted) return;
+      setState(() => _recMs += 250);
+      // Видео — максимум 3 минуты.
+      if (_sendMode == _SendMode.cam && _recMs >= _videoLimitMs) {
+        _showError('Видео-сообщение достигло 3 минут — запись остановлена');
+        _stopRecording();
+      }
+    });
+  }
+
+  Future<void> _stopRecording() async {
+    _recTimer?.cancel();
+    setState(() => _recording = false);
+    String? path;
+    var mime = 'audio/mp4';
+    try {
+      if (_sendMode == _SendMode.mic) {
+        path = await _audioRecorder.stop();
+      } else {
+        final f = await _camera?.stopVideoRecording();
+        path = f?.path;
+        mime = 'video/mp4';
+      }
+    } catch (_) {
+      path = null;
+    }
+    if (path == null) return;
+    await _sendRecording(File(path), mime);
+  }
+
+  Future<void> _sendRecording(File file, String mime) async {
+    setState(() => _sending = true);
+    try {
+      final bytes = await file.readAsBytes();
+      final up = await widget.session.api
+          .uploadFile(_channelId, bytes, file.uri.pathSegments.last, mime);
+      final att = Attachment(
+        id: (up['id'] as num?)?.toInt() ?? 0,
+        filename: (up['filename'] as String?) ?? file.uri.pathSegments.last,
+        mime: mime,
+        size: bytes.length,
+      );
+      final text = _input.text.trim();
+      final ok = await widget.chat.send(_channelId, text, attachments: [att]);
+      if (mounted) {
+        setState(() {
+          _sending = false;
+          _sendError = ok ? null : 'Ключ канала ещё не получен, повторите позже';
+        });
+        if (ok) _input.clear();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _sending = false;
+          _sendError = 'Не удалось отправить запись';
+        });
+      }
+    } finally {
+      try {
+        file.delete();
+      } catch (_) {}
     }
   }
 
@@ -282,7 +471,12 @@ class _ChatScreenState extends State<ChatScreen> {
               itemBuilder: (ctx, i) {
                 final m = messages[i];
                 final mine = m.senderId == widget.session.settings.user?.id;
-                return _MessageBubble(m: m, mine: mine, onLongPress: () => _onLongPress(m));
+                return _MessageBubble(
+                  m: m,
+                  mine: mine,
+                  onLongPress: () => _onLongPress(m),
+                  api: widget.session.api,
+                );
               },
             ),
           ),
@@ -290,6 +484,33 @@ class _ChatScreenState extends State<ChatScreen> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
               child: Text(_sendError!, style: TextStyle(color: colors.danger, fontSize: 12)),
+            ),
+          // Индикатор идущей записи: красная точка + таймер.
+          if (_recording)
+            Container(
+              width: double.infinity,
+              color: colors.surface,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 9,
+                    height: 9,
+                    decoration: BoxDecoration(
+                      color: colors.danger,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '${_sendMode == _SendMode.mic ? 'Голосовое' : 'Видео'}: '
+                    '${(_recMs ~/ 60000)}:${((_recMs ~/ 1000) % 60).toString().padLeft(2, '0')}'
+                    '${_sendMode == _SendMode.cam ? ' · макс. 3:00' : ''} — нажмите ещё раз, чтобы остановить',
+                    style: TextStyle(color: colors.danger, fontSize: 12, fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
             ),
           if (_editingId != null)
             Container(
@@ -335,18 +556,43 @@ class _ChatScreenState extends State<ChatScreen> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                // Круглая кнопка отправки (как в макете).
+                // Круглая кнопка отправки: длинное нажатие меняет режим
+                // (текст → голос → видео), тап — отправить/запись.
                 SizedBox(
                   width: 44,
                   height: 44,
                   child: IconButton(
                     padding: EdgeInsets.zero,
-                    icon: const Icon(Icons.send, color: Colors.white, size: 20),
+                    icon: Icon(
+                      _recording
+                          ? Icons.stop
+                          : _sendMode == _SendMode.mic
+                              ? Icons.mic
+                              : _sendMode == _SendMode.cam
+                                  ? Icons.videocam
+                                  : Icons.send,
+                      color: Colors.white,
+                      size: 20,
+                    ),
                     style: IconButton.styleFrom(
-                      backgroundColor: colors.accent,
+                      backgroundColor: _recording
+                          ? colors.danger
+                          : colors.accent,
                       disabledBackgroundColor: colors.accent.withValues(alpha: 0.4),
                     ),
-                    onPressed: _input.text.trim().isEmpty ? null : _send,
+                    tooltip: switch (_sendMode) {
+                      _SendMode.send => 'Отправить (долгое нажатие — голос)',
+                      _SendMode.mic => 'Голосовое сообщение (долгое нажатие — видео)',
+                      _SendMode.cam => 'Видео-сообщение до 3 минут',
+                    },
+                    onPressed: _sending
+                        ? null
+                        : (_sendMode == _SendMode.send &&
+                                _input.text.trim().isEmpty &&
+                                !_recording)
+                            ? null
+                            : _onSendTap,
+                    onLongPress: _cycleMode,
                   ),
                 ),
               ],
@@ -363,8 +609,14 @@ class _MessageBubble extends StatelessWidget {
   final ChatMessage m;
   final bool mine;
   final VoidCallback onLongPress;
+  final ApiClient api;
 
-  const _MessageBubble({required this.m, required this.mine, required this.onLongPress});
+  const _MessageBubble({
+    required this.m,
+    required this.mine,
+    required this.onLongPress,
+    required this.api,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -410,7 +662,9 @@ class _MessageBubble extends StatelessWidget {
                 fontSize: 13,
               ),
             ),
-          Text(body, style: bodyStyle),
+          // Вложения: фото/видео/голос/файлы (одно или несколько).
+          MessageAttachments(m: m, mine: mine, api: api),
+          if (body.isNotEmpty) Text(body, style: bodyStyle),
           const SizedBox(height: 3),
           Align(
             alignment: Alignment.centerRight,

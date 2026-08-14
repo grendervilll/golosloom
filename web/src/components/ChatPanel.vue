@@ -418,7 +418,11 @@ function onDrop(e: DragEvent) {
   dragging.value = false
   const files = Array.from(e.dataTransfer?.files || [])
   if (files.length === 0 || !channels.currentId) return
-  for (const f of files) void uploadFile(f)
+  // Как вставка из буфера: файлы копятся в области предпросмотра,
+  // отправляются вместе с текстом одним сообщением (до 20 в каждом).
+  for (const f of files) {
+    pasted.value.push({ file: f, url: URL.createObjectURL(f) })
+  }
 }
 
 // Предотвращаем открытие файла браузером при дропе мимо панели чата.

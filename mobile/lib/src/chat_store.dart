@@ -10,6 +10,28 @@ import 'crypto.dart';
 import 'session.dart';
 import 'sounds.dart';
 
+// Вложение сообщения (файл на сервере).
+class Attachment {
+  final int id;
+  final String filename;
+  final String mime;
+  final int size;
+
+  const Attachment({
+    required this.id,
+    required this.filename,
+    required this.mime,
+    required this.size,
+  });
+
+  factory Attachment.fromJson(Map<String, dynamic> d) => Attachment(
+        id: (d['id'] as num?)?.toInt() ?? 0,
+        filename: (d['filename'] as String?) ?? 'файл',
+        mime: (d['mime'] as String?) ?? 'application/octet-stream',
+        size: (d['size'] as num?)?.toInt() ?? 0,
+      );
+}
+
 class ChatMessage {
   final int id;
   final int channelId;
@@ -21,6 +43,8 @@ class ChatMessage {
   final bool edited;
   final DateTime createdAt;
   final bool pending;
+  final List<Attachment> attachments;
+  final bool attachmentDeleted;
 
   const ChatMessage({
     required this.id,
@@ -33,9 +57,19 @@ class ChatMessage {
     this.edited = false,
     required this.createdAt,
     this.pending = false,
+    this.attachments = const [],
+    this.attachmentDeleted = false,
   });
 
-  ChatMessage copyWith({String? text, bool? encrypted, bool? deleted, bool? edited, bool? pending}) {
+  ChatMessage copyWith({
+    String? text,
+    bool? encrypted,
+    bool? deleted,
+    bool? edited,
+    bool? pending,
+    List<Attachment>? attachments,
+    bool? attachmentDeleted,
+  }) {
     return ChatMessage(
       id: id,
       channelId: channelId,
@@ -47,6 +81,8 @@ class ChatMessage {
       edited: edited ?? this.edited,
       createdAt: createdAt,
       pending: pending ?? this.pending,
+      attachments: attachments ?? this.attachments,
+      attachmentDeleted: attachmentDeleted ?? this.attachmentDeleted,
     );
   }
 }
@@ -127,7 +163,8 @@ class ChatStore extends ChangeNotifier {
   // ---------- Отправка / правка / удаление ----------
 
   /// Оптимистичная отправка: своё сообщение появляется сразу (pending).
-  Future<bool> send(int channelId, String text) async {
+  /// attachments — уже загруженные на сервер вложения.
+  Future<bool> send(int channelId, String text, {List<Attachment> attachments = const []}) async {
     final key = await session.keyStore.loadChannelKey(channelId);
     if (key == null) return false;
     final (ciphertext: ct, iv: iv) = await encryptMessage(key, text);
@@ -140,13 +177,15 @@ class ChatStore extends ChangeNotifier {
       text: text,
       createdAt: DateTime.now(),
       pending: true,
+      attachments: attachments,
     );
     final list = [...(_byChannel[channelId] ?? const <ChatMessage>[]), pending];
     _byChannel[channelId] = list;
     notifyListeners();
     try {
       final res = await session.api.sendMessage(
-          channelId, bytesToB64(ct), bytesToB64(iv));
+          channelId, bytesToB64(ct), bytesToB64(iv),
+          attachmentIds: attachments.map((a) => a.id).toList());
       final real = await _toMessage(res);
       final cur = _byChannel[channelId] ?? [];
       final idx = cur.indexWhere((m) => m.id == pending.id);
@@ -192,10 +231,33 @@ class ChatStore extends ChangeNotifier {
         _applyMessage(_byChannel[channelIdOf(e.data)], e.data);
       case 'message.deleted':
         _applyMessage(_byChannel[channelIdOf(e.data)], e.data);
+      case 'attachment.deleted':
+        _handleAttachmentDeleted(e.data);
       case 'key.granted':
         final ch = e.data['channel_id'];
         if (ch is int) loadHistory(ch, force: true);
     }
+  }
+
+  // Вложения сообщения удалены администратором: стёртые исчезают,
+  // оставшиеся приходят в событии.
+  void _handleAttachmentDeleted(Map<String, dynamic> d) {
+    final ch = channelIdOf(d);
+    final id = (d['message_id'] as num?)?.toInt();
+    if (ch == null || id == null) return;
+    final list = _byChannel[ch];
+    if (list == null) return;
+    final idx = list.indexWhere((m) => m.id == id);
+    if (idx < 0) return;
+    final remaining = ((d['attachments'] as List?) ?? const [])
+        .cast<Map<String, dynamic>>()
+        .map(Attachment.fromJson)
+        .toList();
+    list[idx] = list[idx].copyWith(
+      attachments: remaining,
+      attachmentDeleted: (d['attachment_deleted'] as bool?) ?? remaining.isEmpty,
+    );
+    notifyListeners();
   }
 
   int? channelIdOf(Map<String, dynamic> d) => (d['channel_id'] as num?)?.toInt();
@@ -248,6 +310,12 @@ class ChatStore extends ChangeNotifier {
     } else if (!deleted) {
       encrypted = true;
     }
+    final attachmentsRaw = (d['attachments'] as List?) ??
+        (d['attachment'] != null ? [d['attachment']] : null);
+    final attachments = (attachmentsRaw ?? const [])
+        .cast<Map<String, dynamic>>()
+        .map(Attachment.fromJson)
+        .toList();
     return ChatMessage(
       id: (d['id'] as num?)?.toInt() ?? 0,
       channelId: channelId,
@@ -258,6 +326,8 @@ class ChatStore extends ChangeNotifier {
       deleted: deleted,
       edited: d['edited_at'] != null,
       createdAt: DateTime.tryParse((d['created_at'] as String?) ?? '') ?? DateTime.now(),
+      attachments: attachments,
+      attachmentDeleted: (d['attachment_deleted'] as bool?) ?? false,
     );
   }
 }
