@@ -2,7 +2,7 @@
 // занимает ~5% высоты. Временная шкала с перемоткой, кнопка скорости
 // справа от шкалы (0.5х–2х + своё значение, не больше 3х).
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { usePlayerStore } from '../stores/player'
 
 const player = usePlayerStore()
@@ -19,19 +19,31 @@ const speedError = ref('')
 const src = computed(() => player.voice?.src || '')
 const track = computed(() => player.voice)
 
-// Новое голосовое сообщение — загружаем и играем сразу.
+// Смена голосового сообщения на открытом плеере — играем новый трек сразу.
 watch(src, () => {
   if (!src.value) return
+  resetAndPlay()
+})
+
+// Первое открытие плеера (компонент только смонтирован) — автозапуск.
+// Отдельно от watch: immediate-колбэк срабатывает до рендера и audioEl ещё null.
+onMounted(() => {
+  if (src.value) resetAndPlay()
+})
+
+function resetAndPlay() {
   current.value = 0
   duration.value = 0
   playing.value = false
   void nextPlay()
-})
+}
 
 function nextPlay() {
   const el = audioEl.value
   if (!el || !src.value) return
   el.load()
+  // После load() скорость сбрасывается — возвращаем выбранную (0.5х–3х).
+  el.playbackRate = speed.value
   el.play().then(() => (playing.value = true)).catch(() => (playing.value = false))
 }
 
@@ -46,14 +58,41 @@ function toggle() {
   }
 }
 
-function onMeta() {
+// Длительность: у webm-записей из MediaRecorder она часто Infinity/0
+// (браузер узнаёт её только по ходу загрузки). Берём из seekable-диапазона
+// и доращиваем по мере проигрывания.
+function refreshDuration() {
   const el = audioEl.value
-  if (el && Number.isFinite(el.duration)) duration.value = el.duration
+  if (!el) return
+  let d = el.duration
+  if (!Number.isFinite(d) || d <= 0) {
+    try {
+      if (el.seekable.length > 0) {
+        const s = el.seekable.end(el.seekable.length - 1)
+        if (Number.isFinite(s) && s > 0) d = s
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  if (Number.isFinite(d) && d > 0 && d !== duration.value) {
+    duration.value = d
+    // Если шкала была перемотана вручную — не трогаем текущую позицию.
+  }
+}
+
+function onMeta() {
+  refreshDuration()
 }
 
 function onTime() {
   const el = audioEl.value
-  if (el) current.value = el.currentTime
+  if (!el) return
+  current.value = el.currentTime
+  // Для записей с неизвестной длительностью шкала растёт по мере звучания.
+  if (!Number.isFinite(el.duration) || el.duration <= 0) {
+    if (current.value > duration.value) duration.value = current.value
+  }
 }
 
 function onEnded() {
@@ -63,7 +102,8 @@ function onEnded() {
 
 function seek() {
   const el = audioEl.value
-  if (el) el.currentTime = current.value
+  if (!el || !duration.value) return
+  el.currentTime = current.value
 }
 
 // Текущее время и длительность в формате м:сс.
@@ -152,6 +192,8 @@ function applyCustom() {
       :src="src"
       preload="metadata"
       @loadedmetadata="onMeta"
+      @durationchange="refreshDuration"
+      @loadeddata="refreshDuration"
       @timeupdate="onTime"
       @ended="onEnded"
       @play="playing = true"
