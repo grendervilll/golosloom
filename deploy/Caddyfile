@@ -16,11 +16,7 @@
 		# они не должны попадать в логи (fail2ban ждёт именно JSON-формат).
 		format filter {
 			wrap json
-			fields {
-				request>uri {
-					replace "\\?.*" ""
-				}
-			}
+			request>uri regexp "\\?.*" ""
 		}
 	}
 
