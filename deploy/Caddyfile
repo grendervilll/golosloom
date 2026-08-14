@@ -12,11 +12,13 @@
 			roll_size 50mb
 			roll_keep 3
 		}
-		# JSON + вырезаем query-строку из uri: в URL файлов/WS есть токены,
+		# JSON + вырезаем токены из query: в URL файлов/WS есть токены,
 		# они не должны попадать в логи (fail2ban ждёт именно JSON-формат).
 		format filter {
 			wrap json
-			request>uri regexp "\\?.*" ""
+			request>uri query {
+				delete token
+			}
 		}
 	}
 
