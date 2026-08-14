@@ -181,7 +181,17 @@ watch(messages, async (list, old) => {
   if (nearBottom || (old && old.length === 0)) void scrollBottom()
   void list
 }, { deep: true })
-onMounted(() => void scrollBottom())
+onMounted(() => {
+  void scrollBottom()
+  window.addEventListener('dragover', onWindowDragOver)
+  window.addEventListener('drop', onWindowDrop)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('dragover', onWindowDragOver)
+  window.removeEventListener('drop', onWindowDrop)
+  if (rec.value) cancelRec()
+})
 // При изменении текста (ввод, начало редактирования, очистка) — подгоняем высоту.
 watch(
   () => chat.draft,
@@ -241,6 +251,12 @@ async function onPickFile(e: Event) {
   const file = input.files?.[0]
   input.value = ''
   if (!file || !channels.currentId) return
+  await uploadFile(file)
+}
+
+// Общая загрузка файла (кнопка «Прикрепить» и drag and drop).
+async function uploadFile(file: File) {
+  if (!channels.currentId) return
   if (file.size > MAX_FILE_SIZE) {
     toast.error('Файл слишком большой: максимум 100 МБ')
     return
@@ -257,6 +273,54 @@ async function onPickFile(e: Event) {
     uploading.value = null
     toast.error(err?.message || 'Не удалось загрузить файл')
   }
+}
+
+// --- Drag and drop файлов в чат ---
+const dragging = ref(false)
+let dragDepth = 0
+
+function hasFiles(e: DragEvent): boolean {
+  return !!e.dataTransfer && Array.from(e.dataTransfer.types).includes('Files')
+}
+
+function onDragEnter(e: DragEvent) {
+  if (!hasFiles(e)) return
+  e.preventDefault()
+  dragDepth++
+  dragging.value = true
+}
+
+function onDragOver(e: DragEvent) {
+  if (hasFiles(e)) e.preventDefault()
+}
+
+function onDragLeave(e: DragEvent) {
+  if (!hasFiles(e)) return
+  // Уход курсора за пределы окна: relatedTarget пуст — сбрасываем полностью.
+  if (!e.relatedTarget) {
+    dragDepth = 0
+    dragging.value = false
+    return
+  }
+  dragDepth = Math.max(0, dragDepth - 1)
+  if (dragDepth === 0) dragging.value = false
+}
+
+function onDrop(e: DragEvent) {
+  e.preventDefault()
+  dragDepth = 0
+  dragging.value = false
+  const files = Array.from(e.dataTransfer?.files || [])
+  if (files.length === 0 || !channels.currentId) return
+  for (const f of files) void uploadFile(f)
+}
+
+// Предотвращаем открытие файла браузером при дропе мимо панели чата.
+function onWindowDragOver(e: DragEvent) {
+  e.preventDefault()
+}
+function onWindowDrop(e: DragEvent) {
+  e.preventDefault()
 }
 
 // Отправка сообщения с вложением (текст может быть пустым).
@@ -476,10 +540,6 @@ watch(
   },
 )
 
-onUnmounted(() => {
-  if (rec.value) cancelRec()
-})
-
 function insertEmoji(e: string) {
   const el = inputEl.value
   const start = el?.selectionStart ?? chat.draft.length
@@ -559,7 +619,18 @@ function onKeydown(e: KeyboardEvent) {
 </script>
 
 <template>
-  <div class="chat-panel" @click="closeMenu">
+  <div
+    class="chat-panel"
+    @click="closeMenu"
+    @dragenter="onDragEnter"
+    @dragover="onDragOver"
+    @dragleave="onDragLeave"
+    @drop="onDrop"
+  >
+    <!-- Оверлей перетаскивания файла в чат. -->
+    <div v-if="dragging" class="drop-hint">
+      <div class="drop-hint-box">Отпустите файл, чтобы отправить</div>
+    </div>
     <div class="chat-head">
       <Avatar
         :user-id="channels.currentId"
@@ -1206,6 +1277,27 @@ function onKeydown(e: KeyboardEvent) {
 }
 .hidden-input {
   display: none;
+}
+/* Оверлей drag and drop файла в чат. */
+.drop-hint {
+  position: absolute;
+  inset: 0;
+  z-index: 150;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.drop-hint-box {
+  border: 2px dashed var(--accent);
+  border-radius: 16px;
+  padding: 18px 32px;
+  background: var(--surface);
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 700;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
 }
 .uploading-hint {
   font-size: 12px;
