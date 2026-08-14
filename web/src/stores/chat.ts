@@ -23,11 +23,14 @@ export interface ChatMessage {
   editedAt?: string
   original?: string // оригинал до изменения (для модераторов)
   pending?: boolean
-  attachment?: Attachment | null
-  // Вложение удалено администратором сервера: файл стёрт с диска,
+  // Вложения сообщения (одно или несколько). localUrl — мгновенный
+  // предпросмотр до ответа сервера.
+  attachments?: (Attachment & { localUrl?: string })[]
+  // Вложение удалено администратором сервера: файлы стёрты с диска,
   // сообщение и текст остались.
   attachmentDeleted?: boolean
-  // Локальный URL для мгновенного показа картинки до ответа сервера.
+  // Локальный URL для мгновенного показа картинки до ответа сервера
+  // (первое вложение, для старых мест).
   localUrl?: string
   replyToId?: number
 }
@@ -130,7 +133,7 @@ export const useChatStore = defineStore('chat', {
             if (seen.has(m.id)) continue
             seen.add(m.id)
             if (m.encrypted || m.deleted || m.system) continue
-            if (m.text.toLowerCase().includes(q) || (m.attachment?.filename || '').toLowerCase().includes(q)) {
+            if (m.text.toLowerCase().includes(q) || (m.attachments?.[0]?.filename || '').toLowerCase().includes(q)) {
               matches.push(m)
             }
           }
@@ -172,7 +175,13 @@ export const useChatStore = defineStore('chat', {
     },
     // Оптимистичная отправка: своё сообщение появляется сразу (pending),
     // затем заменяется ответом сервера; история НЕ перечитывается целиком.
-    async send(channelId: number, text: string, attachmentId = 0, replyToId = 0, localUrl?: string): Promise<boolean> {
+    // attachments — вложения с локальными URL предпросмотра (если есть).
+    async send(
+      channelId: number,
+      text: string,
+      attachments: (Attachment & { localUrl?: string })[] = [],
+      replyToId = 0,
+    ): Promise<boolean> {
       const settings = useSettingsStore()
       const storage = await getKeyStorage()
       const key = await storage.loadChannelKey(channelId)
@@ -191,16 +200,19 @@ export const useChatStore = defineStore('chat', {
         edited: false,
         createdAt: new Date().toISOString(),
         pending: true,
-        localUrl,
+        attachments,
         replyToId: replyToId || undefined,
       }
       const list = this.messages.get(channelId) || []
       this.messages.set(channelId, [...list, pending])
       try {
-        const res: Message = await settings.api.sendMessage(channelId, ciphertext, iv, attachmentId, replyToId)
+        const attIds = attachments.map((a) => a.id).filter((id): id is number => !!id)
+        const res: Message = await settings.api.sendMessage(channelId, ciphertext, iv, attIds, replyToId)
         const real = await this.toChatMessage(res, channelId, key, auth.user?.id || 0)
         // Локальный предпросмотр больше не нужен — освобождаем blob.
-        if (localUrl) URL.revokeObjectURL(localUrl)
+        for (const a of attachments) {
+          if (a.localUrl) URL.revokeObjectURL(a.localUrl)
+        }
         const cur = this.messages.get(channelId) || []
         const idx = cur.findIndex((x) => x.id === tempId)
         const exists = cur.some((x) => x.id === res.id)
@@ -214,7 +226,9 @@ export const useChatStore = defineStore('chat', {
         }
         this.messages.set(channelId, [...cur])
       } catch (e) {
-        if (localUrl) URL.revokeObjectURL(localUrl)
+        for (const a of attachments) {
+          if (a.localUrl) URL.revokeObjectURL(a.localUrl)
+        }
         const cur = this.messages.get(channelId) || []
         this.messages.set(channelId, cur.filter((x) => x.id !== tempId))
         // Пробрасываем реальную ошибку (например, «сообщение слишком длинное»),
@@ -295,14 +309,25 @@ export const useChatStore = defineStore('chat', {
       else list.push(m)
       this.messages.set(data.channel_id, [...list])
     },
-    // Вложение сообщения удалено администратором: файл исчезает,
-    // сообщение и текст остаются с пометкой attachmentDeleted.
-    handleAttachmentDeleted(data: { channel_id: number; message_id: number }) {
+    // Вложения сообщения удалены администратором: стёртые файлы исчезают,
+    // оставшиеся приходят в событии; сообщение и текст остаются.
+    handleAttachmentDeleted(data: {
+      channel_id: number
+      message_id: number
+      attachment_deleted?: boolean
+      attachments?: Attachment[]
+    }) {
       const list = this.messages.get(data.channel_id)
       if (!list) return
       const idx = list.findIndex((x) => x.id === data.message_id)
       if (idx < 0) return
-      list[idx] = { ...list[idx], attachment: null, attachmentDeleted: true, localUrl: undefined }
+      const remaining = data.attachments && data.attachments.length > 0 ? data.attachments : undefined
+      list[idx] = {
+        ...list[idx],
+        attachments: remaining,
+        attachmentDeleted: !!data.attachment_deleted || !remaining,
+        localUrl: undefined,
+      }
       this.messages.set(data.channel_id, [...list])
     },
     // Гарантирует, что сообщение загружено в историю: загружает историю,
@@ -360,7 +385,7 @@ export const useChatStore = defineStore('chat', {
         edited: !!m.edited_at,
         createdAt: m.created_at,
         editedAt: m.edited_at,
-        attachment: m.attachment || null,
+        attachments: m.attachments && m.attachments.length > 0 ? m.attachments : m.attachment ? [m.attachment] : undefined,
         attachmentDeleted: !!m.attachment_deleted,
         replyToId: m.reply_to || undefined,
       }

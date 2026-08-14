@@ -2,7 +2,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { ChatMessage } from '../stores/chat'
-import type { Role } from '../api/types'
+import type { Role, Attachment } from '../api/types'
 import { roleIcon } from '../utils/roles'
 import { useAuthStore } from '../stores/auth'
 import { useChannelsStore } from '../stores/channels'
@@ -31,6 +31,7 @@ const auth = useAuthStore()
 const channels = useChannelsStore()
 const chat = useChatStore()
 const player = usePlayerStore()
+const settings = useSettingsStore()
 
 // Сообщение, на которое отвечает текущее (для цитаты).
 const replied = computed(() => {
@@ -62,28 +63,30 @@ const segments = computed(() => {
   if (props.msg.encrypted || props.msg.deleted || gifUrl.value) return []
   return splitMarkdown(props.msg.text)
 })
-// Вложение: URL с токеном (уже привязанного или локальный предпросмотр).
-const settings = useSettingsStore()
-const viewerOpen = ref(false)
-const att = computed(() => props.msg.attachment)
-const attSrc = computed(() => {
-  if (!att.value) return ''
-  return props.msg.localUrl || settings.api.fileUrl(att.value.id)
-})
-const isImage = computed(() => !!att.value && att.value.mime.startsWith('image/'))
-const isVideo = computed(() => !!att.value && att.value.mime.startsWith('video/'))
-const isAudio = computed(() => !!att.value && att.value.mime.startsWith('audio/'))
+// Вложения сообщения: одно или несколько (из буфера обмена и т.д.).
+const atts = computed(() =>
+  props.msg.attachments && props.msg.attachments.length > 0 ? props.msg.attachments : [],
+)
+function srcOf(a: { id: number; localUrl?: string }): string {
+  return a.localUrl || settings.api.fileUrl(a.id)
+}
+const isImage = (a: Attachment) => a.mime.startsWith('image/')
+const isVideo = (a: Attachment) => a.mime.startsWith('video/')
+const isAudio = (a: Attachment) => a.mime.startsWith('audio/')
+// Открытый в лайтбоксе/попапе конкретный файл.
+const viewerAtt = ref<Attachment | null>(null)
+const videoAtt = ref<Attachment | null>(null)
 // Голосовое сообщение сейчас играет в верхнем плеере канала.
-const voiceActive = computed(() => !!att.value && player.voice?.msgId === props.msg.id)
-const videoOpen = ref(false)
-// Запуск/остановка голосового сообщения в верхнем плеере.
-function toggleVoice() {
-  if (!att.value) return
+const voiceActive = (a: Attachment) =>
+  !!a && player.voice?.msgId === props.msg.id && player.voice?.attId === a.id
+// Запуск/остановка голосового вложения в верхнем плеере.
+function toggleVoice(a: Attachment) {
   player.toggleVoice({
     msgId: props.msg.id,
+    attId: a.id,
     channelId: props.msg.channelId,
-    src: attSrc.value,
-    filename: att.value.filename,
+    src: srcOf(a),
+    filename: a.filename,
   })
 }
 // Иконка и человекочитаемый размер для карточки файла.
@@ -133,48 +136,62 @@ function openMore(e: MouseEvent) {
         <span class="quote-line"></span>
         <span class="quote-body">
           <span class="quote-nick">{{ replied.senderNick || '…' }}</span>
-          <span class="quote-text">{{ replied.text || replied.attachment?.filename || '…' }}</span>
+          <span class="quote-text">{{ replied.text || replied.attachments?.[0]?.filename || '…' }}</span>
         </span>
       </button>
       <!-- Вложение: фото — миниатюра с просмотром по клику, видео — превью
            с открытием попапа, голос — кнопка с плеером вверху чата,
            остальное — карточка файла со скачиванием. -->
+      <!-- Вложения: фото — миниатюра с просмотром по клику, видео — превью
+           с открытием попапа, голос — кнопка с плеером вверху чата,
+           остальное — карточка файла со скачиванием. Несколько вложений
+           группируются в одном сообщении. -->
       <div v-if="msg.attachmentDeleted" class="att-deleted">Файл был удалён администратором сервера</div>
-      <div v-else-if="att && isImage" class="att">
-        <img class="att-img" :src="attSrc" :alt="att.filename" loading="lazy" @click="viewerOpen = true" />
-      </div>
-      <div v-else-if="att && isVideo" class="att">
-        <button class="att-video-btn" :title="'Смотреть видео: ' + att.filename" @click="videoOpen = true">
-          <video class="att-video" :src="attSrc" muted preload="metadata"></video>
-          <span class="video-play">▶</span>
-        </button>
-      </div>
-      <div v-else-if="att && isAudio" class="att">
-        <button
-          class="voice-card"
-          :class="{ active: voiceActive }"
-          :title="'Воспроизвести: ' + att.filename"
-          @click="toggleVoice"
-        >
-          <span class="voice-ico">
-            <svg v-if="voiceActive" class="ico" viewBox="0 0 320 512"><path d="M48 64C21.5 64 0 85.5 0 112L0 400c0 26.5 21.5 48 48 48s48-21.5 48-48l0-288c0-26.5-21.5-48-48-48zm192 0c-26.5 0-48 21.5-48 48l0 288c0 26.5 21.5 48 48 48s48-21.5 48-48l0-288c0-26.5-21.5-48-48-48z" /></svg>
-            <svg v-else class="ico" viewBox="0 0 384 512"><path d="M73 39c-14.8-9.3-33.4-9.1-48 .3C9.4 48.5 0 65.4 0 83.5L0 428.5c0 18.1 9.4 35 25 44.2 14.6 9.4 33.2 9.6 48 .3L361 297.6c14.9-9.4 23.9-25.3 23.9-41.6s-9-32.2-23.9-41.6L73 39z" /></svg>
-          </span>
-          <span class="voice-name">Голосовое сообщение</span>
-          <span class="voice-bars" :class="{ playing: voiceActive }">
-            <i></i><i></i><i></i><i></i>
-          </span>
-        </button>
-      </div>
-      <div v-else-if="att" class="att">
-        <div class="file-card">
-          <span class="file-icon">{{ fileIcon(att.mime) }}</span>
-          <div class="file-info">
-            <span class="file-name">{{ att.filename }}</span>
-            <span class="file-size">{{ formatSize(att.size) }} · {{ att.mime.split('/')[1]?.toUpperCase() }}</span>
+      <div v-else-if="atts.length" class="att" :class="{ multi: atts.length > 1 }">
+        <template v-for="a in atts" :key="a.id">
+          <img
+            v-if="isImage(a)"
+            class="att-img"
+            :class="{ 'att-thumb': atts.length > 1 }"
+            :src="srcOf(a)"
+            :alt="a.filename"
+            loading="lazy"
+            @click="viewerAtt = a"
+          />
+          <button
+            v-else-if="isVideo(a)"
+            class="att-video-btn"
+            :title="'Смотреть видео: ' + a.filename"
+            @click="videoAtt = a"
+          >
+            <video class="att-video" :src="srcOf(a)" muted preload="metadata"></video>
+            <span class="video-play">▶</span>
+          </button>
+          <button
+            v-else-if="isAudio(a)"
+            class="voice-card"
+            :class="{ active: voiceActive(a) }"
+            :title="'Воспроизвести: ' + a.filename"
+            @click="toggleVoice(a)"
+          >
+            <span class="voice-ico">
+              <svg v-if="voiceActive(a)" class="ico" viewBox="0 0 320 512"><path d="M48 64C21.5 64 0 85.5 0 112L0 400c0 26.5 21.5 48 48 48s48-21.5 48-48l0-288c0-26.5-21.5-48-48-48zm192 0c-26.5 0-48 21.5-48 48l0 288c0 26.5 21.5 48 48 48s48-21.5 48-48l0-288c0-26.5-21.5-48-48-48z" /></svg>
+              <svg v-else class="ico" viewBox="0 0 384 512"><path d="M73 39c-14.8-9.3-33.4-9.1-48 .3C9.4 48.5 0 65.4 0 83.5L0 428.5c0 18.1 9.4 35 25 44.2 14.6 9.4 33.2 9.6 48 .3L361 297.6c14.9-9.4 23.9-25.3 23.9-41.6s-9-32.2-23.9-41.6L73 39z" /></svg>
+            </span>
+            <span class="voice-name">{{ a.filename }}</span>
+            <span class="voice-bars" :class="{ playing: voiceActive(a) }">
+              <i></i><i></i><i></i><i></i>
+            </span>
+          </button>
+          <div v-else class="file-card">
+            <span class="file-icon">{{ fileIcon(a.mime) }}</span>
+            <div class="file-info">
+              <span class="file-name">{{ a.filename }}</span>
+              <span class="file-size">{{ formatSize(a.size) }} · {{ a.mime.split('/')[1]?.toUpperCase() }}</span>
+            </div>
+            <a class="file-download" :href="settings.api.downloadUrl(a.id)" download>Скачать</a>
           </div>
-          <a class="file-download" :href="settings.api.downloadUrl(att.id)" download>Скачать</a>
-        </div>
+        </template>
       </div>
       <p v-if="msg.encrypted" class="encrypted">🔒 Сообщение зашифровано (ключ канала недоступен)</p>
       <p v-else-if="msg.deleted && canModerate" class="deleted-text">
@@ -197,8 +214,18 @@ function openMore(e: MouseEvent) {
         <span v-if="msg.edited" class="edited">изменено</span>
       </span>
     </div>
-    <FileViewer v-if="viewerOpen" :src="attSrc" :filename="att?.filename || ''" @close="viewerOpen = false" />
-    <VideoPopup v-if="videoOpen" :src="attSrc" :filename="att?.filename || ''" @close="videoOpen = false" />
+    <FileViewer
+      v-if="viewerAtt"
+      :src="srcOf(viewerAtt)"
+      :filename="viewerAtt.filename"
+      @close="viewerAtt = null"
+    />
+    <VideoPopup
+      v-if="videoAtt"
+      :src="srcOf(videoAtt)"
+      :filename="videoAtt.filename"
+      @close="videoAtt = null"
+    />
     <button class="more-btn" title="Действия с сообщением" @click.stop="openMore($event)">⋯</button>
   </div>
 </template>
@@ -269,6 +296,28 @@ function openMore(e: MouseEvent) {
 /* Вложения. */
 .att {
   margin: 4px 0;
+}
+/* Несколько вложений в одном сообщении: компактная сетка. */
+.att.multi {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.att.multi .att-img.att-thumb,
+.att.multi .att-video {
+  width: 140px;
+  height: 140px;
+  max-width: 140px;
+  max-height: 140px;
+  object-fit: cover;
+}
+.att.multi .file-card {
+  min-width: 0;
+  max-width: 260px;
+}
+.att.multi .voice-card {
+  min-width: 0;
+  max-width: 240px;
 }
 /* Вложение удалено администратором сервера: файл стёрт, текст сообщения остался. */
 .att-deleted {

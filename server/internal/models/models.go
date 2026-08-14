@@ -89,9 +89,11 @@ type Message struct {
 	DeletedBy  *int64    `json:"deleted_by,omitempty"`
 	DeletedAt  *time.Time `json:"deleted_at,omitempty"`
 	Attachment *Attachment `json:"attachment,omitempty"`
+	// Attachments — все живые вложения сообщения (может быть несколько).
+	Attachments []Attachment `json:"attachments,omitempty"`
 	ReplyTo    *int64    `json:"reply_to,omitempty"`
-	// AttachmentDeleted — вложение удалено администратором сервера
-	// (файл стёрт с диска, сообщение и текст остались).
+	// AttachmentDeleted — все вложения удалены администратором сервера
+	// (файлы стёрты с диска, сообщение и текст остались).
 	AttachmentDeleted bool `json:"attachment_deleted,omitempty"`
 }
 

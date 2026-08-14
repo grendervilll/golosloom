@@ -121,7 +121,7 @@ const replyPreview = computed(() => {
   if (!r || r.channelId !== channels.currentId) return null
   const m = chat.messages.get(r.channelId)?.find((x) => x.id === r.messageId)
   if (!m) return null
-  return { nick: m.senderNick, text: m.text || m.attachment?.filename || '…' }
+  return { nick: m.senderNick, text: m.text || m.attachments?.[0]?.filename || '…' }
 })
 function cancelReply() {
   chat.replyTo = null
@@ -136,7 +136,9 @@ function replyFromMenu(msg: ChatMessage) {
 const mediaItems = computed(() => {
   const list = chat.messages.get(channels.currentId) || []
   return list.filter(
-    (m) => m.attachment && (m.attachment.mime.startsWith('image/') || m.attachment.mime.startsWith('video/')),
+    (m) =>
+      m.attachments &&
+      m.attachments.some((a) => a.mime.startsWith('image/') || a.mime.startsWith('video/')),
   )
 })
 const mediaViewer = ref<{ src: string; filename: string; video?: boolean } | null>(null)
@@ -147,11 +149,12 @@ function openMediaMenu(e: MouseEvent, msg: ChatMessage) {
   void nextTick(clampMenu)
 }
 function openMedia(msg: ChatMessage) {
-  if (!msg.attachment) return
+  const a = msg.attachments?.find((x) => x.mime.startsWith('image/') || x.mime.startsWith('video/'))
+  if (!a) return
   mediaViewer.value = {
-    src: settings.api.fileUrl(msg.attachment.id),
-    filename: msg.attachment.filename,
-    video: msg.attachment.mime.startsWith('video/'),
+    src: settings.api.fileUrl(a.id),
+    filename: a.filename,
+    video: a.mime.startsWith('video/'),
   }
 }
 function mediaJump(msg: ChatMessage) {
@@ -230,7 +233,7 @@ async function send() {
       await chat.edit(channels.currentId, chat.editingId, text)
       return
     }
-    const ok = await chat.send(channels.currentId, text, 0, replyToId)
+    const ok = await chat.send(channels.currentId, text, [], replyToId)
     if (!ok) {
       toast.warning('Ключ канала ещё не получен, повторите позже')
       return
@@ -247,6 +250,107 @@ async function send() {
 const MAX_FILE_SIZE = 100 * 1024 * 1024
 const fileInput = ref<HTMLInputElement | null>(null)
 const uploading = ref<{ name: string } | null>(null)
+
+// --- Вставка файлов из буфера обмена ---
+// Вставленные не-текстовые данные (скриншоты, картинки, файлы) копятся
+// в буфере: выше чата рисуется область предпросмотра, курсор остаётся
+// в поле ввода, чтобы дописать сообщение. Отправка — одним сообщением
+// (до 20 файлов, текст в последнем сообщении группы).
+interface PastedFile {
+  file: File
+  url: string // object URL для предпросмотра
+  uploading?: boolean
+  uploadedId?: number
+  error?: boolean
+}
+const pasted = ref<PastedFile[]>([])
+const pastedUploading = computed(() => pasted.value.filter((p) => p.uploading).length)
+const pastedOk = computed(() => pasted.value.filter((p) => p.uploadedId).length)
+
+function onPaste(e: ClipboardEvent) {
+  const files = Array.from(e.clipboardData?.files || [])
+  if (files.length === 0) return
+  // Только не-текст: текст вставляется обычным образом.
+  e.preventDefault()
+  for (const f of files) {
+    pasted.value.push({ file: f, url: URL.createObjectURL(f) })
+  }
+}
+
+function removePasted(i: number) {
+  const item = pasted.value[i]
+  if (item) URL.revokeObjectURL(item.url)
+  pasted.value.splice(i, 1)
+}
+
+function clearPasted() {
+  for (const p of pasted.value) URL.revokeObjectURL(p.url)
+  pasted.value = []
+}
+
+function pastedPreview(item: PastedFile): string {
+  if (item.file.type.startsWith('image/')) return item.url
+  return ''
+}
+
+// Отправка вставленных файлов: до 20 файлов в одном сообщении (вверху
+// содержимое, под ним текст), при большем количестве файлы уходят в
+// следующие сообщения, а текст — в последнее.
+async function sendPasted() {
+  if (!channels.currentId || pasted.value.length === 0) return
+  const replyToId = chat.replyTo?.channelId === channels.currentId ? chat.replyTo.messageId : 0
+  const text = chat.draft.trim()
+  const max = settings.serverConfig?.max_message_len || 2000
+  if (new TextEncoder().encode(text).length > max) {
+    toast.error(`Сообщение слишком длинное: максимум ${max} символов`)
+    return
+  }
+  uploading.value = { name: pasted.value.length + ' файлов' }
+  try {
+    // 1) Загружаем все файлы.
+    const atts: Attachment[] = []
+    for (let i = 0; i < pasted.value.length; i++) {
+      const p = pasted.value[i]
+      p.uploading = true
+      try {
+        const att = await settings.api.uploadFile(channels.currentId, p.file)
+        atts.push(att)
+        p.uploadedId = att.id
+      } catch (err: any) {
+        p.error = true
+        toast.error(`«${p.file.name}»: ` + (err?.message || 'не удалось загрузить'))
+      } finally {
+        p.uploading = false
+      }
+    }
+    uploading.value = null
+    const ok = atts.filter((a) => a.id > 0)
+    if (ok.length === 0) {
+      toast.error('Ни один файл не загрузился')
+      return
+    }
+    // 2) Группируем по 20 файлов; текст — в последнем сообщении.
+    const groups: Attachment[][] = []
+    for (let i = 0; i < ok.length; i += 20) {
+      groups.push(ok.slice(i, i + 20))
+    }
+    for (let g = 0; g < groups.length; g++) {
+      const isLast = g === groups.length - 1
+      const sent = await chat.send(channels.currentId, isLast ? text : '', groups[g], replyToId)
+      if (!sent && isLast) {
+        toast.warning('Ключ канала ещё не получен, повторите позже')
+        break
+      }
+    }
+    chat.draft = ''
+    chat.replyTo = null
+    chat.editingId = 0
+    clearPasted()
+  } catch (err: any) {
+    uploading.value = null
+    toast.error(err?.message || 'Не удалось отправить файлы')
+  }
+}
 
 async function onPickFile(e: Event) {
   const input = e.target as HTMLInputElement
@@ -335,7 +439,7 @@ async function sendWithAttachment(att: Attachment, localUrl?: string) {
   }
   const replyToId = chat.replyTo?.channelId === channels.currentId ? chat.replyTo.messageId : 0
   try {
-    const ok = await chat.send(channels.currentId, text, att.id, replyToId, localUrl)
+    const ok = await chat.send(channels.currentId, text, [{ ...att, localUrl }], replyToId)
     if (!ok) {
       toast.warning('Ключ канала ещё не получен, повторите позже')
       return
@@ -512,15 +616,19 @@ async function uploadRecording(kind: 'mic' | 'cam', chunks: Blob[]) {
   }
 }
 
-// ЛКМ по кнопке отправки: в режиме текста — отправить, в режиме записи —
-// начать/остановить запись.
+// ЛКМ по кнопке отправки: в режиме текста — отправить (текст или
+// вставленные файлы), в режиме записи — начать/остановить запись.
 function onSendClick() {
   if (rec.value) {
     stopRec()
     return
   }
   if (sendMode.value === 'send') {
-    void send()
+    if (pasted.value.length > 0) {
+      void sendPasted()
+    } else {
+      void send()
+    }
     return
   }
   void startRec()
@@ -613,12 +721,12 @@ function closeMenu() {
 // --- Просмотр текстовых файлов («Показать») ---
 const textPreview = ref<ChatMessage | null>(null)
 const textPreviewSrc = computed(() => {
-  if (!textPreview.value?.attachment) return ''
-  return settings.api.fileUrl(textPreview.value.attachment.id)
+  if (!textPreview.value?.attachments?.[0]) return ''
+  return settings.api.fileUrl(textPreview.value.attachments[0].id)
 })
 // «Показать» доступно для текстовых файлов.
 const canPreviewText = computed(() => {
-  const a = menu.value.msg?.attachment
+  const a = menu.value.msg?.attachments?.[0]
   return !!a && !menu.value.msg?.attachmentDeleted && isTextFile(a.mime, a.filename)
 })
 function openTextPreview(msg: ChatMessage) {
@@ -640,7 +748,12 @@ function onKeydown(e: KeyboardEvent) {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
     // Во время записи Enter не отправляет текст.
-    if (!rec.value) void send()
+    if (rec.value) return
+    if (pasted.value.length > 0) {
+      void sendPasted()
+    } else {
+      void send()
+    }
   }
   if (e.key === 'Escape') closeMenu()
 }
@@ -722,7 +835,7 @@ function onKeydown(e: KeyboardEvent) {
             >
               <div class="search-row-info">
                 <span class="search-row-nick">{{ m.senderNick }}</span>
-                <span class="search-row-text">{{ m.text || (m.attachment?.filename || '…') }}</span>
+                <span class="search-row-text">{{ m.text || (m.attachments?.[0]?.filename || '…') }}</span>
               </div>
               <span class="search-row-time">{{ new Date(m.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) }}</span>
               <button class="jump-btn" title="Перейти к сообщению" @click="scrollToMessage(m.id)">⤴</button>
@@ -741,19 +854,19 @@ function onKeydown(e: KeyboardEvent) {
               v-for="m in mediaItems"
               :key="m.id"
               class="media-thumb"
-              :title="m.attachment?.filename"
+              :title="m.attachments?.[0]?.filename"
               @click="openMedia(m)"
               @contextmenu.prevent="openMediaMenu($event, m)"
             >
               <img
-                v-if="m.attachment!.mime.startsWith('image/')"
+                v-if="m.attachments![0]!.mime.startsWith('image/')"
                 class="media-img"
-                :src="m.localUrl || settings.api.fileUrl(m.attachment!.id)"
+                :src="m.attachments![0]!.localUrl || settings.api.fileUrl(m.attachments![0]!.id)"
                 loading="lazy"
                 alt=""
               />
               <div v-else class="media-video">
-                <video :src="settings.api.fileUrl(m.attachment!.id)" muted preload="metadata"></video>
+                <video :src="settings.api.fileUrl(m.attachments![0]!.id)" muted preload="metadata"></video>
                 <span class="play-ico">▶</span>
               </div>
             </div>
@@ -805,6 +918,22 @@ function onKeydown(e: KeyboardEvent) {
       </div>
       <div v-if="uploading" class="uploading-hint">Загрузка {{ uploading.name }}…</div>
       <div v-if="recText" class="rec-hint">{{ recText }}</div>
+      <!-- Область предпросмотра вставленных из буфера файлов: 15% экрана. -->
+      <div v-if="pasted.length" class="paste-area">
+        <div class="paste-scroll">
+          <div v-for="(p, i) in pasted" :key="i" class="paste-item" :class="{ err: p.error }">
+            <img v-if="pastedPreview(p)" class="paste-thumb" :src="p.url" alt="" />
+            <span v-else class="paste-ico">📎</span>
+            <span class="paste-name" :title="p.file.name">{{ p.file.name }}</span>
+            <span v-if="p.uploading" class="paste-state">загрузка…</span>
+            <span v-else-if="p.error" class="paste-state err">ошибка</span>
+            <button class="paste-remove" title="Убрать файл" @click="removePasted(i)">✕</button>
+          </div>
+          <div v-if="pasted.length > 20" class="paste-over">
+            Отправится несколькими сообщениями (до 20 файлов в каждом)
+          </div>
+        </div>
+      </div>
       <div class="input-pill">
         <input ref="fileInput" type="file" class="hidden-input" @change="onPickFile" />
         <textarea
@@ -814,6 +943,7 @@ function onKeydown(e: KeyboardEvent) {
           :placeholder="chat.editingId ? 'Редактирование сообщения...' : 'Сообщение в чат...'"
           @input="onTyping"
           @keydown="onKeydown"
+          @paste="onPaste"
         ></textarea>
         <button v-if="chat.editingId" class="icon-btn edit-cancel" title="Отменить редактирование" @click="chat.editingId = 0; chat.draft = ''">
           <svg class="ico" viewBox="0 0 384 512"><path d="M342.6 150.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L192 210.7 86.6 105.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3L146.7 256 41.4 361.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0L192 301.3 297.4 406.6c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L237.3 256 342.6 150.6z" /></svg>
@@ -879,7 +1009,7 @@ function onKeydown(e: KeyboardEvent) {
     <TextPreview
       v-if="textPreview && textPreviewSrc"
       :src="textPreviewSrc"
-      :filename="textPreview.attachment?.filename || 'файл.txt'"
+      :filename="textPreview.attachments?.[0]?.filename || 'файл.txt'"
       @close="textPreview = null"
     />
   </div>
@@ -1314,9 +1444,100 @@ function onKeydown(e: KeyboardEvent) {
 .hidden-input {
   display: none;
 }
-/* Оверлей drag and drop файла в чат. */
-.drop-hint {
+/* Область предпросмотра вставленных из буфера файлов: 15% экрана. */
+.paste-area {
+  height: 15vh;
+  min-height: 90px;
+  max-height: 220px;
+  background: var(--bg3);
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  padding: 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.paste-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-content: flex-start;
+}
+.paste-item {
+  position: relative;
+  width: 120px;
+  height: 90px;
+  border-radius: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 4px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.paste-item.err {
+  border-color: var(--red);
+}
+.paste-thumb {
+  width: 100%;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 6px;
+  display: block;
+}
+.paste-ico {
+  font-size: 22px;
+}
+.paste-name {
+  font-size: 10.5px;
+  color: var(--text);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.paste-state {
+  font-size: 10px;
+  color: var(--text-dim);
+}
+.paste-state.err {
+  color: var(--red);
+}
+.paste-remove {
   position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.paste-remove:hover {
+  background: var(--red);
+}
+.paste-over {
+  width: 100%;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  text-align: center;
+  padding: 4px;
+}
+/* Оверлей drag and drop файла в чат. */
+.drop-hint {  position: absolute;
   inset: 0;
   z-index: 150;
   background: rgba(0, 0, 0, 0.45);

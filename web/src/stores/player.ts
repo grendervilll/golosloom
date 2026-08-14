@@ -4,6 +4,8 @@ import { defineStore } from 'pinia'
 
 export interface VoiceTrack {
   msgId: number
+  // attId — конкретное аудио-вложение (в сообщении их может быть несколько).
+  attId?: number
   channelId: number
   src: string
   filename: string

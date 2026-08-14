@@ -281,7 +281,8 @@ CREATE TABLE IF NOT EXISTS files (
 	mime TEXT NOT NULL,
 	size INTEGER NOT NULL,
 	path TEXT NOT NULL,
-	created_at TEXT NOT NULL
+	created_at TEXT NOT NULL,
+	deleted INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_files_channel ON files(channel_id);
 CREATE INDEX IF NOT EXISTS idx_files_message ON files(message_id);
@@ -301,6 +302,9 @@ func (s *Store) migrate() error {
 	_, _ = s.db.Exec(`ALTER TABLE messages ADD COLUMN reply_to INTEGER`)
 	// Миграция: флаг «вложение удалено администратором» (файл стёрт с диска).
 	_, _ = s.db.Exec(`ALTER TABLE messages ADD COLUMN attachment_deleted INTEGER NOT NULL DEFAULT 0`)
+	// Миграция: файл помечен удалённым администратором (строка остаётся,
+	// чтобы сообщение знало, какие вложения были стёрты).
+	_, _ = s.db.Exec(`ALTER TABLE files ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0`)
 	return nil
 }
 
@@ -900,11 +904,14 @@ func (s *Store) GetMessage(id int64) (*models.Message, error) {
 	if err != nil {
 		return nil, err
 	}
-	att, err := s.fileByMessage(m.ID)
+	atts, err := s.FilesOfMessage(m.ID)
 	if err != nil && !errors.Is(err, ErrNotFound) {
 		return nil, err
 	}
-	m.Attachment = att
+	if len(atts) > 0 {
+		m.Attachments = atts
+		m.Attachment = &atts[0]
+	}
 	return m, nil
 }
 
@@ -987,13 +994,22 @@ func (s *Store) ListMessages(channelID, beforeID int64, limit int) ([]models.Mes
 	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
 		out[i], out[j] = out[j], out[i]
 	}
-	// Вложения: одним запросом для всего канала.
+	// Вложения: несколькими запросами для всего канала.
 	if len(out) > 0 {
 		atts, err := s.filesByMessages(channelID, beforeID, limit)
 		if err == nil {
 			for i := range out {
-				if a, ok := atts[out[i].ID]; ok {
-					out[i].Attachment = &a
+				if list, ok := atts[out[i].ID]; ok && len(list) > 0 {
+					out[i].Attachments = list
+					out[i].Attachment = &list[0]
+				}
+			}
+		}
+		// Сообщения, у которых остались только стёртые админом вложения.
+		if deletedMap, err := s.deletedFilesByMessages(channelID, beforeID, limit); err == nil {
+			for i := range out {
+				if deletedMap[out[i].ID] && len(out[i].Attachments) == 0 {
+					out[i].AttachmentDeleted = true
 				}
 			}
 		}
@@ -1073,42 +1089,100 @@ func (s *Store) AttachFileToMessage(fileID, messageID int64) error {
 	return err
 }
 
-// fileByMessage — вложение сообщения (одно на сообщение).
-func (s *Store) fileByMessage(messageID int64) (*models.Attachment, error) {
-	var a models.Attachment
-	err := s.db.QueryRow(`SELECT id, filename, mime, size FROM files WHERE message_id = ?`, messageID).
-		Scan(&a.ID, &a.Filename, &a.Mime, &a.Size)
-	if err == sql.ErrNoRows {
-		return nil, ErrNotFound
+// AttachFilesToMessage привязывает несколько файлов к одному сообщению.
+func (s *Store) AttachFilesToMessage(fileIDs []int64, messageID int64) error {
+	if len(fileIDs) == 0 {
+		return nil
 	}
-	if err != nil {
-		return nil, err
+	qs := make([]string, len(fileIDs))
+	args := make([]interface{}, 0, len(fileIDs)+1)
+	args = append(args, messageID)
+	for i, id := range fileIDs {
+		qs[i] = "?"
+		args = append(args, id)
 	}
-	return &a, nil
+	_, err := s.db.Exec(`UPDATE files SET message_id = ? WHERE id IN (`+strings.Join(qs, ",")+`)`, args...)
+	return err
 }
 
-// filesByMessages — все вложения канала (ограничение как у сообщений).
-func (s *Store) filesByMessages(channelID, beforeID int64, limit int) (map[int64]models.Attachment, error) {
-	rows, err := s.db.Query(`
-		SELECT f.message_id, f.id, f.filename, f.mime, f.size
-		FROM files f
-		JOIN messages m ON m.id = f.message_id
-		WHERE f.channel_id = ? AND (? = 0 OR m.id < ?)
-		ORDER BY m.id DESC LIMIT ?`, channelID, beforeID, beforeID, limit)
+// filesOfMessage — все живые вложения сообщения (может быть несколько).
+func (s *Store) FilesOfMessage(messageID int64) ([]models.Attachment, error) {
+	rows, err := s.db.Query(`SELECT id, filename, mime, size FROM files WHERE message_id = ? AND deleted = 0 ORDER BY id`, messageID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	out := make(map[int64]models.Attachment)
+	var out []models.Attachment
+	for rows.Next() {
+		var a models.Attachment
+		if err := rows.Scan(&a.ID, &a.Filename, &a.Mime, &a.Size); err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+// hasDeletedAttachments — были ли у сообщения вложения, стёртые администратором.
+func (s *Store) HasDeletedAttachments(messageID int64) bool {
+	var n int
+	_ = s.db.QueryRow(`SELECT COUNT(*) FROM files WHERE message_id = ? AND deleted = 1`, messageID).Scan(&n)
+	return n > 0
+}
+
+// filesByMessages — все живые вложения сообщений канала (ограничение как у сообщений).
+func (s *Store) filesByMessages(channelID, beforeID int64, limit int) (map[int64][]models.Attachment, error) {
+	rows, err := s.db.Query(`
+		SELECT f.message_id, f.id, f.filename, f.mime, f.size
+		FROM files f
+		JOIN messages m ON m.id = f.message_id
+		WHERE f.channel_id = ? AND f.deleted = 0 AND (? = 0 OR m.id < ?)
+		ORDER BY m.id DESC, f.id LIMIT ?`, channelID, beforeID, beforeID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[int64][]models.Attachment)
 	for rows.Next() {
 		var mid int64
 		var a models.Attachment
 		if err := rows.Scan(&mid, &a.ID, &a.Filename, &a.Mime, &a.Size); err != nil {
 			return nil, err
 		}
-		out[mid] = a
+		out[mid] = append(out[mid], a)
 	}
 	return out, rows.Err()
+}
+
+// deletedFilesByMessages — сообщения канала, у которых есть стёртые админом
+// вложения (для флага attachment_deleted).
+func (s *Store) deletedFilesByMessages(channelID, beforeID int64, limit int) (map[int64]bool, error) {
+	rows, err := s.db.Query(`
+		SELECT DISTINCT f.message_id
+		FROM files f
+		JOIN messages m ON m.id = f.message_id
+		WHERE f.channel_id = ? AND f.deleted = 1 AND (? = 0 OR m.id < ?)
+		ORDER BY f.message_id DESC LIMIT ?`, channelID, beforeID, beforeID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[int64]bool)
+	for rows.Next() {
+		var mid int64
+		if err := rows.Scan(&mid); err != nil {
+			return nil, err
+		}
+		out[mid] = true
+	}
+	return out, rows.Err()
+}
+
+// MarkFileDeleted — пометить файл удалённым администратором (с диска он
+// уже стёрт). Сообщение и его текст остаются.
+func (s *Store) MarkFileDeleted(fileID int64) error {
+	_, err := s.db.Exec(`UPDATE files SET deleted = 1 WHERE id = ?`, fileID)
+	return err
 }
 
 // FilesByMessage — пути файлов сообщения (для удаления с диска).
@@ -1192,7 +1266,7 @@ func (s *Store) AdminListFiles(limit int) ([]AdminFile, error) {
 		FROM files f
 		LEFT JOIN channels c ON c.id = f.channel_id
 		LEFT JOIN users u ON u.id = f.user_id
-		WHERE f.message_id IS NOT NULL
+		WHERE f.message_id IS NOT NULL AND f.deleted = 0
 		ORDER BY f.id DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err

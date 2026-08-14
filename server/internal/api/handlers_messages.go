@@ -68,8 +68,10 @@ func (s *Server) messageJSON(m models.Message, withHistory bool) map[string]inte
 	if withHistory && len(m.History) > 0 {
 		out["history"] = m.History
 	}
-	if m.Attachment != nil {
-		out["attachment"] = m.Attachment
+	if len(m.Attachments) > 0 {
+		out["attachments"] = m.Attachments
+		// Первое вложение — для старых клиентов.
+		out["attachment"] = m.Attachments[0]
 	}
 	if m.AttachmentDeleted {
 		out["attachment_deleted"] = true
@@ -97,6 +99,7 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		Ciphertext   []byte `json:"ciphertext"`
 		IV           []byte `json:"iv"`
 		AttachmentID int64  `json:"attachment_id"`
+		AttachmentIDs []int64 `json:"attachment_ids"`
 		ReplyToID    int64  `json:"reply_to_id"`
 	}
 	if err := readJSON(r, &req); err != nil {
@@ -119,10 +122,14 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	// Вложение: файл должен существовать, принадлежать отправителю и каналу,
-	// и ещё не быть привязанным к сообщению.
-	if req.AttachmentID != 0 {
-		f, err := s.Store.GetFile(req.AttachmentID)
+	// Вложения: файлы должны существовать, принадлежать отправителю и каналу,
+	// и ещё не быть привязанными к сообщению.
+	attIDs := req.AttachmentIDs
+	if len(attIDs) == 0 && req.AttachmentID != 0 {
+		attIDs = []int64{req.AttachmentID}
+	}
+	for _, id := range attIDs {
+		f, err := s.Store.GetFile(id)
 		if err != nil {
 			writeErr(w, http.StatusNotFound, "файл не найден")
 			return
@@ -141,12 +148,12 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if req.AttachmentID != 0 {
-		if err := s.Store.AttachFileToMessage(req.AttachmentID, m.ID); err != nil {
+	if len(attIDs) > 0 {
+		if err := s.Store.AttachFilesToMessage(attIDs, m.ID); err != nil {
 			writeErr(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		// Перечитываем сообщение, чтобы в ответе был attachment.
+		// Перечитываем сообщение, чтобы в ответе были вложения.
 		m, _ = s.Store.GetMessage(m.ID)
 	}
 	s.Hub.SendToChannel(channelID, hub.NewEvent("message.new", s.messageJSON(*m, true)))

@@ -139,9 +139,11 @@ func (s *Server) handleAdminListFiles(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, files)
 }
 
-// handleAdminDeleteFile — полное удаление файла (запись БД + файл с диска).
-// Сообщение и его текст остаются, сообщению ставится флаг attachment_deleted,
-// клиенты канала уведомляются событием attachment.deleted.
+// handleAdminDeleteFile — удаление файла: стирается с диска и помечается
+// удалённым (строка в БД остаётся, чтобы сообщение знало о стёртых
+// вложениях). Сообщение и его текст остаются; если это было единственное
+// вложение — сообщению ставится флаг attachment_deleted. Клиенты канала
+// уведомляются событием attachment.deleted с оставшимися вложениями.
 func (s *Server) handleAdminDeleteFile(w http.ResponseWriter, r *http.Request) {
 	fileID := pathID(r, "id")
 	f, err := s.Store.GetFile(fileID)
@@ -150,17 +152,30 @@ func (s *Server) handleAdminDeleteFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	messageID := f.MessageID
-	// Удаляем с диска и из БД.
+	// Стираем файл с диска и помечаем запись удалённой.
 	_ = os.Remove(f.Path)
-	if err := s.Store.DeleteFiles([]int64{f.ID}); err != nil {
+	if err := s.Store.MarkFileDeleted(f.ID); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if messageID != 0 {
-		_ = s.Store.SetMessageAttachmentDeleted(messageID)
-		// Уведомляем участников канала: вложение сообщения удалено.
+		// Оставшиеся живые вложения сообщения.
+		remaining, _ := s.Store.FilesOfMessage(messageID)
+		allGone := len(remaining) == 0 && s.Store.HasDeletedAttachments(messageID)
+		if allGone {
+			_ = s.Store.SetMessageAttachmentDeleted(messageID)
+		}
+		atts := make([]map[string]interface{}, 0, len(remaining))
+		for _, a := range remaining {
+			atts = append(atts, map[string]interface{}{
+				"id": a.ID, "filename": a.Filename, "mime": a.Mime, "size": a.Size,
+			})
+		}
 		s.Hub.SendToChannel(f.ChannelID, hub.NewEvent("attachment.deleted", map[string]interface{}{
-			"channel_id": f.ChannelID, "message_id": messageID,
+			"channel_id":         f.ChannelID,
+			"message_id":         messageID,
+			"attachment_deleted": allGone,
+			"attachments":        atts,
 		}))
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})

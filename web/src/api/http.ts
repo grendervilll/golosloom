@@ -247,11 +247,19 @@ export class ApiClient {
   listMessages(channelId: number, before = 0, limit = 50) {
     return this.get(`/api/channels/${channelId}/messages?before=${before}&limit=${limit}`)
   }
-  sendMessage(channelId: number, ciphertext: Uint8Array, iv: Uint8Array, attachmentId = 0, replyToId = 0) {
+  // sendMessage отправляет зашифрованное сообщение с одним или несколькими
+  // вложениями (attachmentIds). Пустой ciphertext при вложениях допустим.
+  sendMessage(
+    channelId: number,
+    ciphertext: Uint8Array,
+    iv: Uint8Array,
+    attachmentIds: number[],
+    replyToId = 0,
+  ) {
     return this.post(`/api/channels/${channelId}/messages`, {
       ciphertext: Array.from(ciphertext),
       iv: Array.from(iv),
-      attachment_id: attachmentId || undefined,
+      attachment_ids: attachmentIds,
       reply_to_id: replyToId || undefined,
     })
   }
