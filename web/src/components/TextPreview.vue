@@ -6,6 +6,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import hljs from 'highlight.js/lib/common'
 import 'highlight.js/styles/github-dark.css'
+import { langByFilename } from '../utils/textFile'
 
 const props = defineProps<{
   src: string
@@ -43,6 +44,20 @@ function onKey(e: KeyboardEvent) {
 
 const highlighted = computed(() => {
   if (loading.value || error.value || !text.value) return ''
+  // Язык по расширению файла (точный); автодетект — только для неизвестных
+  // расширений, т.к. на коротких фрагментах он ошибается.
+  const byExt = langByFilename(props.filename)
+  if (byExt) {
+    try {
+      if (hljs.getLanguage(byExt)) {
+        const r = hljs.highlight(text.value, { language: byExt, ignoreIllegals: true })
+        if (r.language) lang.value = r.language
+        return r.value
+      }
+    } catch {
+      /* автодетект ниже */
+    }
+  }
   try {
     const r = hljs.highlightAuto(text.value)
     if (r.language) lang.value = r.language

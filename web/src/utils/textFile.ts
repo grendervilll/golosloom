@@ -20,3 +20,27 @@ export function isTextFile(mime: string, filename: string): boolean {
   const ext = name.split('.').pop() || ''
   return TEXT_EXTS.has(ext) || name === 'dockerfile' || name === 'makefile'
 }
+
+// Язык подсветки (highlight.js) по расширению файла. Автоопределение по
+// содержимому ненадёжно (на коротких фрагментах highlight.js ошибается),
+// а имя файла даёт точный ответ.
+const EXT_LANG: Record<string, string> = {
+  go: 'go', py: 'python', js: 'javascript', jsx: 'javascript', ts: 'typescript', tsx: 'typescript',
+  vue: 'vue', rs: 'rust', java: 'java', kt: 'kotlin', c: 'c', h: 'c', cpp: 'cpp', hpp: 'cpp',
+  cc: 'cpp', cs: 'csharp', php: 'php', rb: 'ruby', swift: 'swift', dart: 'dart', lua: 'lua',
+  pl: 'perl', r: 'r', m: 'objectivec', sh: 'bash', bash: 'bash', zsh: 'bash', ps1: 'powershell',
+  bat: 'bat', cmd: 'batch', sql: 'sql', html: 'xml', htm: 'xml', xml: 'xml', css: 'css',
+  scss: 'scss', less: 'less', json: 'json', yml: 'yaml', yaml: 'yaml', toml: 'ini', ini: 'ini',
+  md: 'markdown', markdown: 'markdown', diff: 'diff', gradle: 'gradle', tf: 'hcl',
+  proto: 'protobuf', erl: 'erlang', ex: 'elixir', exs: 'elixir', hs: 'haskell', clj: 'clojure',
+  scala: 'scala', groovy: 'groovy', vb: 'vbnet', pas: 'delphi', asm: 'nasm', fs: 'fsharp',
+  fsx: 'fsharp', tex: 'tex', csv: 'plaintext', log: 'plaintext', txt: 'plaintext',
+}
+
+export function langByFilename(filename: string): string | null {
+  const name = filename.toLowerCase()
+  if (name === 'dockerfile') return 'dockerfile'
+  if (name === 'makefile') return 'makefile'
+  const ext = name.split('.').pop() || ''
+  return EXT_LANG[ext] || null
+}
