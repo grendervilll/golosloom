@@ -315,13 +315,15 @@ function cycleSendMode() {
   sendMode.value = sendMode.value === 'send' ? 'mic' : sendMode.value === 'mic' ? 'cam' : 'send'
 }
 
-// Подходящий mime-тип записи для браузера (webm, иначе mp4/ogg).
+// Подходящий mime-тип записи. Предпочитаем mp4: у webm из MediaRecorder
+// браузер (Chrome) не пишет длительность — шкала и перемотка ломаются,
+// а mp4 (AAC/H.264) несёт её всегда и занимает меньше места.
 function pickRecorderMime(kind: 'mic' | 'cam'): string {
   if (typeof MediaRecorder === 'undefined') return ''
   const candidates =
     kind === 'mic'
-      ? ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus']
-      : ['video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4', 'video/ogg;codecs=theora']
+      ? ['audio/mp4;codecs=mp4a.40.2', 'audio/mp4', 'audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus']
+      : ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/ogg;codecs=theora']
   for (const c of candidates) {
     try {
       if (MediaRecorder.isTypeSupported(c)) return c

@@ -2,8 +2,9 @@
 // занимает ~5% высоты. Временная шкала с перемоткой, кнопка скорости
 // справа от шкалы (0.5х–2х + своё значение, не больше 3х).
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { usePlayerStore } from '../stores/player'
+import { probeMediaDuration, refreshMediaDuration } from '../utils/mediaDuration'
 
 const player = usePlayerStore()
 
@@ -19,31 +20,47 @@ const speedError = ref('')
 const src = computed(() => player.voice?.src || '')
 const track = computed(() => player.voice)
 
-// Смена голосового сообщения на открытом плеере — играем новый трек сразу.
-watch(src, () => {
-  if (!src.value) return
-  resetAndPlay()
-})
+// Смена голосового сообщения — играем сразу. flush:'post' обязателен:
+// обработчик бежит ПОСЛЕ отрисовки, и audioEl существует даже для первого
+// трека (иначе автозапуск не срабатывает).
+watch(
+  src,
+  () => {
+    if (!src.value) return
+    current.value = 0
+    duration.value = 0
+    playing.value = false
+    void startTrack()
+  },
+  { flush: 'post' },
+)
 
-// Первое открытие плеера (компонент только смонтирован) — автозапуск.
-// Отдельно от watch: immediate-колбэк срабатывает до рендера и audioEl ещё null.
-onMounted(() => {
-  if (src.value) resetAndPlay()
-})
-
-function resetAndPlay() {
-  current.value = 0
-  duration.value = 0
-  playing.value = false
-  void nextPlay()
-}
-
-function nextPlay() {
+async function startTrack() {
   const el = audioEl.value
   if (!el || !src.value) return
   el.load()
   // После load() скорость сбрасывается — возвращаем выбранную (0.5х–3х).
   el.playbackRate = speed.value
+  // Ждём метаданные, чтобы определить длительность (см. probeMediaDuration):
+  // у webm из MediaRecorder в Chrome она Infinity, без зондирования шкала
+  // и перемотка не работают.
+  if (el.readyState < 1) {
+    await new Promise<void>((resolve) => {
+      const onMeta = () => {
+        el.removeEventListener('loadedmetadata', onMeta)
+        resolve()
+      }
+      el.addEventListener('loadedmetadata', onMeta)
+      el.addEventListener('error', onMeta, { once: true })
+      window.setTimeout(() => {
+        el.removeEventListener('loadedmetadata', onMeta)
+        resolve()
+      }, 5000)
+    })
+  }
+  if (!src.value) return
+  await probeMediaDuration(el, duration)
+  if (!src.value) return
   el.play().then(() => (playing.value = true)).catch(() => (playing.value = false))
 }
 
@@ -58,44 +75,20 @@ function toggle() {
   }
 }
 
-// Длительность: у webm-записей из MediaRecorder она часто Infinity/0
-// (браузер узнаёт её только по ходу загрузки). Берём из seekable-диапазона
-// и доращиваем по мере проигрывания.
-function refreshDuration() {
-  const el = audioEl.value
-  if (!el) return
-  let d = el.duration
-  if (!Number.isFinite(d) || d <= 0) {
-    try {
-      if (el.seekable.length > 0) {
-        const s = el.seekable.end(el.seekable.length - 1)
-        if (Number.isFinite(s) && s > 0) d = s
-      }
-    } catch {
-      /* ignore */
-    }
-  }
-  if (Number.isFinite(d) && d > 0 && d !== duration.value) {
-    duration.value = d
-    // Если шкала была перемотана вручную — не трогаем текущую позицию.
-  }
-}
-
 function onMeta() {
-  refreshDuration()
+  const el = audioEl.value
+  if (el) refreshMediaDuration(el, duration)
 }
 
 function onTime() {
   const el = audioEl.value
-  if (!el) return
-  current.value = el.currentTime
-  // Для записей с неизвестной длительностью шкала растёт по мере звучания.
-  if (!Number.isFinite(el.duration) || el.duration <= 0) {
-    if (current.value > duration.value) duration.value = current.value
-  }
+  if (el) current.value = el.currentTime
 }
 
 function onEnded() {
+  // Если длительность так и не определилась (зондирование не удалось) —
+  // запоминаем реальный конец файла.
+  if (!duration.value && current.value > 0) duration.value = current.value
   playing.value = false
   current.value = 0
 }
@@ -128,7 +121,8 @@ function setSpeed(v: number) {
 }
 
 function applyCustom() {
-  const v = parseFloat(customSpeed.value.replace(',', '.'))
+  // v-model на input type=number приводит значение к числу — приводим к строке.
+  const v = parseFloat(String(customSpeed.value).replace(',', '.'))
   if (isNaN(v)) return
   if (v > 3) {
     speedError.value = 'Нельзя ускорить больше чем в 3 раза'
@@ -190,10 +184,9 @@ function applyCustom() {
     <audio
       ref="audioEl"
       :src="src"
-      preload="metadata"
+      preload="auto"
       @loadedmetadata="onMeta"
-      @durationchange="refreshDuration"
-      @loadeddata="refreshDuration"
+      @durationchange="onMeta"
       @timeupdate="onTime"
       @ended="onEnded"
       @play="playing = true"
