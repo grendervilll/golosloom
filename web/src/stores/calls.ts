@@ -31,6 +31,10 @@ export const useCallStore = defineStore('calls', {
     punchCooldown: 0 as number,
     lastPunch: 0,
     audioScanTimer: null as number | null,
+    // Слежение за выключенным микрофоном: чтобы предупреждать пользователя,
+    // когда он пытается говорить, но микрофон выключен.
+    micMonitor: null as { stream: MediaStream; ctx: AudioContext; analyser: AnalyserNode; warned: boolean } | null,
+    micMonitorTimer: null as number | null,
   }),
   getters: {
     inCall: (s) => s.connectedCallId > 0,
@@ -340,6 +344,7 @@ export const useCallStore = defineStore('calls', {
         clearInterval(this.audioScanTimer)
         this.audioScanTimer = null
       }
+      this.stopMicMonitor()
       if (this.room) {
         this.room.disconnect()
         this.room = null
@@ -351,12 +356,68 @@ export const useCallStore = defineStore('calls', {
     },
     async toggleMic() {
       if (!this.room) return
-      this.micOn = !this.micOn
+      const target = !this.micOn
+      if (target) this.stopMicMonitor() // микрофон нужен LiveKit — освобождаем его
+      this.micOn = target
       try {
-        await this.room.localParticipant.setMicrophoneEnabled(this.micOn)
+        await this.room.localParticipant.setMicrophoneEnabled(target)
+        if (!target) void this.startMicMonitor()
       } catch {
-        this.micOn = !this.micOn
+        this.micOn = !target
+        if (!this.micOn) void this.startMicMonitor()
         toast.warning('Микрофон недоступен — проверьте разрешения браузера')
+      }
+    },
+    // Слежение за микрофоном, когда он выключен: если пользователь начинает
+    // говорить, подаём сигнал «включите микрофон» (тост + звук).
+    async startMicMonitor() {
+      if (this.micMonitor || this.micOn || !this.inCall) return
+      let stream: MediaStream
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      } catch {
+        return // нет доступа к микрофону — следить не можем
+      }
+      const AC = window.AudioContext || (window as any).webkitAudioContext
+      if (!AC) {
+        stream.getTracks().forEach((t) => t.stop())
+        return
+      }
+      const ctx = new AC()
+      const analyser = ctx.createAnalyser()
+      analyser.fftSize = 1024
+      ctx.createMediaStreamSource(stream).connect(analyser)
+      const monitor = { stream, ctx, analyser, warned: false }
+      this.micMonitor = markRaw(monitor)
+      const buf = new Float32Array(analyser.fftSize)
+      this.micMonitorTimer = window.setInterval(() => {
+        if (!this.micMonitor) return
+        analyser.getFloatTimeDomainData(buf)
+        let sum = 0
+        for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i]
+        const rms = Math.sqrt(sum / buf.length)
+        if (rms > 0.04) {
+          // Говорит при выключенном микрофоне: сигналим один раз за «фразу».
+          if (!monitor.warned) {
+            monitor.warned = true
+            toast.warning('Ваш микрофон выключен — включите его, чтобы говорить', { duration: 4000 })
+            sounds.micOff()
+          }
+        } else {
+          monitor.warned = false
+        }
+      }, 200)
+    },
+    stopMicMonitor() {
+      if (this.micMonitorTimer !== null) {
+        clearInterval(this.micMonitorTimer)
+        this.micMonitorTimer = null
+      }
+      const m = this.micMonitor
+      if (m) {
+        m.stream.getTracks().forEach((t) => t.stop())
+        void m.ctx.close().catch(() => {})
+        this.micMonitor = null
       }
     },
     async toggleCam() {

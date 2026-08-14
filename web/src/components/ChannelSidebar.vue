@@ -38,6 +38,48 @@ const avatarInput = ref<HTMLInputElement | null>(null)
 // Подменю «Настройки» внутри меню бургера.
 const settingsOpen = ref(false)
 const serverUrl = ref(settings.serverUrl)
+// Какая горячая клавиша сейчас переназначается (null — никакая).
+const capturingHotkey = ref<null | 'mic' | 'speakers' | 'cam'>(null)
+
+// Понятное отображение клавиши на кнопке.
+function keyLabel(key: string): string {
+  if (key === ' ') return 'Пробел'
+  if (key.length === 1) return key.toUpperCase()
+  const map: Record<string, string> = {
+    Escape: 'Esc',
+    Enter: 'Enter',
+    Tab: 'Tab',
+    Backspace: 'Backspace',
+    ArrowUp: '↑',
+    ArrowDown: '↓',
+    ArrowLeft: '←',
+    ArrowRight: '→',
+  }
+  return map[key] || key
+}
+
+function startCapture(action: 'mic' | 'speakers' | 'cam') {
+  capturingHotkey.value = action
+}
+
+function cancelCapture() {
+  capturingHotkey.value = null
+}
+
+function onCaptureKey(e: KeyboardEvent) {
+  if (!capturingHotkey.value) return
+  e.preventDefault()
+  e.stopPropagation()
+  if (e.key === 'Escape') {
+    cancelCapture()
+    return
+  }
+  // Чистые модификаторы игнорируем — ждём основную клавишу.
+  if (e.key === 'Control' || e.key === 'Shift' || e.key === 'Alt' || e.key === 'Meta') return
+  const key = e.key.length === 1 ? e.key.toLowerCase() : e.key
+  settings.setHotkey(capturingHotkey.value, key)
+  cancelCapture()
+}
 
 function openSettings() {
   settingsOpen.value = true
@@ -199,9 +241,8 @@ async function removeAvatar() {
       <!-- Основное меню. -->
       <template v-if="!settingsOpen">
         <div class="menu-user">
-          <button class="user-avatar" title="Сменить аватар" @click="changeAvatarClick">
-            <Avatar :user-id="auth.user?.id || 0" :nick="auth.user?.nick || '?'" :avatar="auth.user?.avatar" :size="38" />
-          </button>
+          <!-- Аватар без кнопки: смена аватара — только в «Настройках». -->
+          <Avatar :user-id="auth.user?.id || 0" :nick="auth.user?.nick || '?'" :avatar="auth.user?.avatar" :size="38" />
           <div class="user-info">
             <b>{{ auth.user?.nick }}</b>
             <span class="muted">ID: {{ auth.user?.id }}</span>
@@ -267,6 +308,50 @@ async function removeAvatar() {
             <option value="720p30">720p / 30 fps</option>
             <option value="480p30">480p / 30 fps</option>
           </select>
+        </div>
+
+        <p class="submenu-title">Клавиши</p>
+        <div class="submenu-block">
+          <div class="hotkey-row">
+            <label>Микрофон</label>
+            <button
+              class="hotkey-btn"
+              :class="{ active: capturingHotkey === 'mic' }"
+              title="Нажмите, чтобы переназначить клавишу"
+              @click="startCapture('mic')"
+              @keydown="onCaptureKey"
+              @blur="cancelCapture"
+            >
+              {{ capturingHotkey === 'mic' ? 'Нажмите клавишу…' : keyLabel(settings.hotkeys.mic) }}
+            </button>
+          </div>
+          <div class="hotkey-row">
+            <label>Звук собеседников</label>
+            <button
+              class="hotkey-btn"
+              :class="{ active: capturingHotkey === 'speakers' }"
+              title="Нажмите, чтобы переназначить клавишу"
+              @click="startCapture('speakers')"
+              @keydown="onCaptureKey"
+              @blur="cancelCapture"
+            >
+              {{ capturingHotkey === 'speakers' ? 'Нажмите клавишу…' : keyLabel(settings.hotkeys.speakers) }}
+            </button>
+          </div>
+          <div class="hotkey-row">
+            <label>Веб-камера</label>
+            <button
+              class="hotkey-btn"
+              :class="{ active: capturingHotkey === 'cam' }"
+              title="Нажмите, чтобы переназначить клавишу"
+              @click="startCapture('cam')"
+              @keydown="onCaptureKey"
+              @blur="cancelCapture"
+            >
+              {{ capturingHotkey === 'cam' ? 'Нажмите клавишу…' : keyLabel(settings.hotkeys.cam) }}
+            </button>
+          </div>
+          <p class="hint-text">Действуют во время звонка</p>
         </div>
       </template>
     </div>
@@ -525,6 +610,32 @@ async function removeAvatar() {
   color: #fff;
 }
 
+/* Строки переназначения горячих клавиш в настройках. */
+.hotkey-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.hotkey-row label {
+  margin-top: 0;
+}
+.hotkey-btn {
+  width: auto !important;
+  min-width: 110px;
+  justify-content: center;
+  background: var(--bg3);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.hotkey-btn.active {
+  background: var(--accent);
+  color: #fff;
+}
+
 .chat-list {
   flex: 1;
   overflow-y: auto;
@@ -651,21 +762,6 @@ async function removeAvatar() {
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
-}
-/* Кнопка-аватар не должна растягиваться правилом .server-menu button
-   (width: 100%) — иначе это «пустая кнопка» на всю ширину меню. */
-.user-avatar {
-  width: 38px;
-  height: 38px;
-  padding: 0;
-  background: transparent;
-  border-radius: 50%;
-  flex-shrink: 0;
-  min-height: 0;
-}
-.user-avatar:hover {
-  background: transparent;
-  opacity: 0.85;
 }
 .menu-user .user-info {
   flex: 1;

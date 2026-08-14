@@ -6,6 +6,12 @@ import type { ServerConfigShape } from '../api/http'
 
 const SETTINGS_KEY = 'golosloom-settings'
 
+export interface Hotkeys {
+  mic: string
+  speakers: string
+  cam: string
+}
+
 export interface ClientSettings {
   serverUrl: string
   chatHidden: boolean
@@ -14,6 +20,7 @@ export interface ClientSettings {
   screenQuality: string
   volumes: Record<number, number>
   theme: 'light' | 'dark'
+  hotkeys: Hotkeys
 }
 
 function defaultTheme(): 'light' | 'dark' {
@@ -32,6 +39,9 @@ function defaultSettings(): ClientSettings {
     screenQuality: '1080p60',
     volumes: {},
     theme: defaultTheme(),
+    // Горячие клавиши звонка по умолчанию: микрофон — P, звук
+    // собеседников — [, веб-камера — ].
+    hotkeys: { mic: 'p', speakers: '[', cam: ']' },
   }
 }
 
@@ -78,6 +88,7 @@ export const useSettingsStore = defineStore('settings', {
           screenQuality: this.screenQuality,
           volumes: this.volumes,
           theme: this.theme,
+          hotkeys: this.hotkeys,
         }),
       )
     },
@@ -117,6 +128,11 @@ export const useSettingsStore = defineStore('settings', {
     },
     setVolume(userId: number, volume: number) {
       this.volumes[userId] = volume
+      this.persist()
+    },
+    // Назначение горячей клавиши: action — 'mic' | 'speakers' | 'cam'.
+    setHotkey(action: keyof Hotkeys, key: string) {
+      this.hotkeys[action] = key
       this.persist()
     },
   },

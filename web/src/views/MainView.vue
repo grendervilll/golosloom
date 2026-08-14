@@ -1,7 +1,7 @@
 // Главный экран: каналы слева, чат и звонок в центре, участники справа.
 // На мобильных: каналы и участники — выезжающие шторки, внизу — навигация.
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { useChannelsStore } from '../stores/channels'
@@ -64,7 +64,32 @@ onMounted(async () => {
   } catch {
     /* пуши не критичны */
   }
+  window.addEventListener('keydown', onHotkey)
 })
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', onHotkey)
+})
+
+// Горячие клавиши звонка: микрофон, звук собеседников, веб-камера
+// (настраиваются в меню «Настройки»). Не срабатывают при вводе текста
+// и с модификаторами — чтобы не мешать обычным сочетаниям браузера.
+function onHotkey(e: KeyboardEvent) {
+  if (e.metaKey || e.ctrlKey || e.altKey) return
+  const target = e.target as HTMLElement | null
+  if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
+  const key = e.key.length === 1 ? e.key.toLowerCase() : e.key
+  if (key === settings.hotkeys.mic) {
+    e.preventDefault()
+    void calls.toggleMic()
+  } else if (key === settings.hotkeys.speakers) {
+    e.preventDefault()
+    calls.setSpeakersMuted(!settings.mutedOthers)
+  } else if (key === settings.hotkeys.cam) {
+    e.preventDefault()
+    void calls.toggleCam()
+  }
+}
 
 function logout() {
   auth.logout()

@@ -1,10 +1,14 @@
-// Звуки клиента на Web Audio API (без файлов-ассетов).
+// Звуки клиента. Звонок — файл zvonok.mp3 (web/public/sounds), остальные
+// звуки генерируются на Web Audio API.
 // Правила: звук вызова длится 20 секунд, одновременно играет только один
 // звук вызова; звук сообщения тихий и только на чужие сообщения.
 
 class SoundManager {
   private ctx: AudioContext | null = null
   private ringTimer: number | null = null
+  private ringStopTimer: number | null = null
+  private ringAudio: HTMLAudioElement | null = null
+  private ringBeepTimer: number | null = null
   private dialTimer: number | null = null
   private ringNodes: { osc: OscillatorNode; gain: GainNode }[] = []
   private muted = false
@@ -44,26 +48,60 @@ class SoundManager {
   }
 
   // Звук входящего вызова (повторяющийся), максимум 20 секунд.
-  // Контекст разблокируется на каждом тике, чтобы звук не обрывался
-  // из-за политики автозапуска браузера.
+  // Играет файл zvonok.mp3 по кругу; если файл не загрузился —
+  // фолбэк на гудки Web Audio API.
   playRing(): void {
     if (this.ringTimer !== null) return // не даём двум вызовам звучать одновременно
+    this.ringTimer = 1 // guard: звонок активен
+    if (typeof window !== 'undefined') {
+      const audio = new Audio('sounds/zvonok.mp3')
+      audio.loop = true
+      audio.volume = 0.8
+      audio.preload = 'auto'
+      audio.onerror = () => this.ringFallback()
+      this.ringAudio = audio
+      const p = audio.play()
+      if (p) p.catch(() => this.ringFallback())
+    } else {
+      this.ringFallback()
+    }
+    // Звонок длится максимум 20 секунд, дальше — автоматически гаснет.
+    this.ringStopTimer = window.setTimeout(() => this.stopRing(), 20000)
+  }
+
+  // Фолбэк-гудки, если аудиофайл звонка недоступен.
+  private ringFallback(): void {
+    this.stopRingAudio()
+    if (this.ringTimer === null || this.ringBeepTimer !== null) return
     const schedule = () => {
       this.unlock()
       this.beep(800, 0.3, 0.08, 'sine')
       window.setTimeout(() => this.beep(1000, 0.3, 0.08, 'sine'), 350)
     }
-    // Таймер создаём ДО первого тика, чтобы guard "ringTimer === null"
-    // не съедал первый гудок, а stopRing мог прервать цикл сразу.
-    this.ringTimer = window.setInterval(schedule, 850)
+    this.ringBeepTimer = window.setInterval(schedule, 850)
     schedule()
-    window.setTimeout(() => this.stopRing(), 20000)
+  }
+
+  private stopRingAudio(): void {
+    if (this.ringAudio) {
+      this.ringAudio.pause()
+      this.ringAudio.src = ''
+      this.ringAudio = null
+    }
+    if (this.ringBeepTimer !== null) {
+      clearInterval(this.ringBeepTimer)
+      this.ringBeepTimer = null
+    }
   }
 
   stopRing(): void {
     if (this.ringTimer !== null) {
-      clearInterval(this.ringTimer)
       this.ringTimer = null
+      if (this.ringStopTimer !== null) {
+        clearTimeout(this.ringStopTimer)
+        this.ringStopTimer = null
+      }
+      this.stopRingAudio()
     }
   }
 
@@ -95,6 +133,13 @@ class SoundManager {
   punched(): void {
     this.beep(180, 0.18, 0.08, 'square')
     this.beep(120, 0.25, 0.08, 'square', 0.12)
+  }
+
+  // Микрофон выключен, а пользователь пытается говорить: тройной сигнал.
+  micOff(): void {
+    this.beep(880, 0.12, 0.06)
+    window.setTimeout(() => this.beep(660, 0.12, 0.06), 150)
+    window.setTimeout(() => this.beep(880, 0.12, 0.06), 300)
   }
 
   // Предупреждение о кике/бане.
