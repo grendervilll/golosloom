@@ -202,7 +202,8 @@ CREATE TABLE IF NOT EXISTS messages (
 	deleted_at TEXT,
 	created_at TEXT NOT NULL,
 	edited_at TEXT,
-	reply_to INTEGER
+	reply_to INTEGER,
+	attachment_deleted INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS channel_invites (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -298,6 +299,8 @@ func (s *Store) migrate() error {
 	_, _ = s.db.Exec(`ALTER TABLE users ADD COLUMN avatar_at TEXT`)
 	// Миграция: ответы на сообщения (reply_to).
 	_, _ = s.db.Exec(`ALTER TABLE messages ADD COLUMN reply_to INTEGER`)
+	// Миграция: флаг «вложение удалено администратором» (файл стёрт с диска).
+	_, _ = s.db.Exec(`ALTER TABLE messages ADD COLUMN attachment_deleted INTEGER NOT NULL DEFAULT 0`)
 	return nil
 }
 
@@ -891,7 +894,7 @@ func (s *Store) CreateMessage(channelID, senderID int64, ciphertext, iv []byte, 
 }
 
 func (s *Store) GetMessage(id int64) (*models.Message, error) {
-	row := s.db.QueryRow(`SELECT id, channel_id, sender_id, ciphertext, iv, history, deleted, deleted_by, deleted_at, created_at, edited_at, reply_to
+	row := s.db.QueryRow(`SELECT id, channel_id, sender_id, ciphertext, iv, history, deleted, deleted_by, deleted_at, created_at, edited_at, reply_to, attachment_deleted
 		FROM messages WHERE id = ?`, id)
 	m, err := scanMessage(row)
 	if err != nil {
@@ -912,8 +915,9 @@ func scanMessage(row *sql.Row) (*models.Message, error) {
 	var deletedBy sql.NullInt64
 	var deletedAt, createdAt, editedAt sql.NullString
 	var replyTo sql.NullInt64
+	var attachmentDeleted int
 	err := row.Scan(&m.ID, &m.ChannelID, &m.SenderID, &m.Ciphertext, &m.IV, &history,
-		&deleted, &deletedBy, &deletedAt, &createdAt, &editedAt, &replyTo)
+		&deleted, &deletedBy, &deletedAt, &createdAt, &editedAt, &replyTo, &attachmentDeleted)
 	if err == sql.ErrNoRows {
 		return nil, ErrNotFound
 	}
@@ -921,6 +925,7 @@ func scanMessage(row *sql.Row) (*models.Message, error) {
 		return nil, err
 	}
 	m.Deleted = deleted == 1
+	m.AttachmentDeleted = attachmentDeleted == 1
 	if deletedBy.Valid {
 		m.DeletedBy = &deletedBy.Int64
 	}
@@ -940,7 +945,7 @@ func scanMessage(row *sql.Row) (*models.Message, error) {
 
 func (s *Store) ListMessages(channelID, beforeID int64, limit int) ([]models.Message, error) {
 	rows, err := s.db.Query(`
-		SELECT id, channel_id, sender_id, ciphertext, iv, history, deleted, deleted_by, deleted_at, created_at, edited_at, reply_to
+		SELECT id, channel_id, sender_id, ciphertext, iv, history, deleted, deleted_by, deleted_at, created_at, edited_at, reply_to, attachment_deleted
 		FROM messages WHERE channel_id = ? AND (? = 0 OR id < ?)
 		ORDER BY id DESC LIMIT ?`, channelID, beforeID, beforeID, limit)
 	if err != nil {
@@ -955,11 +960,13 @@ func (s *Store) ListMessages(channelID, beforeID int64, limit int) ([]models.Mes
 		var deletedBy sql.NullInt64
 		var deletedAt, createdAt, editedAt sql.NullString
 		var replyTo sql.NullInt64
+		var attachmentDeleted int
 		if err := rows.Scan(&m.ID, &m.ChannelID, &m.SenderID, &m.Ciphertext, &m.IV, &history,
-			&deleted, &deletedBy, &deletedAt, &createdAt, &editedAt, &replyTo); err != nil {
+			&deleted, &deletedBy, &deletedAt, &createdAt, &editedAt, &replyTo, &attachmentDeleted); err != nil {
 			return nil, err
 		}
 		m.Deleted = deleted == 1
+		m.AttachmentDeleted = attachmentDeleted == 1
 		if deletedBy.Valid {
 			m.DeletedBy = &deletedBy.Int64
 		}
@@ -1158,6 +1165,55 @@ func (s *Store) DeleteFiles(ids []int64) error {
 		args[i] = id
 	}
 	_, err := s.db.Exec(`DELETE FROM files WHERE id IN (`+strings.Join(qs, ",")+`)`, args...)
+	return err
+}
+
+// AdminFile — файл для админ-панели: метаданные + привязка к сообщению.
+type AdminFile struct {
+	ID          int64  `json:"id"`
+	Filename    string `json:"filename"`
+	Mime        string `json:"mime"`
+	Size        int64  `json:"size"`
+	CreatedAt   string `json:"created_at"`
+	MessageID   int64  `json:"message_id"`
+	ChannelID   int64  `json:"channel_id"`
+	ChannelName string `json:"channel_name"`
+	SenderNick  string `json:"sender_nick"`
+}
+
+// AdminListFiles — все файлы, привязанные к сообщениям (для админ-панели).
+func (s *Store) AdminListFiles(limit int) ([]AdminFile, error) {
+	if limit <= 0 {
+		limit = 500
+	}
+	rows, err := s.db.Query(`
+		SELECT f.id, f.filename, f.mime, f.size, f.created_at, f.message_id, f.channel_id,
+			COALESCE(c.name, ''), COALESCE(u.nick, '')
+		FROM files f
+		LEFT JOIN channels c ON c.id = f.channel_id
+		LEFT JOIN users u ON u.id = f.user_id
+		WHERE f.message_id IS NOT NULL
+		ORDER BY f.id DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []AdminFile
+	for rows.Next() {
+		var a AdminFile
+		if err := rows.Scan(&a.ID, &a.Filename, &a.Mime, &a.Size, &a.CreatedAt,
+			&a.MessageID, &a.ChannelID, &a.ChannelName, &a.SenderNick); err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+// SetMessageAttachmentDeleted — пометить сообщение, что его вложение
+// удалено администратором (само сообщение и текст остаются).
+func (s *Store) SetMessageAttachmentDeleted(messageID int64) error {
+	_, err := s.db.Exec(`UPDATE messages SET attachment_deleted = 1 WHERE id = ?`, messageID)
 	return err
 }
 

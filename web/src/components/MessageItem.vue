@@ -139,7 +139,8 @@ function openMore(e: MouseEvent) {
       <!-- Вложение: фото — миниатюра с просмотром по клику, видео — превью
            с открытием попапа, голос — кнопка с плеером вверху чата,
            остальное — карточка файла со скачиванием. -->
-      <div v-if="att && isImage" class="att">
+      <div v-if="msg.attachmentDeleted" class="att-deleted">Файл был удалён администратором сервера</div>
+      <div v-else-if="att && isImage" class="att">
         <img class="att-img" :src="attSrc" :alt="att.filename" loading="lazy" @click="viewerOpen = true" />
       </div>
       <div v-else-if="att && isVideo" class="att">
@@ -268,6 +269,21 @@ function openMore(e: MouseEvent) {
 /* Вложения. */
 .att {
   margin: 4px 0;
+}
+/* Вложение удалено администратором сервера: файл стёрт, текст сообщения остался. */
+.att-deleted {
+  margin: 4px 0;
+  padding: 8px 12px;
+  background: var(--bg3);
+  border-radius: 10px;
+  color: var(--text-dim);
+  font-size: 13px;
+  font-style: italic;
+  max-width: 260px;
+}
+.msg.mine .att-deleted {
+  background: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.85);
 }
 .att-img {
   display: block;

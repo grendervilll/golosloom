@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"time"
+
+	"golosloom/server/internal/hub"
 )
 
 func (s *Server) handleAdminStats(w http.ResponseWriter, r *http.Request) {
@@ -119,6 +121,47 @@ func (s *Server) handleAdminRestore(w http.ResponseWriter, r *http.Request) {
 	if err := s.Store.RestoreFromFile(tmp); err != nil {
 		writeErr(w, http.StatusInternalServerError, "не удалось восстановить базу: "+err.Error())
 		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// handleAdminListFiles — все файлы сервера (для вкладки «Файлы»).
+func (s *Server) handleAdminListFiles(w http.ResponseWriter, r *http.Request) {
+	limit := 500
+	if v, err := parseQueryInt(r, "limit"); err == nil && v > 0 && v <= 2000 {
+		limit = v
+	}
+	files, err := s.Store.AdminListFiles(limit)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, files)
+}
+
+// handleAdminDeleteFile — полное удаление файла (запись БД + файл с диска).
+// Сообщение и его текст остаются, сообщению ставится флаг attachment_deleted,
+// клиенты канала уведомляются событием attachment.deleted.
+func (s *Server) handleAdminDeleteFile(w http.ResponseWriter, r *http.Request) {
+	fileID := pathID(r, "id")
+	f, err := s.Store.GetFile(fileID)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "файл не найден")
+		return
+	}
+	messageID := f.MessageID
+	// Удаляем с диска и из БД.
+	_ = os.Remove(f.Path)
+	if err := s.Store.DeleteFiles([]int64{f.ID}); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if messageID != 0 {
+		_ = s.Store.SetMessageAttachmentDeleted(messageID)
+		// Уведомляем участников канала: вложение сообщения удалено.
+		s.Hub.SendToChannel(f.ChannelID, hub.NewEvent("attachment.deleted", map[string]interface{}{
+			"channel_id": f.ChannelID, "message_id": messageID,
+		}))
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }

@@ -41,6 +41,7 @@ function wireWs() {
     ws.on('message.new', (d: any) => void chat.handleNew(d)),
     ws.on('message.edited', (d: any) => void chat.handleEdited(d)),
     ws.on('message.deleted', (d: any) => chat.handleDeleted(d)),
+    ws.on('attachment.deleted', (d: any) => chat.handleAttachmentDeleted(d)),
     ws.on('typing', (d: any) => chat.handleTyping(d)),
     ws.on('invite.new', (d: any) => void channels.handleInviteEvent(d)),
     ws.on('invite.pending', (d: any) => void channels.handleInviteEvent(d)),

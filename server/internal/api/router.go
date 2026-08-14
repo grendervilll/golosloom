@@ -49,6 +49,8 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("GET /api/admin/settings/registration", s.requireServerAdmin(s.handleAdminGetRegistration))
 	mux.HandleFunc("POST /api/registration/invites", s.requireAuth(s.handleCreateRegistrationInvite))
 	mux.HandleFunc("GET /api/admin/channels", s.requireServerAdmin(s.handleAdminListChannels))
+	mux.HandleFunc("GET /api/admin/files", s.requireServerAdmin(s.handleAdminListFiles))
+	mux.HandleFunc("DELETE /api/admin/files/{id}", s.requireServerAdmin(s.handleAdminDeleteFile))
 
 	// Пользователи
 	mux.HandleFunc("POST /api/users/key", s.requireAuth(s.handleUploadKey))

@@ -52,7 +52,20 @@ export interface Message {
   deleted: boolean
   deleted_by?: number
   attachment?: Attachment | null
+  attachment_deleted?: boolean
   reply_to?: number | null
+}
+
+export interface AdminFile {
+  id: number
+  filename: string
+  mime: string
+  size: number
+  created_at: string
+  message_id: number
+  channel_id: number
+  channel_name: string
+  sender_nick: string
 }
 
 export interface Attachment {

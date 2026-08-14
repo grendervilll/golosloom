@@ -128,7 +128,13 @@ func (s *Server) handleFileGet(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "файл не найден")
 		return
 	}
-	if !s.Store.IsMember(f.ChannelID, userID) {
+	// Админ сервера видит файлы любых каналов (админ-панель «Файлы»),
+	// остальные — только участники канала.
+	isAdmin := false
+	if u, err := s.Store.GetUserByID(userID); err == nil {
+		isAdmin = u.IsServerAdmin
+	}
+	if !isAdmin && !s.Store.IsMember(f.ChannelID, userID) {
 		writeErr(w, http.StatusForbidden, "вы не участник канала")
 		return
 	}

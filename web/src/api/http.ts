@@ -337,6 +337,14 @@ export class ApiClient {
   adminListChannels() {
     return this.get('/api/admin/channels')
   }
+  // Все файлы сервера (вкладка «Файлы» в админ-панели).
+  adminListFiles() {
+    return this.get('/api/admin/files')
+  }
+  // Полное удаление файла с сервера (сообщение остаётся).
+  adminDeleteFile(fileId: number) {
+    return this.delete(`/api/admin/files/${fileId}`)
+  }
 }
 
 // Простая типизация ответа /api/config без импорта типов

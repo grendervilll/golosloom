@@ -69,7 +69,7 @@ describe('контекстное меню чата', () => {
     expect(wrapper.find('.ctx-menu').exists()).toBe(true)
   })
 
-  it('ПКМ по чужому сообщению у модератора открывает меню, у пользователя — нет', async () => {
+  it('ПКМ по чужому сообщению у простого пользователя открывает меню с «Ответить»', async () => {
     const { wrapper, pinia } = setup()
     // Убираем права модератора: пользователь — простой.
     const channels = useChannelsStore()
@@ -81,7 +81,11 @@ describe('контекстное меню чата', () => {
     const other = wrapper2.findAll('.msg')[1]
     await other.trigger('contextmenu')
     await wrapper2.vm.$nextTick()
-    expect(wrapper2.find('.ctx-menu').exists()).toBe(false)
+    expect(wrapper2.find('.ctx-menu').exists()).toBe(true)
+    // Отвечать могут все: пункт «Ответить» есть, «Удалить» — нет.
+    const buttons = wrapper2.findAll('.ctx-menu button').map((b) => b.text())
+    expect(buttons.some((t) => t.includes('Ответить'))).toBe(true)
+    expect(buttons.some((t) => t.includes('Удалить'))).toBe(false)
     void wrapper
   })
 })

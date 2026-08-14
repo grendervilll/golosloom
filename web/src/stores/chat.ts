@@ -24,6 +24,9 @@ export interface ChatMessage {
   original?: string // оригинал до изменения (для модераторов)
   pending?: boolean
   attachment?: Attachment | null
+  // Вложение удалено администратором сервера: файл стёрт с диска,
+  // сообщение и текст остались.
+  attachmentDeleted?: boolean
   // Локальный URL для мгновенного показа картинки до ответа сервера.
   localUrl?: string
   replyToId?: number
@@ -46,6 +49,10 @@ export const useChatStore = defineStore('chat', {
     // Загружена ли вся история канала (больше страниц нет).
     historyEnd: new Set<number>(),
     searchBusy: false as boolean,
+    // Запрос на переход к сообщению из админ-панели «Файлы»:
+    // { channelId, messageId, n } — n растёт, чтобы повторные переходы
+    // к одному и тому же сообщению тоже срабатывали.
+    jumpRequest: null as { channelId: number; messageId: number; n: number } | null,
   }),
   getters: {
     unreadCount: (state) => (channelId: number) => state.unread.get(channelId) || 0,
@@ -288,6 +295,36 @@ export const useChatStore = defineStore('chat', {
       else list.push(m)
       this.messages.set(data.channel_id, [...list])
     },
+    // Вложение сообщения удалено администратором: файл исчезает,
+    // сообщение и текст остаются с пометкой attachmentDeleted.
+    handleAttachmentDeleted(data: { channel_id: number; message_id: number }) {
+      const list = this.messages.get(data.channel_id)
+      if (!list) return
+      const idx = list.findIndex((x) => x.id === data.message_id)
+      if (idx < 0) return
+      list[idx] = { ...list[idx], attachment: null, attachmentDeleted: true, localUrl: undefined }
+      this.messages.set(data.channel_id, [...list])
+    },
+    // Гарантирует, что сообщение загружено в историю: загружает историю,
+    // если она ещё не загружена, и догружает страницы, пока не найдёт его.
+    async ensureMessageLoaded(channelId: number, messageId: number, maxPages = 40): Promise<boolean> {
+      if (!this.messages.get(channelId)) {
+        await this.loadHistory(channelId).catch(() => undefined)
+      }
+      for (let i = 0; i < maxPages; i++) {
+        const list = this.messages.get(channelId) || []
+        if (list.some((m) => m.id === messageId)) return true
+        if (this.historyEnd.has(channelId)) return false
+        const added = await this.loadMore(channelId).catch(() => [] as ChatMessage[])
+        if (added.length === 0) return false
+      }
+      return (this.messages.get(channelId) || []).some((m) => m.id === messageId)
+    },
+    // Запрос перехода к сообщению (из админ-панели «Файлы»). ChatPanel
+    // следит за jumpRequest и прокручивает к сообщению в своём канале.
+    requestJump(channelId: number, messageId: number) {
+      this.jumpRequest = { channelId, messageId, n: (this.jumpRequest?.n || 0) + 1 }
+    },
     handleDeleted(data: { channel_id: number; message_id: number; deleted_by: number }) {
       const list = this.messages.get(data.channel_id) || []
       if (this.canSeeDeleted()) {
@@ -324,6 +361,7 @@ export const useChatStore = defineStore('chat', {
         createdAt: m.created_at,
         editedAt: m.edited_at,
         attachment: m.attachment || null,
+        attachmentDeleted: !!m.attachment_deleted,
         replyToId: m.reply_to || undefined,
       }
       // Удалённые сообщения скрываются у простых пользователей.

@@ -90,6 +90,9 @@ type Message struct {
 	DeletedAt  *time.Time `json:"deleted_at,omitempty"`
 	Attachment *Attachment `json:"attachment,omitempty"`
 	ReplyTo    *int64    `json:"reply_to,omitempty"`
+	// AttachmentDeleted — вложение удалено администратором сервера
+	// (файл стёрт с диска, сообщение и текст остались).
+	AttachmentDeleted bool `json:"attachment_deleted,omitempty"`
 }
 
 // Attachment — файл, прикреплённый к сообщению. Контент хранится на диске

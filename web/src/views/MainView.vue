@@ -5,6 +5,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { useChannelsStore } from '../stores/channels'
+import { useChatStore } from '../stores/chat'
 import { useCallStore } from '../stores/calls'
 import { useSettingsStore } from '../stores/settings'
 import ChannelSidebar from '../components/ChannelSidebar.vue'
@@ -27,6 +28,7 @@ import { initPush } from '../utils/push'
 const router = useRouter()
 const auth = useAuthStore()
 const channels = useChannelsStore()
+const chat = useChatStore()
 const calls = useCallStore()
 const settings = useSettingsStore()
 
@@ -116,6 +118,21 @@ function onChatToggleParticipants() {
   showParticipants.value = !showParticipants.value
   mobilePanel.value = showParticipants.value ? 'members' : 'none'
 }
+// Переход к сообщению из админ-панели «Файлы»: закрываем панель,
+// открываем канал, догружаем историю до сообщения и прокручиваем к нему.
+async function onJumpMessage(payload: { channelId: number; messageId: number }) {
+  showAdmin.value = false
+  try {
+    if (channels.currentId !== payload.channelId) {
+      await channels.enterChannel(payload.channelId)
+    }
+    await chat.ensureMessageLoaded(payload.channelId, payload.messageId)
+    chat.requestJump(payload.channelId, payload.messageId)
+  } catch {
+    /* канал недоступен — не критично */
+  }
+}
+
 // Вкладка «Чат» во время звонка на мобильных: переключает чат/сцену.
 function onTabChat() {
   if (inCall.value) mobileCallChat.value = !mobileCallChat.value
@@ -192,7 +209,7 @@ function onTabChat() {
     />
 
     <IncomingCallOverlay />
-    <AdminPanel v-if="showAdmin" @close="showAdmin = false" />
+    <AdminPanel v-if="showAdmin" @close="showAdmin = false" @jump-message="onJumpMessage" />
     <InviteModal v-if="showInvite" @close="showInvite = false" />
     <RegistrationInviteModal v-if="showRegInvite" :channel-id="channels.currentId" @close="showRegInvite = false" />
     <CallModal v-if="showCallPicker" @close="showCallPicker = false" />

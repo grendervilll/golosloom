@@ -71,6 +71,9 @@ func (s *Server) messageJSON(m models.Message, withHistory bool) map[string]inte
 	if m.Attachment != nil {
 		out["attachment"] = m.Attachment
 	}
+	if m.AttachmentDeleted {
+		out["attachment_deleted"] = true
+	}
 	if m.ReplyTo != nil {
 		out["reply_to"] = *m.ReplyTo
 	}

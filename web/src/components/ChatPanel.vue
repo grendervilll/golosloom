@@ -14,6 +14,8 @@ import EmojiPicker from './EmojiPicker.vue'
 import Avatar from './Avatar.vue'
 import FileViewer from './FileViewer.vue'
 import AudioPlayer from './AudioPlayer.vue'
+import TextPreview from './TextPreview.vue'
+import { isTextFile } from '../utils/textFile'
 import type { Attachment } from '../api/types'
 
 const emit = defineEmits<{ (e: 'toggle-participants'): void; (e: 'open-invite'): void; (e: 'open-call'): void; (e: 'open-reg-invite'): void }>()
@@ -580,7 +582,7 @@ function showOriginal(msg: ChatMessage) {
 
 function openMenu(e: MouseEvent, msg: ChatMessage) {
   e.preventDefault?.()
-  if (!canModerate.value && msg.senderId !== auth.user?.id) return
+  // Меню открыто для всех участников: «Ответить» доступно каждому.
   menu.value = { x: e.clientX, y: e.clientY, msg }
   void nextTick(clampMenu)
 }
@@ -607,6 +609,32 @@ function closeMenu() {
   menu.value.msg = null
   showPicker.value = false
 }
+
+// --- Просмотр текстовых файлов («Показать») ---
+const textPreview = ref<ChatMessage | null>(null)
+const textPreviewSrc = computed(() => {
+  if (!textPreview.value?.attachment) return ''
+  return settings.api.fileUrl(textPreview.value.attachment.id)
+})
+// «Показать» доступно для текстовых файлов.
+const canPreviewText = computed(() => {
+  const a = menu.value.msg?.attachment
+  return !!a && !menu.value.msg?.attachmentDeleted && isTextFile(a.mime, a.filename)
+})
+function openTextPreview(msg: ChatMessage) {
+  textPreview.value = msg
+  menu.value.msg = null
+}
+
+// --- Переход к сообщению из админ-панели «Файлы» ---
+watch(
+  () => [chat.jumpRequest?.n, channels.currentId] as const,
+  () => {
+    const j = chat.jumpRequest
+    if (!j || j.channelId !== channels.currentId) return
+    void nextTick(() => scrollToMessage(j.messageId))
+  },
+)
 
 function onKeydown(e: KeyboardEvent) {
   if (e.key === 'Enter' && !e.shiftKey) {
@@ -820,7 +848,8 @@ function onKeydown(e: KeyboardEvent) {
 
     <div v-if="menu.msg" ref="menuEl" class="ctx-menu" :style="{ left: menu.x + 'px', top: menu.y + 'px' }" @click.stop>
       <button @click="replyFromMenu(menu.msg!)">Ответить</button>
-      <button v-if="menu.msg.senderId === auth.user?.id" @click="startEdit(menu.msg!)">Изменить сообщение</button>
+      <button v-if="canPreviewText" @click="openTextPreview(menu.msg!)">Показать</button>
+      <button v-if="menu.msg.senderId === auth.user?.id || canModerate" @click="startEdit(menu.msg!)">Изменить сообщение</button>
       <button v-if="menu.msg.senderId === auth.user?.id || canModerate" class="danger" @click="remove(menu.msg!)">
         Удалить сообщение
       </button>
@@ -845,6 +874,13 @@ function onKeydown(e: KeyboardEvent) {
       :filename="mediaViewer.filename"
       :video="mediaViewer.video"
       @close="mediaViewer = null"
+    />
+    <!-- Просмотр текстового файла («Показать» в ПКМ-меню). -->
+    <TextPreview
+      v-if="textPreview && textPreviewSrc"
+      :src="textPreviewSrc"
+      :filename="textPreview.attachment?.filename || 'файл.txt'"
+      @close="textPreview = null"
     />
   </div>
 </template>
