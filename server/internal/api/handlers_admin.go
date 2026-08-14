@@ -13,6 +13,8 @@ import (
 	"runtime"
 	"time"
 
+	"golang.org/x/sys/unix"
+
 	"golosloom/server/internal/hub"
 )
 
@@ -21,9 +23,23 @@ func (s *Server) handleAdminStats(w http.ResponseWriter, r *http.Request) {
 	channels, _ := s.Store.CountChannels()
 	messages, _ := s.Store.CountMessages()
 	calls, _ := s.Store.CountCalls()
+	filesSize, _ := s.Store.FilesSize()
 	dbSize := int64(0)
 	if fi, err := os.Stat(s.Cfg.DBPath); err == nil {
 		dbSize = fi.Size()
+	}
+	// Диск (каталог данных): всего и занято — для плиток «БД» и «Файлы».
+	var diskTotal, diskUsed uint64
+	{
+		var st unix.Statfs_t
+		if err := unix.Statfs(s.Cfg.FilesDir, &st); err != nil {
+			// Каталог файлов может ещё не существовать — берём диск БД.
+			_ = unix.Statfs(filepath.Dir(s.Cfg.DBPath), &st)
+		}
+		if st.Bsize > 0 && st.Blocks > 0 {
+			diskTotal = st.Blocks * uint64(st.Bsize)
+			diskUsed = (st.Blocks - st.Bavail) * uint64(st.Bsize)
+		}
 	}
 	var mem runtime.MemStats
 	runtime.ReadMemStats(&mem)
@@ -43,7 +59,7 @@ func (s *Server) handleAdminStats(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"uptime_sec":    int64(time.Since(s.startedAt).Seconds()),
-		"version":       "2.1.0",
+		"version":       "2.1.1",
 		"go":            runtime.Version(),
 		"users":         users,
 		"channels":      channels,
@@ -51,6 +67,9 @@ func (s *Server) handleAdminStats(w http.ResponseWriter, r *http.Request) {
 		"calls":         calls,
 		"online":        s.Hub.OnlineCount(),
 		"db_size":       dbSize,
+		"files_size":    filesSize,
+		"disk_total":    diskTotal,
+		"disk_used":     diskUsed,
 		"mem_mb":        mem.Alloc / 1024 / 1024,
 		"goroutines":    runtime.NumGoroutine(),
 		"cpu_percent":   cpuPercent,

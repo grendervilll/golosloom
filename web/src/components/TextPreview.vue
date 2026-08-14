@@ -90,7 +90,7 @@ async function copy() {
 
 <template>
   <Teleport to="body">
-    <div class="tpop" @click="emit('close')">
+    <div class="tpop" @pointerdown.stop @click="emit('close')">
       <div class="tpop-box" @click.stop>
         <div class="tpop-head">
           <span class="tpop-name" :title="filename">{{ filename }}</span>
@@ -111,6 +111,8 @@ async function copy() {
   position: fixed;
   inset: 0;
   z-index: 300;
+  /* Диалоги ставят body { pointer-events: none } — попап телепортирован в body */
+  pointer-events: auto;
   background: rgba(0, 0, 0, 0.85);
   display: flex;
   align-items: center;

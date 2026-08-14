@@ -1,13 +1,11 @@
 // Админ панель сервера: пользователи, роли, баны, регистрация, пароли, каналы,
-// файлы сервера.
+// сервер. Вкладка «Файлы» открывается отдельным попапом (AdminFilesPanel).
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, nextTick } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useSettingsStore } from '../stores/settings'
 import { toast } from 'vue-sonner'
 import { roleIcon } from '../utils/roles'
-import { isTextFile } from '../utils/textFile'
-import TextPreview from './TextPreview.vue'
 import { Button } from './ui/button'
 import {
   Dialog,
@@ -17,103 +15,16 @@ import {
   DialogTitle,
 } from './ui/dialog'
 import AdminGauge from './AdminGauge.vue'
-import type { AdminFile } from '../api/types'
 
 const emit = defineEmits<{
   (e: 'close'): void
-  (e: 'jump-message', payload: { channelId: number; messageId: number }): void
+  (e: 'open-files'): void
 }>()
 
-const tab = ref<'users' | 'channels' | 'server' | 'files'>('users')
+const tab = ref<'users' | 'channels' | 'server'>('users')
 const stats = ref<Record<string, number | string>>({})
 const busy = ref(false)
 let statsTimer: number | null = null
-
-// --- Вкладка «Файлы» ---
-const files = ref<AdminFile[]>([])
-const fileCat = ref<'all' | 'photo' | 'video' | 'text'>('all')
-const filesMenu = ref<{ x: number; y: number; file: AdminFile } | null>(null)
-const filesMenuEl = ref<HTMLElement | null>(null)
-const previewFile = ref<AdminFile | null>(null)
-
-async function loadFiles() {
-  try {
-    files.value = await useSettingsStore().api.adminListFiles()
-  } catch (e: any) {
-    toast.error('Не удалось загрузить список файлов: ' + String(e?.message || e).slice(0, 120))
-  }
-}
-
-function fileCatOf(f: AdminFile): 'photo' | 'video' | 'text' {
-  if (f.mime.startsWith('image/')) return 'photo'
-  if (f.mime.startsWith('video/')) return 'video'
-  if (isTextFile(f.mime, f.filename)) return 'text'
-  return 'text' // для категорий не показываем, но тип нужен
-}
-
-const filteredFiles = computed(() => {
-  if (fileCat.value === 'all') return files.value
-  return files.value.filter((f) => fileCatOf(f) === fileCat.value)
-})
-
-function fileUrl(id: number): string {
-  return useSettingsStore().api.fileUrl(id)
-}
-
-function canPreview(f: AdminFile): boolean {
-  return isTextFile(f.mime, f.filename)
-}
-
-function openFilesMenu(e: MouseEvent, f: AdminFile) {
-  e.preventDefault()
-  filesMenu.value = { x: e.clientX, y: e.clientY, file: f }
-  void nextTick(() => {
-    const el = filesMenuEl.value
-    if (!el) return
-    const r = el.getBoundingClientRect()
-    const pad = 8
-    filesMenu.value = {
-      ...filesMenu.value!,
-      x: Math.max(pad, Math.min(filesMenu.value!.x, window.innerWidth - r.width - pad)),
-      y: Math.max(pad, Math.min(filesMenu.value!.y, window.innerHeight - r.height - pad)),
-    }
-  })
-}
-
-function jumpToMessage(f: AdminFile) {
-  filesMenu.value = null
-  emit('jump-message', { channelId: f.channel_id, messageId: f.message_id })
-}
-
-async function deleteFile(f: AdminFile) {
-  filesMenu.value = null
-  if (!confirm(`Удалить файл «${f.filename}» с сервера? Файл будет стёрт с диска, сообщение останется.`)) return
-  try {
-    await useSettingsStore().api.adminDeleteFile(f.id)
-    toast.info(`Файл «${f.filename}» удалён с сервера`)
-    files.value = files.value.filter((x) => x.id !== f.id)
-  } catch (e: any) {
-    toast.error('Не удалось удалить файл: ' + String(e?.message || e).slice(0, 120))
-  }
-}
-
-function openPreview(f: AdminFile) {
-  filesMenu.value = null
-  previewFile.value = f
-}
-
-function fmtSize(bytes: number): string {
-  if (bytes >= 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' МБ'
-  if (bytes >= 1024) return Math.round(bytes / 1024) + ' КБ'
-  return bytes + ' Б'
-}
-
-function fileIcon(f: AdminFile): string {
-  if (f.mime.startsWith('image/')) return '🖼'
-  if (f.mime.startsWith('video/')) return '🎬'
-  if (isTextFile(f.mime, f.filename)) return '📄'
-  return '📎'
-}
 
 function fmtBytes(n: any): string {
   const v = Number(n) || 0
@@ -129,6 +40,14 @@ function fmtUptime(sec: any): string {
   if (d > 0) return `${d}д ${h}ч`
   if (h > 0) return `${h}ч ${m}м`
   return `${m}м`
+}
+
+// Процент занятого места на диске (для плиток БД/Файлы).
+function diskPercent(used: any, total: any): number {
+  const u = Number(used) || 0
+  const t = Number(total) || 0
+  if (t <= 0) return 0
+  return Math.min(100, Math.round((u / t) * 100))
 }
 
 async function loadStats() {
@@ -188,7 +107,6 @@ onMounted(() => {
   if (useAuthStore().isServerAdmin) {
     void loadStats()
     void loadRegistrationStatus()
-    void loadFiles()
     statsTimer = window.setInterval(() => void loadStats(), 2000)
   }
 })
@@ -377,7 +295,7 @@ function copyId(u: any) {
       <div class="tabs">
         <button :class="{ active: tab === 'users' }" @click="tab = 'users'">Пользователи</button>
         <button :class="{ active: tab === 'channels' }" @click="tab = 'channels'">Каналы</button>
-        <button :class="{ active: tab === 'files' }" @click="tab = 'files'; loadFiles()">Файлы</button>
+        <button @click="emit('open-files')">Файлы</button>
         <button :class="{ active: tab === 'server' }" @click="tab = 'server'">Сервер</button>
       </div>
       <div v-if="tab === 'server'">
@@ -388,6 +306,23 @@ function copyId(u: any) {
             <AdminGauge label="RAM" :percent="stats.ram_percent" :value="`${stats.ram_total_mb ?? '—'} МБ`" />
             <AdminGauge label="База данных" :percent="stats.db_percent" :value="fmtBytes(stats.db_size)" />
             <AdminGauge label="Память процесса" :percent="stats.mem_percent" :value="`${stats.mem_mb ?? '—'} МБ`" />
+          </div>
+          <!-- Плитки занятого места на диске: числа без подписей. -->
+          <div class="disk-tiles">
+            <div class="disk-tile">
+              <span class="disk-title">База данных</span>
+              <span class="disk-nums">{{ fmtBytes(stats.db_size) }} / {{ fmtBytes(stats.disk_total) }}</span>
+              <div class="disk-bar">
+                <div class="disk-fill" :style="{ width: diskPercent(stats.db_size, stats.disk_total) + '%' }"></div>
+              </div>
+            </div>
+            <div class="disk-tile">
+              <span class="disk-title">Файлы пользователей</span>
+              <span class="disk-nums">{{ fmtBytes(stats.files_size) }} / {{ fmtBytes(stats.disk_total) }}</span>
+              <div class="disk-bar">
+                <div class="disk-fill" :style="{ width: diskPercent(stats.files_size, stats.disk_total) + '%' }"></div>
+              </div>
+            </div>
           </div>
           <div class="stats-grid">
             <div class="stat"><b>{{ stats.online ?? '—' }}</b><span>онлайн</span></div>
@@ -411,46 +346,6 @@ function copyId(u: any) {
             </label>
           </div>
           <p v-if="busy" class="muted small">Выполняется…</p>
-        </div>
-      </div>
-
-      <div v-if="tab === 'files'" @click="filesMenu = null">
-        <div class="file-cats">
-          <button :class="{ active: fileCat === 'all' }" @click="fileCat = 'all'">Все</button>
-          <button :class="{ active: fileCat === 'photo' }" @click="fileCat = 'photo'">Фото</button>
-          <button :class="{ active: fileCat === 'video' }" @click="fileCat = 'video'">Видео</button>
-          <button :class="{ active: fileCat === 'text' }" @click="fileCat = 'text'">Текстовые</button>
-        </div>
-        <div class="file-grid">
-          <p v-if="filteredFiles.length === 0" class="muted center">Файлов нет</p>
-          <div
-            v-for="f in filteredFiles"
-            :key="f.id"
-            class="file-tile"
-            :title="f.filename"
-            @contextmenu.prevent="openFilesMenu($event, f)"
-          >
-            <div class="file-preview">
-              <img
-                v-if="f.mime.startsWith('image/')"
-                class="file-thumb"
-                :src="fileUrl(f.id)"
-                loading="lazy"
-                alt=""
-              />
-              <video
-                v-else-if="f.mime.startsWith('video/')"
-                class="file-thumb"
-                :src="fileUrl(f.id)"
-                muted
-                preload="metadata"
-              ></video>
-              <span v-else class="file-ico">{{ fileIcon(f) }}</span>
-            </div>
-            <span class="file-name" :title="f.filename">{{ f.filename }}</span>
-            <span class="file-meta">{{ fmtSize(f.size) }}</span>
-            <span class="file-meta">{{ f.channel_name ? '#' + f.channel_name : 'канал удалён' }} · {{ f.sender_nick }}</span>
-          </div>
         </div>
       </div>
 
@@ -539,30 +434,11 @@ function copyId(u: any) {
         </div>
       </div>
 
-      <!-- ПКМ-меню файла: переход к сообщению / показать / удалить. -->
-      <div
-        v-if="filesMenu"
-        ref="filesMenuEl"
-        class="files-ctx"
-        :style="{ left: filesMenu.x + 'px', top: filesMenu.y + 'px' }"
-        @click.stop
-      >
-        <button @click="jumpToMessage(filesMenu.file)">Перейти к сообщению</button>
-        <button v-if="canPreview(filesMenu.file)" @click="openPreview(filesMenu.file)">Показать</button>
-        <button class="danger" @click="deleteFile(filesMenu.file)">Удалить</button>
-      </div>
-
       <DialogFooter class="grid-cols-1">
         <Button variant="secondary" @click="emit('close')">Закрыть</Button>
       </DialogFooter>
     </DialogContent>
   </Dialog>
-  <TextPreview
-    v-if="previewFile"
-    :src="fileUrl(previewFile.id)"
-    :filename="previewFile.filename"
-    @close="previewFile = null"
-  />
 </template>
 
 <style scoped>
@@ -584,113 +460,56 @@ function copyId(u: any) {
 .tabs .active:hover:not(:disabled) {
   background: var(--accent-hover);
 }
-/* Вкладка «Файлы»: категории, сетка превью, ПКМ-меню. */
-.file-cats {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
-  margin-bottom: 10px;
-  padding: 0 12px;
-}
-.file-cats button {
-  border-radius: 6px;
-  font-weight: 600;
-  font-size: 13px;
-}
-.file-cats .active {
-  background: var(--accent);
-  color: #fff;
-}
-.file-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
-  gap: 8px;
-  max-height: 46vh;
-  overflow-y: auto;
-  padding: 0 12px 8px;
-}
-.file-tile {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  border-radius: 10px;
-  padding: 6px;
-  background: var(--bg3);
-  cursor: context-menu;
-  min-width: 0;
-}
-.file-tile:hover {
-  background: var(--bg4);
-}
-.file-preview {
-  width: 100%;
-  aspect-ratio: 1;
-  border-radius: 8px;
-  overflow: hidden;
-  background: var(--bg);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.file-thumb {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-.file-ico {
-  font-size: 28px;
-}
-.file-name {
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.file-meta {
-  font-size: 10.5px;
-  color: var(--text-dim);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.center {
-  text-align: center;
-  padding: 16px;
-}
-.files-ctx {
-  position: fixed;
-  z-index: 400;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 6px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 210px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
-}
-.files-ctx button {
-  text-align: left;
-  background: transparent;
-  border-radius: 6px;
-  font-size: 13px;
-  padding: 8px 10px;
-}
-.files-ctx button:hover {
-  background: var(--bg3);
-}
-.files-ctx button.danger {
-  color: var(--red);
-}
 /* Рамки-блоки: текст внутри не прикасается к краям рамки.
    (user-card/channel-card/create-user задают свой паддинг ниже.) */
 .frame {
   padding: 12px 16px;
 }
+/* Плитки занятого места на диске: числа без подписей. */
+.disk-tiles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.disk-tile {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.disk-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  font-weight: 700;
+}
+.disk-nums {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.disk-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg3);
+  overflow: hidden;
+}
+.disk-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+}
+@media (max-width: 700px) {
+  .disk-tiles {
+    grid-template-columns: 1fr;
+  }
+}
+
 .gauges {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));

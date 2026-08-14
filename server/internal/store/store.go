@@ -142,7 +142,15 @@ func (s *Store) CountMessages() (int64, error) {
 
 func (s *Store) CountCalls() (int64, error) {
 	var n int64
-	err := s.db.QueryRow(`SELECT COUNT(*) FROM calls`).Scan(&n)
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM calls WHERE status = 'active'`).Scan(&n)
+	return n, err
+}
+
+// FilesSize — суммарный размер живых файлов на диске (вложения, не стёртые
+// администратором). Показывает, сколько места занимают файлы пользователей.
+func (s *Store) FilesSize() (int64, error) {
+	var n int64
+	err := s.db.QueryRow(`SELECT COALESCE(SUM(size), 0) FROM files WHERE deleted = 0`).Scan(&n)
 	return n, err
 }
 

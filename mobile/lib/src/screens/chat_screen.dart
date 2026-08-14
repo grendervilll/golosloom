@@ -113,10 +113,6 @@ class _ChatScreenState extends State<ChatScreen> {
     if (_scroll.position.pixels < 120) {
       widget.chat.loadOlder(_channelId);
     }
-    // Недавно открыли — подвалом.
-    if (_scroll.hasClients && _scroll.position.pixels > 0 && _scroll.position.maxScrollExtent - _scroll.position.pixels < 40) {
-      _scroll.jumpTo(_scroll.position.maxScrollExtent);
-    }
   }
 
   Future<void> _send() async {

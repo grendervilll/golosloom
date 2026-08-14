@@ -87,7 +87,7 @@ function fmt(t: number): string {
 
 <template>
   <Teleport to="body">
-    <div class="vpop" @click="emit('close')">
+    <div class="vpop" @pointerdown.stop @click="emit('close')">
       <div class="vpop-box" @click.stop>
         <video
           ref="videoEl"
@@ -127,6 +127,7 @@ function fmt(t: number): string {
   position: fixed;
   inset: 0;
   z-index: 300;
+  pointer-events: auto;
   background: rgba(0, 0, 0, 0.85);
   display: flex;
   align-items: center;

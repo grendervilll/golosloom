@@ -19,7 +19,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
 
 <template>
   <Teleport to="body">
-    <div class="viewer" @click="emit('close')">
+    <div class="viewer" @pointerdown.stop @click="emit('close')">
       <div class="viewer-box">
         <video
           v-if="props.video"
@@ -47,6 +47,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
   position: fixed;
   inset: 0;
   z-index: 300;
+  pointer-events: auto;
   background: rgba(0, 0, 0, 0.85);
   display: flex;
   align-items: center;

@@ -23,6 +23,7 @@ import CallModal from '../components/CallModal.vue'
 import UpdateModal from '../components/UpdateModal.vue'
 import MobileTabBar from '../components/MobileTabBar.vue'
 import CallBar from '../components/CallBar.vue'
+import AdminFilesPanel from '../components/AdminFilesPanel.vue'
 import { initPush } from '../utils/push'
 
 const router = useRouter()
@@ -33,6 +34,7 @@ const calls = useCallStore()
 const settings = useSettingsStore()
 
 const showAdmin = ref(false)
+const showFilesAdmin = ref(false)
 const showInvite = ref(false)
 const showRegInvite = ref(false)
 const showCallPicker = ref(false)
@@ -118,10 +120,11 @@ function onChatToggleParticipants() {
   showParticipants.value = !showParticipants.value
   mobilePanel.value = showParticipants.value ? 'members' : 'none'
 }
-// Переход к сообщению из админ-панели «Файлы»: закрываем панель,
+// Переход к сообщению из админ-панели «Файлы»: закрываем панели,
 // открываем канал, догружаем историю до сообщения и прокручиваем к нему.
 async function onJumpMessage(payload: { channelId: number; messageId: number }) {
   showAdmin.value = false
+  showFilesAdmin.value = false
   try {
     if (channels.currentId !== payload.channelId) {
       await channels.enterChannel(payload.channelId)
@@ -209,7 +212,17 @@ function onTabChat() {
     />
 
     <IncomingCallOverlay />
-    <AdminPanel v-if="showAdmin" @close="showAdmin = false" @jump-message="onJumpMessage" />
+    <AdminPanel
+      v-if="showAdmin"
+      @close="showAdmin = false"
+      @open-files="showFilesAdmin = true"
+      @jump-message="onJumpMessage"
+    />
+    <AdminFilesPanel
+      v-if="showFilesAdmin"
+      @close="showFilesAdmin = false"
+      @jump-message="onJumpMessage"
+    />
     <InviteModal v-if="showInvite" @close="showInvite = false" />
     <RegistrationInviteModal v-if="showRegInvite" :channel-id="channels.currentId" @close="showRegInvite = false" />
     <CallModal v-if="showCallPicker" @close="showCallPicker = false" />
