@@ -12,6 +12,8 @@ import { splitMarkdown } from '../utils/markdown'
 import Avatar from './Avatar.vue'
 import CodeBlock from './CodeBlock.vue'
 import FileViewer from './FileViewer.vue'
+import VideoPopup from './VideoPopup.vue'
+import { usePlayerStore } from '../stores/player'
 
 const props = defineProps<{
   msg: ChatMessage
@@ -28,6 +30,7 @@ const emit = defineEmits<{
 const auth = useAuthStore()
 const channels = useChannelsStore()
 const chat = useChatStore()
+const player = usePlayerStore()
 
 // Сообщение, на которое отвечает текущее (для цитаты).
 const replied = computed(() => {
@@ -69,6 +72,20 @@ const attSrc = computed(() => {
 })
 const isImage = computed(() => !!att.value && att.value.mime.startsWith('image/'))
 const isVideo = computed(() => !!att.value && att.value.mime.startsWith('video/'))
+const isAudio = computed(() => !!att.value && att.value.mime.startsWith('audio/'))
+// Голосовое сообщение сейчас играет в верхнем плеере канала.
+const voiceActive = computed(() => !!att.value && player.voice?.msgId === props.msg.id)
+const videoOpen = ref(false)
+// Запуск/остановка голосового сообщения в верхнем плеере.
+function toggleVoice() {
+  if (!att.value) return
+  player.toggleVoice({
+    msgId: props.msg.id,
+    channelId: props.msg.channelId,
+    src: attSrc.value,
+    filename: att.value.filename,
+  })
+}
 // Иконка и человекочитаемый размер для карточки файла.
 function fileIcon(mime: string): string {
   if (mime.startsWith('text/')) return '📄'
@@ -119,13 +136,34 @@ function openMore(e: MouseEvent) {
           <span class="quote-text">{{ replied.text || replied.attachment?.filename || '…' }}</span>
         </span>
       </button>
-      <!-- Вложение: фото — миниатюра с просмотром по клику, видео — плеер,
+      <!-- Вложение: фото — миниатюра с просмотром по клику, видео — превью
+           с открытием попапа, голос — кнопка с плеером вверху чата,
            остальное — карточка файла со скачиванием. -->
       <div v-if="att && isImage" class="att">
         <img class="att-img" :src="attSrc" :alt="att.filename" loading="lazy" @click="viewerOpen = true" />
       </div>
       <div v-else-if="att && isVideo" class="att">
-        <video class="att-video" :src="attSrc" controls preload="metadata"></video>
+        <button class="att-video-btn" :title="'Смотреть видео: ' + att.filename" @click="videoOpen = true">
+          <video class="att-video" :src="attSrc" muted preload="metadata"></video>
+          <span class="video-play">▶</span>
+        </button>
+      </div>
+      <div v-else-if="att && isAudio" class="att">
+        <button
+          class="voice-card"
+          :class="{ active: voiceActive }"
+          :title="'Воспроизвести: ' + att.filename"
+          @click="toggleVoice"
+        >
+          <span class="voice-ico">
+            <svg v-if="voiceActive" class="ico" viewBox="0 0 320 512"><path d="M48 64C21.5 64 0 85.5 0 112L0 400c0 26.5 21.5 48 48 48s48-21.5 48-48l0-288c0-26.5-21.5-48-48-48zm192 0c-26.5 0-48 21.5-48 48l0 288c0 26.5 21.5 48 48 48s48-21.5 48-48l0-288c0-26.5-21.5-48-48-48z" /></svg>
+            <svg v-else class="ico" viewBox="0 0 384 512"><path d="M73 39c-14.8-9.3-33.4-9.1-48 .3C9.4 48.5 0 65.4 0 83.5L0 428.5c0 18.1 9.4 35 25 44.2 14.6 9.4 33.2 9.6 48 .3L361 297.6c14.9-9.4 23.9-25.3 23.9-41.6s-9-32.2-23.9-41.6L73 39z" /></svg>
+          </span>
+          <span class="voice-name">Голосовое сообщение</span>
+          <span class="voice-bars" :class="{ playing: voiceActive }">
+            <i></i><i></i><i></i><i></i>
+          </span>
+        </button>
       </div>
       <div v-else-if="att" class="att">
         <div class="file-card">
@@ -159,6 +197,7 @@ function openMore(e: MouseEvent) {
       </span>
     </div>
     <FileViewer v-if="viewerOpen" :src="attSrc" :filename="att?.filename || ''" @close="viewerOpen = false" />
+    <VideoPopup v-if="videoOpen" :src="attSrc" :filename="att?.filename || ''" @close="videoOpen = false" />
     <button class="more-btn" title="Действия с сообщением" @click.stop="openMore($event)">⋯</button>
   </div>
 </template>
@@ -241,9 +280,118 @@ function openMore(e: MouseEvent) {
 .att-video {
   display: block;
   max-width: min(360px, 100%);
-  max-height: 280px;
+  max-height: 200px;
   border-radius: 10px;
   background: #000;
+}
+/* Превью видео: кнопка с плеером попапа по клику. */
+.att-video-btn {
+  position: relative;
+  display: block;
+  padding: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: transparent;
+}
+.video-play {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 26px;
+  background: rgba(0, 0, 0, 0.25);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8);
+}
+.att-video-btn:hover .video-play {
+  background: rgba(0, 0, 0, 0.05);
+}
+/* Голосовое сообщение: кнопка запуска плеера вверху чата. */
+.voice-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--bg3);
+  border-radius: 10px;
+  padding: 8px 12px;
+  min-width: 220px;
+  max-width: 100%;
+}
+.voice-card:hover {
+  background: var(--bg4);
+}
+.voice-ico {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+.voice-ico .ico {
+  width: 13px;
+  height: 13px;
+  fill: #fff;
+}
+.voice-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Анимированные полоски «волны» при воспроизведении. */
+.voice-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 14px;
+  flex-shrink: 0;
+}
+.voice-bars i {
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+  height: 4px;
+}
+.voice-bars.playing i {
+  animation: bar-bounce 0.9s ease-in-out infinite;
+}
+.voice-bars.playing i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.voice-bars.playing i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+.voice-bars.playing i:nth-child(4) {
+  animation-delay: 0.45s;
+}
+@keyframes bar-bounce {
+  0%,
+  100% {
+    height: 4px;
+  }
+  50% {
+    height: 14px;
+  }
+}
+.msg.mine .voice-card {
+  background: rgba(255, 255, 255, 0.15);
+}
+.msg.mine .voice-card:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+.msg.mine .voice-name {
+  color: #fff;
+}
+.msg.mine .voice-bars i {
+  background: #fff;
 }
 .file-card {
   display: flex;
