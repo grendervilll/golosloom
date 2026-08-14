@@ -99,6 +99,9 @@ onMounted(async () => {
       await auth.fetchMe()
       auth.connectWs()
       wireWs()
+      // Короткоживущий файловый токен: в URL файлов не попадает основной JWT.
+      settings.api.setToken(auth.token)
+      settings.api.startFileTokenRefresh()
     } catch {
       auth.logout()
       return

@@ -59,6 +59,55 @@ func GenerateToken(userID int64, secret string, ttl time.Duration) (string, erro
 	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(secret))
 }
 
+// FileTokenTTL — время жизни файлового токена: ссылка на файл живёт 5 минут.
+// Этого хватает на открытие/просмотр, но утёкшая ссылка быстро умирает
+// и не даёт доступа к аккаунту (в отличие от основного JWT).
+const FileTokenTTL = 5 * time.Minute
+
+// GenerateFileToken — короткоживущий токен ТОЛЬКО для файлов (scope: file).
+// Раздаётся по запросу /api/files/token; в URL файлов основной JWT
+// никогда не попадает.
+func GenerateFileToken(userID int64, secret string) (string, error) {
+	claims := jwt.MapClaims{
+		"sub":   fmt.Sprintf("%d", userID),
+		"scope": "file",
+		"exp":   time.Now().Add(FileTokenTTL).Unix(),
+		"iat":   time.Now().Unix(),
+	}
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(secret))
+}
+
+// ParseFileToken — разбор файлового токена: валидная подпись, не истёк,
+// scope=file. Обычный (полный) JWT здесь отклоняется: файлы нельзя
+// открывать «токеном аккаунта».
+func ParseFileToken(token, secret string) (int64, error) {
+	t, err := jwt.Parse(token, func(t *jwt.Token) (interface{}, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, errors.New("unexpected signing method")
+		}
+		return []byte(secret), nil
+	})
+	if err != nil || !t.Valid {
+		return 0, errors.New("invalid token")
+	}
+	claims, ok := t.Claims.(jwt.MapClaims)
+	if !ok {
+		return 0, errors.New("invalid claims")
+	}
+	if claims["scope"] != "file" {
+		return 0, errors.New("not a file token")
+	}
+	sub, ok := claims["sub"].(string)
+	if !ok {
+		return 0, errors.New("invalid subject")
+	}
+	var id int64
+	if _, err := fmt.Sscanf(sub, "%d", &id); err != nil {
+		return 0, errors.New("invalid subject")
+	}
+	return id, nil
+}
+
 func ParseToken(token, secret string) (int64, error) {
 	t, err := jwt.Parse(token, func(t *jwt.Token) (interface{}, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {

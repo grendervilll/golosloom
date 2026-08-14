@@ -77,6 +77,7 @@ class _LoginScreenState extends State<LoginScreen> {
         user = await _api.me();
       }
       _api.token = token;
+      _api.startFileTokenRefresh();
       await widget.settings.saveAuth(token, user);
       if (mounted) {
         Navigator.of(context).pushReplacementNamed('/home');

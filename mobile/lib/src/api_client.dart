@@ -1,6 +1,7 @@
 // REST-клиент Golosloom. Форматы — по docs/protocol.md.
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -50,6 +51,11 @@ class ApiClient {
   final String baseUrl;
   String? token;
   final http.Client _http = http.Client();
+  // Короткоживущий файловый токен (5 минут): в URL файлов попадает он,
+  // а не основной JWT (утёкшая ссылка не даёт доступ к аккаунту).
+  String? _fileToken;
+  DateTime? _fileTokenExpires;
+  Timer? _fileTokenTimer;
 
   ApiClient(this.baseUrl);
 
@@ -280,10 +286,39 @@ class ApiClient {
     return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
   }
 
-  /// URL файла с токеном (для Image.network / видеоплеера).
+  /// URL файла с короткоживущим файловым токеном (для Image.network и т.п.).
   String fileUrl(int fileId) {
-    final t = token == null ? '' : '?token=${Uri.encodeQueryComponent(token!)}';
-    return '$baseUrl/api/files/$fileId$t';
+    final t = _fileToken ?? '';
+    if (t.isEmpty) ensureFileToken();
+    return '$baseUrl/api/files/$fileId?token=${Uri.encodeQueryComponent(t)}';
+  }
+
+  /// Запрос короткоживущего файлового токена (5 минут, scope=file).
+  /// Обновляется заранее, за минуту до истечения.
+  Future<void> ensureFileToken() async {
+    final exp = _fileTokenExpires;
+    if (_fileToken != null &&
+        exp != null &&
+        DateTime.now().isBefore(exp.subtract(const Duration(seconds: 60)))) {
+      return;
+    }
+    try {
+      final j = await _request('GET', '/api/files/token') as Map<String, dynamic>;
+      final t = j['token'] as String?;
+      if (t == null || t.isEmpty) return;
+      _fileToken = t;
+      final secs = (j['expires_in'] as num?)?.toInt() ?? 300;
+      _fileTokenExpires = DateTime.now().add(Duration(seconds: secs));
+    } catch (_) {
+      /* токен запросится повторно */
+    }
+  }
+
+  /// Периодическое обновление файлового токена (раз в 4 минуты).
+  void startFileTokenRefresh() {
+    ensureFileToken();
+    _fileTokenTimer?.cancel();
+    _fileTokenTimer = Timer.periodic(const Duration(minutes: 4), (_) => ensureFileToken());
   }
 
   // --- Нативные пуши (FCM) ---

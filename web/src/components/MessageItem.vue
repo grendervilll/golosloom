@@ -85,6 +85,7 @@ function toggleVoice(a: Attachment) {
     msgId: props.msg.id,
     attId: a.id,
     channelId: props.msg.channelId,
+    fileId: a.id,
     src: srcOf(a),
     filename: a.filename,
   })

@@ -90,6 +90,7 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("DELETE /api/channels/{id}/messages/{mid}", s.requireAuth(s.handleDeleteMessage))
 	mux.HandleFunc("POST /api/channels/{id}/files", s.requireAuth(s.handleFileUpload))
 	mux.HandleFunc("GET /api/files/{id}", s.handleFileGet)
+	mux.HandleFunc("GET /api/files/token", s.requireAuth(s.handleFileToken))
 
 	// Звонки
 	mux.HandleFunc("POST /api/calls", s.requireAuth(s.handleCreateCall))

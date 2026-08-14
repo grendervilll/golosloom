@@ -2,11 +2,13 @@
 // занимает ~5% высоты. Временная шкала с перемоткой, кнопка скорости
 // справа от шкалы (0.5х–2х + своё значение, не больше 3х).
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { usePlayerStore } from '../stores/player'
+import { useSettingsStore } from '../stores/settings'
 import { probeMediaDuration, refreshMediaDuration } from '../utils/mediaDuration'
 
 const player = usePlayerStore()
+const settings = useSettingsStore()
 
 const audioEl = ref<HTMLAudioElement | null>(null)
 const playing = ref(false)
@@ -17,14 +19,21 @@ const speedOpen = ref(false)
 const customSpeed = ref('')
 const speedError = ref('')
 
-const src = computed(() => player.voice?.src || '')
 const track = computed(() => player.voice)
+// URL строится от fileId и зависит от файлового токена: при его обновлении
+// src меняется, и длинное воспроизведение не обрывается по истечении 5 минут.
+const src = computed(() => {
+  settings.api.fileTokenVersion // реактивность на обновление токена
+  const t = track.value
+  return t ? settings.api.fileUrl(t.fileId) : ''
+})
 
 // Смена голосового сообщения — играем сразу. flush:'post' обязателен:
 // обработчик бежит ПОСЛЕ отрисовки, и audioEl существует даже для первого
-// трека (иначе автозапуск не срабатывает).
+// трека (иначе автозапуск не срабатывает). Следим за fileId, а не за src:
+// обновление файлового токена обрабатывает отдельный watcher ниже.
 watch(
-  src,
+  () => player.voice?.fileId,
   () => {
     if (!src.value) return
     current.value = 0
@@ -33,6 +42,25 @@ watch(
     void startTrack()
   },
   { flush: 'post' },
+)
+
+// Файловый токен обновился: перепривязываем аудио на свежий URL,
+// сохраняя позицию и продолжая воспроизведение (длинные голосовые).
+watch(
+  () => settings.api.fileTokenVersion,
+  async () => {
+    const el = audioEl.value
+    if (!el || !player.voice || !src.value) return
+    const wasPlaying = !el.paused
+    const pos = el.currentTime
+    await nextTick()
+    el.load()
+    el.playbackRate = speed.value
+    if (pos > 0) el.currentTime = pos
+    if (wasPlaying) {
+      el.play().then(() => (playing.value = true)).catch(() => {})
+    }
+  },
 )
 
 async function startTrack() {

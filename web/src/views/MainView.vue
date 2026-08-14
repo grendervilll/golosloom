@@ -68,12 +68,21 @@ onMounted(async () => {
   } catch {
     /* пуши не критичны */
   }
+  // Файловый токен: обновляем заранее и при возврате на вкладку.
+  settings.api.startFileTokenRefresh()
+  window.addEventListener('focus', onFocus)
   window.addEventListener('keydown', onHotkey)
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onHotkey)
+  window.removeEventListener('focus', onFocus)
 })
+
+// После долгого сворачивания файловый токен мог истечь — обновляем.
+function onFocus() {
+  void settings.api.ensureFileToken()
+}
 
 // Горячие клавиши звонка: микрофон, звук собеседников, веб-камера
 // (настраиваются в меню «Настройки»). Не срабатывают при вводе текста

@@ -1,7 +1,7 @@
 {
   "name": "golosloom-desktop",
   "private": true,
-  "version": "2.1.1",
+  "version": "2.1.2",
   "scripts": {
     "tauri": "tauri",
     "dev": "tauri dev",

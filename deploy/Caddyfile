@@ -12,6 +12,16 @@
 			roll_size 50mb
 			roll_keep 3
 		}
+		# JSON + вырезаем query-строку из uri: в URL файлов/WS есть токены,
+		# они не должны попадать в логи (fail2ban ждёт именно JSON-формат).
+		format filter {
+			wrap json
+			fields {
+				request>uri {
+					replace "\\?.*" ""
+				}
+			}
+		}
 	}
 
 	# Безопасность: HSTS, защита от XSS-поверхностей (CSP), кликджекинга,

@@ -28,6 +28,33 @@ func (a *testApp) getFile(t *testing.T, fileID int64, token string) *http.Respon
 	return resp
 }
 
+// fileToken запрашивает короткоживущий файловый токен (как клиент).
+func (a *testApp) fileToken(t *testing.T, token string) string {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, a.ts.URL+"/api/files/token", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("файловый токен: %d", resp.StatusCode)
+	}
+	var out map[string]interface{}
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	tk, _ := out["token"].(string)
+	if tk == "" {
+		t.Fatal("пустой файловый токен")
+	}
+	return tk
+}
+
 func uploadFile(a *testApp, t *testing.T, token string, channelID int64, name string, content []byte) (int, map[string]interface{}) {
 	t.Helper()
 	var buf bytes.Buffer
@@ -70,6 +97,7 @@ func TestFileUploadAttachSendDelete(t *testing.T) {
 	a.join(t, other.token, ch)
 
 	// Без токена — 401.
+	// Без токена — 401.
 	if code, _ := uploadFile(a, t, "", ch, "a.txt", []byte("hello")); code != http.StatusUnauthorized {
 		t.Fatalf("загрузка без токена: %d", code)
 	}
@@ -83,8 +111,9 @@ func TestFileUploadAttachSendDelete(t *testing.T) {
 		t.Fatalf("имя файла: %v", f["filename"])
 	}
 
-	// Отдача файла по ?token= участнику канала.
-	resp := a.getFile(t, fileID, u.token)
+	// Отдача файла по ?token= участнику канала (файловый токен).
+	uFileToken := a.fileToken(t, u.token)
+	resp := a.getFile(t, fileID, uFileToken)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("отдача файла: %d", resp.StatusCode)
 	}
@@ -98,9 +127,17 @@ func TestFileUploadAttachSendDelete(t *testing.T) {
 		t.Fatalf("нет Content-Type")
 	}
 
-	// Посторонний (не участник канала) — 403.
+	// Основной JWT в URL файла НЕ принимается (только файловый токен).
+	resp = a.getFile(t, fileID, u.token)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("основной токен в URL: ожидали 401, получили %d", resp.StatusCode)
+	}
+
+	// Посторонний (не участник канала) — 403 даже с валидным файловым токеном.
 	outsider := a.register(t, "FileOutsider")
-	resp = a.getFile(t, fileID, outsider.token)
+	outToken := a.fileToken(t, outsider.token)
+	resp = a.getFile(t, fileID, outToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("посторонний: ожидали 403, получили %d", resp.StatusCode)
@@ -161,7 +198,7 @@ func TestFileUploadAttachSendDelete(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("удаление сообщения: %d", code)
 	}
-	resp = a.getFile(t, fileID, u.token)
+	resp = a.getFile(t, fileID, a.fileToken(t, u.token))
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("файл после удаления сообщения: ожидали 404, получили %d", resp.StatusCode)

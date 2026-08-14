@@ -113,12 +113,28 @@ func (s *Server) handleFileUpload(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleFileGet — отдача файла участнику канала. Auth по ?token=...
-// (для <img>/<video> в браузере), ?download=1 — принудительное скачивание.
+// handleFileToken выдаёт короткоживущий файловый токен (5 минут, scope=file).
+// В URL файлов попадает только он — основной JWT никуда не утекает.
+func (s *Server) handleFileToken(w http.ResponseWriter, r *http.Request) {
+	t, err := auth.GenerateFileToken(userIDFrom(r), s.Cfg.JWTSecret)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "не удалось выпустить токен")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"token":      t,
+		"expires_in": int(auth.FileTokenTTL.Seconds()),
+	})
+}
+
+// handleFileGet — отдача файла участнику канала. Auth по короткоживущему
+// ?token= (файловый токен, для <img>/<video> в браузере), ?download=1 —
+// принудительное скачивание.
 func (s *Server) handleFileGet(w http.ResponseWriter, r *http.Request) {
 	fileID := pathID(r, "id")
 	token := r.URL.Query().Get("token")
-	userID, err := auth.ParseToken(token, s.Cfg.JWTSecret)
+	// Только файловый токен: обычный JWT здесь не принимается.
+	userID, err := auth.ParseFileToken(token, s.Cfg.JWTSecret)
 	if err != nil {
 		writeErr(w, http.StatusUnauthorized, "требуется авторизация")
 		return

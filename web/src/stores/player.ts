@@ -7,6 +7,8 @@ export interface VoiceTrack {
   // attId — конкретное аудио-вложение (в сообщении их может быть несколько).
   attId?: number
   channelId: number
+  // fileId нужен для перестроения src при обновлении файлового токена.
+  fileId: number
   src: string
   filename: string
 }

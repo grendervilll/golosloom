@@ -10,6 +10,12 @@ export interface HttpError {
 export class ApiClient {
   baseUrl: string
   private token: string | null = null
+  // Короткоживущий файловый токен (5 минут, только для файлов): в URL
+  // файлов попадает он, а не основной JWT. Обновляется заранее.
+  private fileToken: { value: string; expiresAt: number } | null = null
+  private fileTokenTimer: number | null = null
+  // Растёт при каждом обновлении файлового токена (для перепривязки src).
+  fileTokenVersion = 0
 
   constructor(baseUrl: string) {
     this.baseUrl = baseUrl.replace(/\/+$/, '')
@@ -295,15 +301,50 @@ export class ApiClient {
     return (await res.json()) as Attachment
   }
   // URL файла для <img>/<video>/просмотра. Токен в query — браузерные теги
-  // не умеют слать Authorization.
+  // не умеют слать Authorization. Используется только короткоживущий
+  // файловый токен (5 минут), основной JWT в URL не попадает.
   fileUrl(fileId: number): string {
-    const token = this.token ? '?token=' + encodeURIComponent(this.token) : ''
-    return this.baseUrl + `/api/files/${fileId}${token}`
+    const t = this.fileToken?.value
+    if (!t) void this.ensureFileToken()
+    return this.baseUrl + `/api/files/${fileId}?token=${encodeURIComponent(t || '')}`
   }
   // URL принудительного скачивания.
   downloadUrl(fileId: number): string {
-    const token = this.token ? '&token=' + encodeURIComponent(this.token) : '?token='
-    return this.baseUrl + `/api/files/${fileId}?download=1${this.token ? token : ''}`
+    const t = this.fileToken?.value
+    if (!t) void this.ensureFileToken()
+    return this.baseUrl + `/api/files/${fileId}?download=1${t ? '&token=' + encodeURIComponent(t) : ''}`
+  }
+
+  // --- Файловый токен (scope=file, живёт 5 минут) ---
+  // Запрашивается у сервера и переиспользуется; при истечении обновляется.
+  async ensureFileToken(): Promise<string> {
+    const ft = this.fileToken
+    // Заранее обновляемся за 60 секунд до истечения.
+    if (ft && ft.expiresAt - Date.now() > 60_000) return ft.value
+    try {
+      const res = await this.get('/api/files/token')
+      const value = res?.token as string | undefined
+      const expiresIn = Number(res?.expires_in ?? 300)
+      if (!value) return this.fileToken?.value || ''
+      this.fileToken = { value, expiresAt: Date.now() + expiresIn * 1000 }
+      this.fileTokenVersion++
+      return value
+    } catch {
+      return this.fileToken?.value || ''
+    }
+  }
+  // Периодическое обновление файлового токена (раз в 4 минуты) —
+  // на 5-минутном токене это оставляет запас.
+  startFileTokenRefresh(): void {
+    if (this.fileTokenTimer !== null) return
+    void this.ensureFileToken()
+    this.fileTokenTimer = window.setInterval(() => void this.ensureFileToken(), 4 * 60_000)
+  }
+  stopFileTokenRefresh(): void {
+    if (this.fileTokenTimer !== null) {
+      clearInterval(this.fileTokenTimer)
+      this.fileTokenTimer = null
+    }
   }
 
   // --- Звонки ---
