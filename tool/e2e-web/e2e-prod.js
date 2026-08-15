@@ -120,6 +120,8 @@ async function sendAndWait(page, text, timeout) {
   await pageA2.waitForTimeout(3000)
   await sendAndWait(pageA2, 'после переустановки', 60000)
   ok('A на новом устройстве восстановил ключ и пишет', true)
+  // B сейчас на сообществе — переключаемся на DM и ждём сообщение A.
+  await pageB.locator('.chat-row:has(.kind-ico)').first().click()
   await pageB.waitForSelector('.msg .text:has-text("после переустановки")', { timeout: 30000, state: 'attached' })
   ok('B читает сообщение после восстановления', true)
 
