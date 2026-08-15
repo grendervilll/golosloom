@@ -92,6 +92,37 @@ async function importChannelKey(raw: Uint8Array): Promise<CryptoKey> {
   return crypto.subtle.importKey('raw', raw, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt'])
 }
 
+// Ключ из пароля пользователя (KEK): расшифровывает парольные бэкапы
+// ключей каналов на любом устройстве — достаточно пароля, онлайн-держатель
+// ключа не нужен. Соль стабильна (от user_id), поэтому KEK воспроизводим
+// на новом устройстве без данных с сервера.
+export async function deriveKek(password: string, userId: number): Promise<Uint8Array> {
+  const salt = new TextEncoder().encode('golosloom-kek-v1:' + userId)
+  const material = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, [
+    'deriveBits',
+  ])
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations: 200000, hash: 'SHA-256' }, material, 256)
+  return new Uint8Array(bits)
+}
+
+// Шифрование ключа канала парольным KEK (AES-GCM, как в wrapChannelKey).
+export async function wrapWithKek(kek: Uint8Array, channelKey: Uint8Array): Promise<Uint8Array> {
+  const aes = await crypto.subtle.importKey('raw', kek, { name: 'AES-GCM' }, false, ['encrypt'])
+  const iv = crypto.getRandomValues(new Uint8Array(12))
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, aes, channelKey))
+  const out = new Uint8Array(12 + ct.length)
+  out.set(iv, 0)
+  out.set(ct, 12)
+  return out
+}
+
+export async function unwrapWithKek(kek: Uint8Array, wrapped: Uint8Array): Promise<Uint8Array> {
+  const aes = await crypto.subtle.importKey('raw', kek, { name: 'AES-GCM' }, false, ['decrypt'])
+  const iv = wrapped.slice(0, 12)
+  const ct = wrapped.slice(12)
+  return new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, aes, ct))
+}
+
 export function bytesToB64(bytes: Uint8Array): string {
   let bin = ''
   for (const b of bytes) bin += String.fromCharCode(b)

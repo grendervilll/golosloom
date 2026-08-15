@@ -38,9 +38,9 @@ async function login(page, nick, pass) {
   await pageA.click('.burger', { force: true })
   await pageA.getByText('Найти контакт').first().click()
   await pageA.waitForSelector('.search-input', { timeout: 3000 })
-  await pageA.fill('.search-input', 'recB')
+  await pageA.fill('.search-input', nickB)
   await pageA.waitForTimeout(1000)
-  await pageA.locator('.search-row', { hasText: 'recB' }).first().click()
+  await pageA.locator('.search-row', { hasText: nickB }).first().click()
   await pageA.waitForFunction(() => document.querySelector('.chat-head h2')?.textContent.toLowerCase().includes('и recb'), null, { timeout: 10000 })
   await pageA.waitForSelector('.muted.empty', { timeout: 8000 })
   await typeChat(pageA, 'до потери ключа')
@@ -51,6 +51,14 @@ async function login(page, nick, pass) {
   // B читает первое сообщение.
   await pageB.reload({ waitUntil: 'load' })
   await pageB.waitForSelector('.chat-row', { timeout: 10000 })
+  const bRows = await pageB.evaluate(() =>
+    [...document.querySelectorAll('.chat-row')].map((r) => ({
+      text: r.textContent?.trim().slice(0, 30),
+      kindIco: !!r.querySelector('.kind-ico'),
+      html: r.outerHTML?.slice(0, 120),
+    })),
+  )
+  console.log('B rows:', JSON.stringify(bRows).slice(0, 2500))
   await pageB.locator('.chat-row:has(.kind-ico)').first().click()
   await pageB.waitForSelector('.msg .text:has-text("до потери ключа")', { timeout: 8000, state: 'attached' })
   ok('B читал первое сообщение', true)

@@ -273,6 +273,15 @@ export class ApiClient {
   pendingKeyTargets(channelId: number) {
     return this.get(`/api/channels/${channelId}/keys/pending`)
   }
+  // Парольный бэкап ключа канала (расшифровывается ключом из пароля).
+  getKeyBackup(channelId: number) {
+    return this.get(`/api/channels/${channelId}/keys/backup`)
+  }
+  uploadKeyBackup(channelId: number, wrappedKey: Uint8Array) {
+    return this.request('PUT', `/api/channels/${channelId}/keys/backup`, {
+      wrapped_key: Array.from(wrappedKey),
+    })
+  }
 
   // --- GIF (прокси к Giphy на сервере) ---
   gifSearch(q: string, limit = 24) {

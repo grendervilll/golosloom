@@ -10,6 +10,9 @@ export const useAuthStore = defineStore('auth', {
   state: () => ({
     user: null as User | null,
     token: localStorage.getItem(TOKEN_KEY) || '',
+    // Пароль хранится только в памяти (для парольных бэкапов ключей);
+    // не персистится. При авто-входе по токену используется сохранённый KEK.
+    password: '',
     ws: new WsClient(),
     connected: false,
     users: [] as PublicUser[],
@@ -20,6 +23,7 @@ export const useAuthStore = defineStore('auth', {
   actions: {
     async login(nick: string, password: string): Promise<void> {
       const settings = useSettingsStore()
+      this.password = password
       const res = await settings.api.login(nick, password)
       if (!res || typeof res.token !== 'string') {
         throw new Error('Некорректный ответ сервера — проверьте адрес сервера')
@@ -32,6 +36,7 @@ export const useAuthStore = defineStore('auth', {
     },
     async register(nick: string, password: string, invite?: string): Promise<void> {
       const settings = useSettingsStore()
+      this.password = password
       const res = await settings.api.register(nick, password, invite)
       if (!res || typeof res.token !== 'string') {
         throw new Error('Некорректный ответ сервера — проверьте адрес сервера')
@@ -60,6 +65,7 @@ export const useAuthStore = defineStore('auth', {
       this.ws.disconnect()
       this.token = ''
       this.user = null
+      this.password = ''
       localStorage.removeItem(TOKEN_KEY)
     },
   },

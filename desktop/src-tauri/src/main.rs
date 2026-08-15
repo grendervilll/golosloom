@@ -30,12 +30,22 @@ fn secure_delete(key: String) -> Result<(), String> {
     entry.delete_credential().map_err(|e| e.to_string())
 }
 
+// Диагностика хранилища: пишет шаги и ошибки в файл (для отладки Tauri).
+#[tauri::command]
+fn diag_log(msg: String) {
+    use std::fs::OpenOptions;
+    use std::io::Write;
+    if let Ok(mut f) = OpenOptions::new().create(true).append(true).open("/tmp/golosloom-diag.log") {
+        let _ = writeln!(f, "{}", msg);
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![secure_set, secure_get, secure_delete])
+        .invoke_handler(tauri::generate_handler![secure_set, secure_get, secure_delete, diag_log])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

@@ -13,6 +13,9 @@ export interface KeyStorage {
   // личных чатов/сообществ нужно раздавать заново при каждом запуске.
   saveDevice(deviceJson: string): Promise<void>
   loadDevice(): Promise<string | null>
+  // Ключ из пароля (KEK) для парольных бэкапов ключей каналов.
+  saveKek(kek: Uint8Array): Promise<void>
+  loadKek(): Promise<Uint8Array | null>
 }
 
 const DB_NAME = 'golosloom-keys'
@@ -20,6 +23,7 @@ const STORE = 'keys'
 const MASTER = 'master'
 const PREFIX = 'ch:'
 const DEVICE = 'device'
+const KEK = 'kek'
 
 export function isTauri(): boolean {
   return typeof window !== 'undefined' && !!(window as any).__TAURI_INTERNALS__
@@ -112,6 +116,30 @@ class IndexedDBStorage implements KeyStorage {
     await this.del(STORE, PREFIX + channelId)
   }
 
+  async saveKek(kek: Uint8Array): Promise<void> {
+    const master = await this.getMaster()
+    const iv = crypto.getRandomValues(new Uint8Array(12))
+    const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, master, kek)
+    const blob = new Uint8Array(iv.length + ciphertext.byteLength)
+    blob.set(iv, 0)
+    blob.set(new Uint8Array(ciphertext), iv.length)
+    await this.put(STORE, KEK, blob)
+  }
+
+  async loadKek(): Promise<Uint8Array | null> {
+    const master = await this.getMaster()
+    const blob = await this.get(STORE, KEK)
+    if (!blob) return null
+    const data = blob as Uint8Array
+    const iv = data.slice(0, 12)
+    const ciphertext = data.slice(12)
+    try {
+      return new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, master, ciphertext))
+    } catch {
+      return null
+    }
+  }
+
   private del(store: string, key: IDBValidKey): Promise<void> {
     return new Promise((resolve, reject) => {
       const tx = this.db!.transaction(store, 'readwrite')
@@ -162,8 +190,30 @@ class TauriKeychainStorage implements KeyStorage {
   private masterKey: Uint8Array | null = null
   private idb: IndexedDBStorage | null = null
 
+  private async diag(msg: string) {
+    try {
+      await (window as any).__TAURI__.core.invoke('diag_log', { msg })
+    } catch {
+      /* диагностика не критична */
+    }
+  }
+
+  // Вызов Keychain с таймаутом: «зависший» вызов (диалог прав доступа,
+  // сбой ОС) не должен блокировать фолбэк на IndexedDB.
+  private async invokeSecure(cmd: string, args: unknown): Promise<unknown> {
+    const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('keychain timeout')), 3000))
+    return Promise.race([window.__TAURI__.core.invoke(cmd, args as never), timeout])
+  }
+
   async init(): Promise<void> {
-    await this.ensureIdb()
+    await this.diag('init: begin')
+    try {
+      await this.ensureIdb()
+      await this.diag('init: idb ok')
+    } catch (e) {
+      await this.diag('init: idb FAILED: ' + String(e && (e as Error).message || e))
+      throw e
+    }
     const raw = await this.safeGet(MASTER)
     if (raw) {
       this.masterKey = raw
@@ -171,6 +221,7 @@ class TauriKeychainStorage implements KeyStorage {
       this.masterKey = crypto.getRandomValues(new Uint8Array(32))
       await this.safeSet(MASTER, this.masterKey)
     }
+    await this.diag('init: master key ready (' + (raw ? 'loaded' : 'created') + ')')
   }
 
   async saveChannelKey(channelId: number, keyBytes: Uint8Array): Promise<void> {
@@ -205,6 +256,21 @@ class TauriKeychainStorage implements KeyStorage {
     await (this.idb as any).rawDelete(PREFIX + channelId)
   }
 
+  async saveKek(kek: Uint8Array): Promise<void> {
+    const wrapped = await wrapWithMaster(kek, this.masterKey!)
+    await this.safeSet(KEK, wrapped)
+  }
+
+  async loadKek(): Promise<Uint8Array | null> {
+    const wrapped = await this.safeGet(KEK)
+    if (!wrapped) return null
+    try {
+      return unwrapWithMaster(wrapped, this.masterKey!)
+    } catch {
+      return null
+    }
+  }
+
   private async ensureIdb() {
     if (!this.idb) {
       this.idb = new IndexedDBStorage()
@@ -215,23 +281,33 @@ class TauriKeychainStorage implements KeyStorage {
   // Чтение: Keychain, при ошибке — IndexedDB.
   private async safeGet(key: string): Promise<Uint8Array | null> {
     try {
-      const b64: string | null = await window.__TAURI__.core.invoke('secure_get', { key })
+      const b64: string | null = (await this.invokeSecure('secure_get', { key })) as string | null
       if (b64) return bytesFromB64(b64)
-    } catch {
-      /* Keychain недоступна — фолбэк ниже */
+      await this.diag('safeGet ' + key + ': keychain empty')
+    } catch (e) {
+      await this.diag('safeGet ' + key + ': keychain FAIL: ' + String(e && (e as Error).message || e))
     }
-    return (this.idb as any).rawGet(key)
+    const v = await (this.idb as any).rawGet(key)
+    await this.diag('safeGet ' + key + ': idb fallback -> ' + (v ? 'found' : 'null'))
+    return v
   }
 
   // Запись: Keychain, при ошибке — IndexedDB.
   private async safeSet(key: string, value: Uint8Array): Promise<void> {
     try {
-      await window.__TAURI__.core.invoke('secure_set', { key, value: bytesToB64(value) })
+      await this.invokeSecure('secure_set', { key, value: bytesToB64(value) })
+      await this.diag('safeSet ' + key + ': keychain ok')
       return
-    } catch {
-      /* Keychain недоступна — фолбэк ниже */
+    } catch (e) {
+      await this.diag('safeSet ' + key + ': keychain FAIL: ' + String(e && (e as Error).message || e))
     }
-    await (this.idb as any).rawSet(key, value)
+    try {
+      await (this.idb as any).rawSet(key, value)
+      await this.diag('safeSet ' + key + ': idb fallback ok')
+    } catch (e) {
+      await this.diag('safeSet ' + key + ': idb fallback FAIL: ' + String(e && (e as Error).message || e))
+      throw e
+    }
   }
 }
 
