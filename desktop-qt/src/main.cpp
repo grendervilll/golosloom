@@ -1,13 +1,17 @@
 #include <QApplication>
 #include <QSettings>
 
+#include <gst/gst.h>
+
 int runSmokeMain(const QString& server);
+int runCallSmokeMain(const QString& server);
 
 #include "core/app_state.h"
 #include "ui/main_window.h"
 #include "ui/theme.h"
 
 int main(int argc, char* argv[]) {
+  gst_init(nullptr, nullptr);
   QApplication app(argc, argv);
   QApplication::setApplicationName("Golosloom");
   QApplication::setOrganizationName("golosloom");
@@ -27,6 +31,9 @@ int main(int argc, char* argv[]) {
   const QStringList args = QApplication::arguments();
   if (args.contains("--smoke")) {
     return runSmokeMain(server);
+  }
+  if (args.contains("--call-smoke")) {
+    return runCallSmokeMain(server);
   }
 
   gl::MainWindow window(&state);

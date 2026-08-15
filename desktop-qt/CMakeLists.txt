@@ -9,6 +9,10 @@ set(CMAKE_AUTOUIC ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets Network WebSockets)
 find_package(OpenSSL REQUIRED)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(GST REQUIRED IMPORTED_TARGET
+    gstreamer-1.0 gstreamer-webrtc-1.0 gstreamer-sdp-1.0 gstreamer-app-1.0
+    gstreamer-audio-1.0 gstreamer-video-1.0)
 
 qt_add_executable(golosloom_qt
     src/main.cpp
@@ -27,6 +31,10 @@ qt_add_executable(golosloom_qt
     src/ui/channel_list.h src/ui/channel_list.cpp
     src/ui/chat_panel.h src/ui/chat_panel.cpp
     src/ui/message_widget.h src/ui/message_widget.cpp
+    src/call/proto.h src/call/proto.cpp
+    src/call/livekit_client.h src/call/livekit_client.cpp
+    src/call/call_manager.h src/call/call_manager.cpp
+    src/call_smoke.cpp
 )
 
 target_include_directories(golosloom_qt PRIVATE src)
@@ -34,6 +42,7 @@ target_include_directories(golosloom_qt PRIVATE src)
 target_link_libraries(golosloom_qt PRIVATE
     Qt6::Widgets Qt6::Network Qt6::WebSockets
     OpenSSL::Crypto
+    PkgConfig::GST
     "-framework Security"
 )
 

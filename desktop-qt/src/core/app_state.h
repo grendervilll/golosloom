@@ -66,11 +66,14 @@ class AppState : public QObject {
   void connectionChanged(bool connected);
   void kekPrompt();
 
+ public:
+  void refreshChannelsPublic() { refreshChannels(); }
+
  private:
   void ensureDevice();
   void wireWs();
   void startKeyPoll();
-  void refreshChannels();
+  void refreshChannels();  // (публичный: используется смок-тестами)
   QByteArray getKek();
   void uploadBackup(qint64 channelId, const QByteArray& key);
   void handleWsEvent(const QString& type, const QJsonObject& data);
