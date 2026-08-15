@@ -324,11 +324,11 @@ export const useChannelsStore = defineStore('channels', {
         const auth = useAuthStore()
         const keys = await this.ensureDevice()
         const ch = this.channels.find((c) => c.id === channelId)
-        const isMember = ch ? ch.is_member : this.members.some((m) => m.user_id === auth.user?.id)
-        if (auth.user && isMember) {
-          console.log('[keys] sync', channelId, 'device', keys.deviceId)
+        const isMember = !!auth.user && (ch ? ch.is_member : this.members.some((m) => m.user_id === auth.user?.id))
+        let hasServerWrap = false
+        if (isMember) {
           const res = await settings.api.getMyWrappedKey(channelId, keys.deviceId)
-          console.log('[keys] getMyWrappedKey', !!res?.wrapped_key)
+          hasServerWrap = !!res?.wrapped_key
           if (res.wrapped_key) {
             const key = await unwrapChannelKey(b64ToBytes(res.wrapped_key), keys.privateKey)
             const hadKey = await storage.loadChannelKey(channelId)
@@ -351,7 +351,7 @@ export const useChannelsStore = defineStore('channels', {
         // устаревший ключ: новый придёт через обмен от создателя. Это
         // покрывает устройства, не получившие событие key.reset (не в сети
         // или не подписанные на канал).
-        if (myKey && ch && (ch.kind === 'dm' || ch.kind === 'community') && !res.wrapped_key) {
+        if (myKey && ch && isMember && (ch.kind === 'dm' || ch.kind === 'community') && !hasServerWrap) {
           await storage.deleteChannelKey(channelId)
           return
         }
@@ -381,7 +381,6 @@ export const useChannelsStore = defineStore('channels', {
           return
         }
         const targets: KeyTarget[] = await settings.api.pendingKeyTargets(channelId)
-        console.log('[keys] pending targets', targets.length)
         for (const target of targets) {
           if (target.user_id === auth.user?.id && target.device_id === keys.deviceId) continue
           // Одна неисправная цель (битый публичный ключ устройства и т.п.)
@@ -390,10 +389,10 @@ export const useChannelsStore = defineStore('channels', {
             const wrapped = await wrapChannelKey(myKey, b64ToBytes(target.public_key))
             await settings.api.uploadWrappedKey(channelId, target.user_id, target.device_id, wrapped)
           } catch (e) {
-            // Диагностика: при сбое раздачи пишем причину в консоль.
+            // Одна неисправная цель (битый публичный ключ устройства и т.п.)
+            // не должна блокировать раздачу ключа остальным участникам.
             console.warn('[keys] wrap fail', channelId, target.user_id, target.device_id, e)
           }
-          console.log('[keys] uploaded for', target.user_id, target.device_id)
         }
       } catch (e) {
         // Не критично: синхронизация повторится таймером.
