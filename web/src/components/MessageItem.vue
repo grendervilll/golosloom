@@ -204,7 +204,7 @@ function openMore(e: MouseEvent) {
           <CodeBlock v-if="seg.type === 'code'" :lang="seg.lang" :code="seg.code || ''" />
           <template v-else>
             <!-- eslint-disable-next-line vue/no-v-html -- текст экранирован в markdown.ts -->
-            <span v-html="seg.html"></span>
+            <div v-html="seg.html"></div>
           </template>
         </div>
       </template>
@@ -293,6 +293,93 @@ function openMore(e: MouseEvent) {
 }
 .text :deep(s) {
   opacity: 0.7;
+}
+/* Блочный markdown: заголовки, списки, цитаты, таблицы, hr. */
+.text :deep(h1),
+.text :deep(h2),
+.text :deep(h3),
+.text :deep(h4) {
+  font-weight: 700;
+  margin: 4px 0 2px;
+  line-height: 1.3;
+}
+.text :deep(h1) {
+  font-size: 17px;
+}
+.text :deep(h2) {
+  font-size: 16px;
+}
+.text :deep(h3) {
+  font-size: 15px;
+}
+.text :deep(h4) {
+  font-size: 14px;
+}
+.text :deep(ul),
+.text :deep(ol) {
+  margin: 4px 0;
+  padding-left: 22px;
+}
+.text :deep(li) {
+  margin: 2px 0;
+}
+.text :deep(li.task) {
+  list-style: none;
+  margin-left: -18px;
+}
+.text :deep(li.task::before) {
+  content: '☐ ';
+}
+.text :deep(li.task.done::before) {
+  content: '☑ ';
+}
+.text :deep(blockquote) {
+  border-left: 3px solid var(--accent);
+  background: var(--bg3);
+  border-radius: 0 6px 6px 0;
+  padding: 3px 10px;
+  margin: 4px 0;
+  opacity: 0.92;
+}
+.text :deep(hr) {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 6px 0;
+}
+.text :deep(.md-table) {
+  overflow-x: auto;
+  margin: 4px 0;
+}
+.text :deep(table) {
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.text :deep(th),
+.text :deep(td) {
+  border: 1px solid var(--border);
+  padding: 3px 8px;
+}
+.text :deep(th) {
+  background: var(--bg3);
+  font-weight: 700;
+}
+.text :deep(p) {
+  margin: 2px 0;
+}
+/* На синем фоне своих сообщений md-элементы тоже должны читаться. */
+.msg.mine .text :deep(blockquote) {
+  background: rgba(255, 255, 255, 0.14);
+  border-left-color: rgba(255, 255, 255, 0.7);
+}
+.msg.mine .text :deep(hr) {
+  border-top-color: rgba(255, 255, 255, 0.35);
+}
+.msg.mine .text :deep(th),
+.msg.mine .text :deep(td) {
+  border-color: rgba(255, 255, 255, 0.35);
+}
+.msg.mine .text :deep(th) {
+  background: rgba(255, 255, 255, 0.14);
 }
 /* Вложения. */
 .att {
