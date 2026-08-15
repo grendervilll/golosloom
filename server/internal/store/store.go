@@ -1591,6 +1591,14 @@ func (s *Store) CountKeyWraps(channelID int64, out *int) error {
 	return s.db.QueryRow(`SELECT COUNT(*) FROM channel_keys WHERE channel_id = ?`, channelID).Scan(out)
 }
 
+// CountKeyWrapsExcludingUser — количество обёрток ключа канала, не
+// принадлежащих указанному пользователю (у других участников ключ жив).
+func (s *Store) CountKeyWrapsExcludingUser(channelID, userID int64) (int, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM channel_keys WHERE channel_id = ? AND user_id != ?`, channelID, userID).Scan(&n)
+	return n, err
+}
+
 // PendingKeyTargets возвращает устройства участников канала,
 // для которых ещё не сохранён обёрнутый ключ канала.
 func (s *Store) PendingKeyTargets(channelID int64) ([]models.Device, error) {

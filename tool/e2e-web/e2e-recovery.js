@@ -1,8 +1,9 @@
 // E2E: восстановление потерянного ключа личного чата.
 // Сценарий «новое устройство/переустановка»: A заходит с чистого контекста
 // (без локального хранилища) — это новое устройство без ключей. A — создатель
-// DM → ключ пересоздаётся автоматически, A может писать, B (онлайн) получает
-// новый ключ через key.reset + обмен и читает новое сообщение.
+// DM. Ключ НЕ пересоздаётся (история не уничтожается): сервер отклоняет
+// регенерацию, так как ключ жив у B; B раздаёт ключ новому устройству A,
+// A может писать и читать старую историю.
 const { chromium } = require('playwright-core')
 const { EXE, BASE, ok, register, createChannel, finish } = require('./helpers')
 
@@ -60,16 +61,19 @@ async function login(page, nick, pass) {
   await login(pageA2, nickA, pass)
   await pageA2.locator('.chat-row:has(.kind-ico)').first().click()
   await pageA2.waitForSelector('.input-pill textarea', { timeout: 10000 })
-  await pageA2.waitForTimeout(2500) // автовосстановление ключа создателем
+  // Ключ приходит от B через обмен (таймерный поллинг, до ~15 с).
+  // Старая история при этом сохраняется и расшифровывается.
+  await pageA2.waitForSelector('.msg .text:has-text("до потери ключа")', { timeout: 20000, state: 'attached' })
+  ok('A на новом устройстве получил ключ от B и читает старую историю', true)
   await typeChat(pageA2, 'после восстановления ключа')
   await pageA2.press('.input-pill textarea', 'Enter')
   await pageA2.waitForSelector('.msg .text:has-text("после восстановления ключа")', { timeout: 15000, state: 'attached' })
-  ok('A на новом устройстве восстановил ключ и пишет', true)
+  ok('A на новом устройстве пишет', true)
 
-  // B (онлайн) получает key.reset и новый ключ, читает новое сообщение.
+  // B (онлайн) читает новое сообщение A — ключ тот же, история цела.
   try {
     await pageB.waitForSelector('.msg .text:has-text("после восстановления ключа")', { timeout: 25000, state: 'attached' })
-    ok('B после сброса ключа читает новое сообщение', true)
+    ok('B читает новое сообщение без смены ключа', true)
   } catch {
     const bState = await pageB.evaluate(() => ({
       msgs: [...document.querySelectorAll('.msg')].map((m) => m.textContent.trim().slice(0, 40)),

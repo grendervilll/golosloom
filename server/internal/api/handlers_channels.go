@@ -800,6 +800,17 @@ func (s *Server) handleResetChannelKey(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusForbidden, "вы не участник канала")
 		return
 	}
+	// Ключ жив у другого участника — регенерация уничтожила бы историю
+	// канала. Новое устройство получит ключ через обмен от владельцев.
+	others, err := s.Store.CountKeyWrapsExcludingUser(channelID, me)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if others > 0 {
+		writeErr(w, http.StatusConflict, "ключ канала существует у другого участника — обмен выполнится автоматически")
+		return
+	}
 	var req struct {
 		DeviceID   string `json:"device_id"`
 		WrappedKey []byte `json:"wrapped_key"`
