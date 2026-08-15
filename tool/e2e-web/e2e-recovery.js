@@ -51,14 +51,6 @@ async function login(page, nick, pass) {
   // B читает первое сообщение.
   await pageB.reload({ waitUntil: 'load' })
   await pageB.waitForSelector('.chat-row', { timeout: 10000 })
-  const bRows = await pageB.evaluate(() =>
-    [...document.querySelectorAll('.chat-row')].map((r) => ({
-      text: r.textContent?.trim().slice(0, 30),
-      kindIco: !!r.querySelector('.kind-ico'),
-      html: r.outerHTML?.slice(0, 120),
-    })),
-  )
-  console.log('B rows:', JSON.stringify(bRows).slice(0, 2500))
   await pageB.locator('.chat-row:has(.kind-ico)').first().click()
   await pageB.waitForSelector('.msg .text:has-text("до потери ключа")', { timeout: 8000, state: 'attached' })
   ok('B читал первое сообщение', true)
