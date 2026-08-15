@@ -386,8 +386,9 @@ export const useChannelsStore = defineStore('channels', {
           try {
             const wrapped = await wrapChannelKey(myKey, b64ToBytes(target.public_key))
             await settings.api.uploadWrappedKey(channelId, target.user_id, target.device_id, wrapped)
-          } catch {
-            /* пропускаем — остальные цели обработаются */
+          } catch (e) {
+            // Диагностика: при сбое раздачи пишем причину в консоль.
+            console.warn('[keys] wrap fail', channelId, target.user_id, target.device_id, e)
           }
         }
       } catch {
