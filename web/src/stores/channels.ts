@@ -399,6 +399,40 @@ export const useChannelsStore = defineStore('channels', {
         console.warn('[keys] syncKeys aborted', channelId, e)
       }
     },
+    // Диагностика: полная цепочка ключей канала (для прод-отладки).
+    async diagChannel(channelId: number) {
+      const storage = await getKeyStorage()
+      const settings = useSettingsStore()
+      const keys = await this.ensureDevice()
+      const out: Record<string, unknown> = { deviceId: keys.deviceId }
+      try {
+        const res = await settings.api.getMyWrappedKey(channelId, keys.deviceId)
+        out.wrapPresent = !!res?.wrapped_key
+        if (out.wrapPresent) {
+          try {
+            const k = await unwrapChannelKey(b64ToBytes(res.wrapped_key), keys.privateKey)
+            out.unwrapOk = true
+            out.keyLen = k.length
+          } catch (e) {
+            out.unwrapErr = String(e && (e as Error).message || e)
+          }
+        }
+      } catch (e) {
+        out.apiErr = String(e && (e as Error).message || e)
+      }
+      out.hasLocalKey = !!(await storage.loadChannelKey(channelId))
+      try {
+        const chat = useChatStore()
+        await chat.loadHistory(channelId)
+        const msgs = chat.messages.get(channelId) || []
+        out.msgCount = msgs.length
+        out.firstText = (msgs[0]?.text || '').slice(0, 40) || null
+        out.firstReason = msgs[0]?.reason || null
+      } catch (e) {
+        out.loadErr = String(e && (e as Error).message || e)
+      }
+      return out
+    },
     // Раздача/получение ключей для всех каналов (при старте и при появлении
     // нового устройства у того же пользователя).
     async syncAllKeys() {
