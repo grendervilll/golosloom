@@ -149,6 +149,10 @@ export const useChannelsStore = defineStore('channels', {
       const settings = useSettingsStore()
       const auth = useAuthStore()
       const keys = await this.ensureDevice()
+      // Диагностика: доступ к каналам/ключам из консоли.
+      if (typeof window !== 'undefined') {
+        ;(window as any).__golosloomChannels = this
+      }
       await settings.api.uploadKey(keys.deviceId, bytesToB64(keys.publicKey))
       await this.refresh()
       await this.refreshInvites()
