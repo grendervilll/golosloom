@@ -2,6 +2,8 @@
 import { defineStore } from 'pinia'
 import { useSettingsStore } from './settings'
 import { WsClient } from '../api/ws'
+import { deriveKek } from '../crypto/crypto'
+import { getKeyStorage } from '../crypto/storage'
 import type { User, PublicUser } from '../api/types'
 
 const TOKEN_KEY = 'golosloom-token'
@@ -21,6 +23,18 @@ export const useAuthStore = defineStore('auth', {
     isServerAdmin: (s) => !!s.user?.is_server_admin,
   },
   actions: {
+    // Сохранение ключа из пароля (KEK): он нужен для расшифровки
+    // парольных бэкапов ключей на любом устройстве, в т.ч. после
+    // перезагрузки/авто-входа по токену.
+    async persistKek(password: string) {
+      try {
+        const k = await deriveKek(password, Number(this.user?.id || 0))
+        const storage = await getKeyStorage()
+        await storage.saveKek(k)
+      } catch {
+        /* не критично: KEK выведется позже из пароля в памяти */
+      }
+    },
     async login(nick: string, password: string): Promise<void> {
       const settings = useSettingsStore()
       this.password = password
@@ -32,6 +46,7 @@ export const useAuthStore = defineStore('auth', {
       localStorage.setItem(TOKEN_KEY, this.token)
       settings.api.setToken(this.token)
       await this.fetchMe()
+      await this.persistKek(password)
       this.connectWs()
     },
     async register(nick: string, password: string, invite?: string): Promise<void> {
@@ -45,6 +60,7 @@ export const useAuthStore = defineStore('auth', {
       localStorage.setItem(TOKEN_KEY, this.token)
       settings.api.setToken(this.token)
       await this.fetchMe()
+      await this.persistKek(password)
       this.connectWs()
     },
     async fetchMe(): Promise<void> {

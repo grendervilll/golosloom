@@ -32,8 +32,12 @@ async function sendAndWait(page, text, timeout) {
 
 ;(async () => {
   const browser = await chromium.launch({ executablePath: EXE, args: ['--no-sandbox', '--disable-web-security'] })
-  const pageA = await browser.newPage()
-  const pageB = await browser.newPage()
+  // Раздельные контексты: у каждого пользователя своё хранилище
+  // (localStorage/IndexedDB), как у разных устройств.
+  const ctxA = await browser.newContext()
+  const ctxB = await browser.newContext()
+  const pageA = await ctxA.newPage()
+  const pageB = await ctxB.newPage()
   pageA.on('pageerror', (e) => console.log('[pageerror A]', e.message))
   pageA.on('console', (m) => { if (m.text().includes('[keys]')) console.log('[A-console]', m.text().slice(0, 300)) })
   pageB.on('pageerror', (e) => console.log('[pageerror B]', e.message))
@@ -108,7 +112,7 @@ async function sendAndWait(page, text, timeout) {
   ok('B не может писать (readonly)', roBar === 1 && noInput === 0)
 
   // Восстановление ключа: A заходит с чистого контекста («переустановка»).
-  const pageA2 = await browser.newPage()
+  const pageA2 = await ctxA.newPage()
   pageA2.on('pageerror', (e) => console.log('[pageerror A2]', e.message))
   await pageA2.goto(BASE, { waitUntil: 'load' })
   await pageA2.getByPlaceholder('Ваш ник').fill(NICK1)
