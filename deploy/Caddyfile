@@ -31,6 +31,8 @@
 		X-Content-Type-Options "nosniff"
 		X-Frame-Options "DENY"
 		Referrer-Policy "no-referrer"
+		# Приватный мессенджер: страницы не индексируются поисковиками.
+		X-Robots-Tag "noindex, nofollow"
 		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; media-src 'self' blob: https:; connect-src 'self' wss:; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
 	}
 

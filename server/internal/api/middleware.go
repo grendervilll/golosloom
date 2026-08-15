@@ -67,7 +67,16 @@ func (s *Server) authenticate(r *http.Request) (int64, error) {
 	if !strings.HasPrefix(h, "Bearer ") {
 		return 0, errors.New("no token")
 	}
-	return auth.ParseToken(strings.TrimPrefix(h, "Bearer "), s.Cfg.JWTSecret)
+	userID, ver, err := auth.ParseToken(strings.TrimPrefix(h, "Bearer "), s.Cfg.JWTSecret)
+	if err != nil {
+		return 0, err
+	}
+	// Пароль сменили — версия токена устарела («разлогин везде»).
+	u, err := s.Store.GetUserByID(userID)
+	if err != nil || u.TokenVersion != ver {
+		return 0, errors.New("token version mismatch")
+	}
+	return userID, nil
 }
 
 func (s *Server) requireServerAdmin(next http.HandlerFunc) http.HandlerFunc {

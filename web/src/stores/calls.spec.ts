@@ -194,6 +194,21 @@ describe('звонки', () => {
     expect(calls.screenOn).toBe(false)
   })
 
+  it('демонстрация экрана передаёт разрешение с frameRate и стабильный fps', async () => {
+    setup()
+    const calls = useCallStore()
+    await calls.initiate(10, [2])
+    await calls.toggleScreen('1080p60')
+    const room = (window as any).__golosloomRoom
+    const [enabled, options, publish] = room.localParticipant.setScreenShareEnabled.mock.calls[0]
+    expect(enabled).toBe(true)
+    expect(options.resolution).toEqual({ width: 1920, height: 1080, frameRate: 60 })
+    expect(options.contentHint).toBe('detail')
+    expect(publish.degradationPreference).toBe('maintain-framerate')
+    expect(publish.videoEncoding.maxBitrate).toBe(6_000_000)
+    expect(publish.videoEncoding.maxFramerate).toBe(60)
+  })
+
   it('при ошибке подключения к LiveKit звонок отменяется на сервере', async () => {
     failConnect.value = true
     try {

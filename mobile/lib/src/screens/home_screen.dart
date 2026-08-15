@@ -18,6 +18,7 @@ import '../widgets/avatar.dart';
 import 'admin_screen.dart';
 import 'call_screen.dart';
 import 'chat_screen.dart';
+import 'login_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   /// Глобальный чат-стор (для плашки звонка на любом экране).
@@ -53,6 +54,17 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _api = ApiClient(widget.settings.serverUrl ?? '')
       ..token = widget.settings.token;
+    // Токен живёт сутки (или его отозвала смена пароля): при 401 —
+    // очищаем сессию и возвращаем на экран входа.
+    _api.onUnauthorized = () {
+      widget.settings.clearAuth();
+      if (mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => LoginScreen(settings: widget.settings)),
+          (route) => false,
+        );
+      }
+    };
     _myNick = widget.settings.user?.nick ?? '';
     _session = Session(widget.settings, _api);
     _chat = ChatStore(_session);

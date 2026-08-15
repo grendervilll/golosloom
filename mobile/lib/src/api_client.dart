@@ -50,6 +50,9 @@ class ServerConfig {
 class ApiClient {
   final String baseUrl;
   String? token;
+  // Вызывается при 401: токен истёк (TTL сутки) или пароль сменили —
+  // приложение разлогинивается.
+  void Function()? onUnauthorized;
   final http.Client _http = http.Client();
   // Короткоживущий файловый токен (5 минут): в URL файлов попадает он,
   // а не основной JWT (утёкшая ссылка не даёт доступ к аккаунту).
@@ -76,6 +79,10 @@ class ApiClient {
     if (body != null) req.body = jsonEncode(body);
     final streamed = await _http.send(req).timeout(const Duration(seconds: 15));
     final res = await http.Response.fromStream(streamed);
+    if (res.statusCode == 401) {
+      onUnauthorized?.call();
+      throw ApiException(401, 'Сессия истекла — войдите заново');
+    }
     if (res.statusCode >= 400) {
       throw ApiException(res.statusCode, _errorText(res.body));
     }

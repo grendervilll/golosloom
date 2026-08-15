@@ -42,6 +42,9 @@ type User struct {
 	// AvatarAt — время последнего обновления аватара (null — аватара нет).
 	// Клиенты строят URL /api/avatars/{id}?v=<timestamp>.
 	AvatarAt *time.Time `json:"avatar"`
+	// TokenVersion — версия токенов: растёт при смене пароля, старые
+	// токены перестают действовать («разлогин везде»).
+	TokenVersion int64 `json:"-"`
 }
 
 type Device struct {

@@ -28,6 +28,7 @@ type Server struct {
 
 	loginLimiter    *limiter
 	registerLimiter *limiter
+	fileTokenLimiter *limiter
 
 	statsMu       sync.Mutex
 	prevCPUIdle   uint64
@@ -55,6 +56,9 @@ func New(cfg config.Config, st *store.Store) *Server {
 		lastMsg:         map[string]time.Time{},
 		loginLimiter:    newLimiter(20, 15*time.Minute, 8, 15*time.Minute),
 		registerLimiter: newLimiter(15, 15*time.Minute, 0, 0),
+		// Минт файловых токенов: клиент обновляет раз в 4 минуты — 60/мин
+		// с большим запасом, защита от наплодить URL в цикле.
+		fileTokenLimiter: newLimiter(60, time.Minute, 0, 0),
 		buckets:         map[int64]*bucket{},
 		lastPunch:       map[string]time.Time{},
 	}

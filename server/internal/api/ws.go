@@ -25,13 +25,18 @@ type wsMsg struct {
 
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	token := r.URL.Query().Get("token")
-	userID, err := auth.ParseToken(token, s.Cfg.JWTSecret)
+	userID, ver, err := auth.ParseToken(token, s.Cfg.JWTSecret)
 	if err != nil {
 		writeErr(w, http.StatusUnauthorized, "требуется авторизация")
 		return
 	}
 	u, err := s.Store.GetUserByID(userID)
-	if err != nil || u.ServerBanned {
+	// Смена пароля инвалидирует старые токены (версия не совпала).
+	if err != nil || u.TokenVersion != ver {
+		writeErr(w, http.StatusUnauthorized, "требуется авторизация")
+		return
+	}
+	if u.ServerBanned {
 		writeErr(w, http.StatusForbidden, "доступ запрещён")
 		return
 	}

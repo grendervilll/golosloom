@@ -116,7 +116,12 @@ func (s *Server) handleFileUpload(w http.ResponseWriter, r *http.Request) {
 // handleFileToken выдаёт короткоживущий файловый токен (5 минут, scope=file).
 // В URL файлов попадает только он — основной JWT никуда не утекает.
 func (s *Server) handleFileToken(w http.ResponseWriter, r *http.Request) {
-	t, err := auth.GenerateFileToken(userIDFrom(r), s.Cfg.JWTSecret)
+	u, err := s.Store.GetUserByID(userIDFrom(r))
+	if err != nil {
+		writeErr(w, http.StatusUnauthorized, "пользователь не найден")
+		return
+	}
+	t, err := auth.GenerateFileToken(u.ID, u.TokenVersion, s.Cfg.JWTSecret)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "не удалось выпустить токен")
 		return
@@ -134,7 +139,7 @@ func (s *Server) handleFileGet(w http.ResponseWriter, r *http.Request) {
 	fileID := pathID(r, "id")
 	token := r.URL.Query().Get("token")
 	// Только файловый токен: обычный JWT здесь не принимается.
-	userID, err := auth.ParseFileToken(token, s.Cfg.JWTSecret)
+	userID, ver, err := auth.ParseFileToken(token, s.Cfg.JWTSecret)
 	if err != nil {
 		writeErr(w, http.StatusUnauthorized, "требуется авторизация")
 		return
@@ -149,6 +154,14 @@ func (s *Server) handleFileGet(w http.ResponseWriter, r *http.Request) {
 	isAdmin := false
 	if u, err := s.Store.GetUserByID(userID); err == nil {
 		isAdmin = u.IsServerAdmin
+		// Смена пароля инвалидирует и файловые токены.
+		if u.TokenVersion != ver {
+			writeErr(w, http.StatusUnauthorized, "требуется авторизация")
+			return
+		}
+	} else {
+		writeErr(w, http.StatusUnauthorized, "требуется авторизация")
+		return
 	}
 	if !isAdmin && !s.Store.IsMember(f.ChannelID, userID) {
 		writeErr(w, http.StatusForbidden, "вы не участник канала")

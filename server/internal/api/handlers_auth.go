@@ -103,7 +103,12 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) issueToken(w http.ResponseWriter, userID int64) {
-	token, err := auth.GenerateToken(userID, s.Cfg.JWTSecret, s.Cfg.JWTTTL)
+	u, err := s.Store.GetUserByID(userID)
+	if err != nil {
+		writeErr(w, http.StatusUnauthorized, "пользователь не найден")
+		return
+	}
+	token, err := auth.GenerateToken(userID, u.TokenVersion, s.Cfg.JWTSecret, s.Cfg.JWTTTL)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return

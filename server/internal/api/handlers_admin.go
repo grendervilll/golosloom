@@ -29,7 +29,7 @@ func (s *Server) handleAdminStats(w http.ResponseWriter, r *http.Request) {
 		dbSize = fi.Size()
 	}
 	// Диск (каталог данных): всего и занято — для плиток «БД» и «Файлы».
-	var diskTotal, diskUsed uint64
+	var diskTotal, diskUsed, diskFree uint64
 	{
 		var st unix.Statfs_t
 		if err := unix.Statfs(s.Cfg.FilesDir, &st); err != nil {
@@ -40,6 +40,9 @@ func (s *Server) handleAdminStats(w http.ResponseWriter, r *http.Request) {
 			diskTotal = st.Blocks * uint64(st.Bsize)
 			diskUsed = (st.Blocks - st.Bavail) * uint64(st.Bsize)
 		}
+		// Свободно (доступно непривилегированному пользователю) — меняется
+		// со временем: плитки «занято / свободно».
+		diskFree = st.Bavail * uint64(st.Bsize)
 	}
 	var mem runtime.MemStats
 	runtime.ReadMemStats(&mem)
@@ -70,6 +73,7 @@ func (s *Server) handleAdminStats(w http.ResponseWriter, r *http.Request) {
 		"files_size":    filesSize,
 		"disk_total":    diskTotal,
 		"disk_used":     diskUsed,
+		"disk_free":     diskFree,
 		"mem_mb":        mem.Alloc / 1024 / 1024,
 		"goroutines":    runtime.NumGoroutine(),
 		"cpu_percent":   cpuPercent,

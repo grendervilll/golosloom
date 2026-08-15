@@ -210,11 +210,16 @@ export const useCallStore = defineStore('calls', {
         dynacast: false,
         rtcConfig,
         // Микрофон: максимум качества (48 кГц — предел opus), моно,
-        // эхо-подавление и автоусиление всегда включены.
+        // эхо-подавление и автоусиление всегда включены. Шумоподавление —
+        // подсказка браузеру (уровней у него нет): off — выключено,
+        // low/medium — обычное, high — дополнительно voiceIsolation
+        // (экспериментальное усиление голоса, Chrome; если не поддержано,
+        // браузер просто игнорирует констрейнт).
         audioCaptureDefaults: {
           echoCancellation: true,
           autoGainControl: true,
           noiseSuppression: settings.noiseSuppression !== 'off',
+          voiceIsolation: settings.noiseSuppression === 'high',
           channelCount: 1,
           sampleRate: 48000,
         },
@@ -447,9 +452,22 @@ export const useCallStore = defineStore('calls', {
           return
         }
         const [w, h, fps] = parseQuality(quality)
-        await this.room.localParticipant.setScreenShareEnabled(true, {
-          video: { resolution: { width: w, height: h }, frameRate: fps },
-        })
+        // ВАЖНО: resolution и frameRate передаются на верхнем уровне опций
+        // (ScreenShareCaptureOptions), иначе SDK их игнорирует и захват идёт
+        // с дефолтом 1080p/30fps. degradationPreference 'maintain-framerate'
+        // держит fps стабильным при нагрузке (браузер режет разрешение,
+        // а не кадры). contentHint 'detail' — чёткий текст.
+        await this.room.localParticipant.setScreenShareEnabled(
+          true,
+          {
+            resolution: { width: w, height: h, frameRate: fps },
+            contentHint: 'detail',
+          },
+          {
+            videoEncoding: { maxBitrate: SCREEN_BITRATES[quality] || 5_000_000, maxFramerate: fps },
+            degradationPreference: 'maintain-framerate',
+          },
+        )
         this.screenOn = true
       } catch {
         toast.warning('Не удалось запустить демонстрацию экрана')
@@ -584,4 +602,14 @@ function parseQuality(q: string): [number, number, number] {
     default:
       return [1920, 1080, 60]
   }
+}
+
+// Битрейты демонстрации экрана: умеренные для слабого VPS (всё медиа идёт
+// через TURN-релей на одном ядре — завышенный битрейт даёт потери и фризы).
+const SCREEN_BITRATES: Record<string, number> = {
+  '1080p60': 6_000_000,
+  '1080p30': 5_000_000,
+  '720p60': 4_000_000,
+  '720p30': 2_500_000,
+  '480p30': 1_500_000,
 }

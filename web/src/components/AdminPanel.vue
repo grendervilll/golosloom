@@ -42,12 +42,12 @@ function fmtUptime(sec: any): string {
   return `${m}м`
 }
 
-// Процент занятого места на диске (для плиток БД/Файлы).
-function diskPercent(used: any, total: any): number {
+// Процент занятого места (от занято+свободно).
+function diskPercent(used: any, free: any): number {
   const u = Number(used) || 0
-  const t = Number(total) || 0
-  if (t <= 0) return 0
-  return Math.min(100, Math.round((u / t) * 100))
+  const f = Number(free) || 0
+  if (u + f <= 0) return 0
+  return Math.min(100, Math.round((u / (u + f)) * 100))
 }
 
 async function loadStats() {
@@ -307,20 +307,21 @@ function copyId(u: any) {
             <AdminGauge label="База данных" :percent="stats.db_percent" :value="fmtBytes(stats.db_size)" />
             <AdminGauge label="Память процесса" :percent="stats.mem_percent" :value="`${stats.mem_mb ?? '—'} МБ`" />
           </div>
-          <!-- Плитки занятого места на диске: числа без подписей. -->
+          <!-- Плитки занятого места на диске: числа без подписей.
+               «из» — свободное место на диске (меняется со временем). -->
           <div class="disk-tiles">
             <div class="disk-tile">
               <span class="disk-title">База данных</span>
-              <span class="disk-nums">{{ fmtBytes(stats.db_size) }} / {{ fmtBytes(stats.disk_total) }}</span>
+              <span class="disk-nums">{{ fmtBytes(stats.db_size) }} / {{ fmtBytes(stats.disk_free) }}</span>
               <div class="disk-bar">
-                <div class="disk-fill" :style="{ width: diskPercent(stats.db_size, stats.disk_total) + '%' }"></div>
+                <div class="disk-fill" :style="{ width: diskPercent(stats.db_size, stats.disk_free) + '%' }"></div>
               </div>
             </div>
             <div class="disk-tile">
               <span class="disk-title">Файлы пользователей</span>
-              <span class="disk-nums">{{ fmtBytes(stats.files_size) }} / {{ fmtBytes(stats.disk_total) }}</span>
+              <span class="disk-nums">{{ fmtBytes(stats.files_size) }} / {{ fmtBytes(stats.disk_free) }}</span>
               <div class="disk-bar">
-                <div class="disk-fill" :style="{ width: diskPercent(stats.files_size, stats.disk_total) + '%' }"></div>
+                <div class="disk-fill" :style="{ width: diskPercent(stats.files_size, stats.disk_free) + '%' }"></div>
               </div>
             </div>
           </div>

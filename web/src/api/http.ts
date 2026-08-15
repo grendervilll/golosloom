@@ -10,6 +10,9 @@ export interface HttpError {
 export class ApiClient {
   baseUrl: string
   private token: string | null = null
+  // Вызывается при 401: токен истёк (TTL сутки) или пароль сменили —
+  // приложение разлогинивается.
+  onUnauthorized: (() => void) | null = null
   // Короткоживущий файловый токен (5 минут, только для файлов): в URL
   // файлов попадает он, а не основной JWT. Обновляется заранее.
   private fileToken: { value: string; expiresAt: number } | null = null
@@ -53,6 +56,8 @@ export class ApiClient {
       }
     }
     if (!res.ok) {
+      // Токен истёк (TTL — сутки) или пароль сменили: разлогиниваемся.
+      if (res.status === 401) this.onUnauthorized?.()
       const err: HttpError = {
         status: res.status,
         message: (data && data.error) || `Ошибка ${res.status}`,
@@ -287,6 +292,7 @@ export class ApiClient {
     const headers: Record<string, string> = {}
     if (this.token) headers['Authorization'] = `Bearer ${this.token}`
     const res = await fetch(this.baseUrl + `/api/channels/${channelId}/files`, { method: 'POST', headers, body: form })
+    if (res.status === 401) this.onUnauthorized?.()
     if (!res.ok) {
       const text = await res.text().catch(() => '')
       let msg = `Ошибка загрузки файла: ${res.status}`

@@ -291,25 +291,6 @@ async function removeAvatar() {
           <button class="primary" @click="saveServerUrl">Сохранить</button>
         </div>
 
-        <p class="submenu-title">Звонки</p>
-        <div class="submenu-block">
-          <label>Шумоподавление микрофона</label>
-          <select :value="settings.noiseSuppression" @change="settings.setNoiseSuppression(($event.target as HTMLSelectElement).value as any)">
-            <option value="off">Выключено</option>
-            <option value="low">Лёгкое (по умолчанию)</option>
-            <option value="medium">Среднее</option>
-            <option value="high">Сильное</option>
-          </select>
-          <label>Качество демонстрации экрана</label>
-          <select :value="settings.screenQuality" @change="settings.setScreenQuality(($event.target as HTMLSelectElement).value)">
-            <option value="1080p60">1080p / 60 fps</option>
-            <option value="1080p30">1080p / 30 fps</option>
-            <option value="720p60">720p / 60 fps</option>
-            <option value="720p30">720p / 30 fps</option>
-            <option value="480p30">480p / 30 fps</option>
-          </select>
-        </div>
-
         <p class="submenu-title">Клавиши</p>
         <div class="submenu-block">
           <div class="hotkey-row">

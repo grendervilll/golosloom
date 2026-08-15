@@ -53,22 +53,27 @@ func TestHashAndCheck(t *testing.T) {
 
 func TestGenerateAndParseToken(t *testing.T) {
 	secret := "test-secret"
-	token, err := GenerateToken(42, secret, ttlSeconds(3600))
+	token, err := GenerateToken(42, 7, secret, ttlSeconds(3600))
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, err := ParseToken(token, secret)
+	id, ver, err := ParseToken(token, secret)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if id != 42 {
-		t.Fatalf("ожидали id 42, получили %d", id)
+	if id != 42 || ver != 7 {
+		t.Fatalf("ожидали id/ver 42/7, получили %d/%d", id, ver)
 	}
-	if _, err := ParseToken(token, "wrong-secret"); err == nil {
+	if _, _, err := ParseToken(token, "wrong-secret"); err == nil {
 		t.Fatal("токен с неверным секретом не должен парситься")
 	}
-	if _, err := ParseToken("garbage.token.here", secret); err == nil {
+	if _, _, err := ParseToken("garbage.token.here", secret); err == nil {
 		t.Fatal("мусорный токен не должен парситься")
+	}
+	// Разлогин везде: версия токена не совпадает — отклоняем.
+	stale, _ := GenerateToken(42, 6, secret, ttlSeconds(3600))
+	if _, ver2, err := ParseToken(stale, secret); err != nil || ver2 != 6 {
+		t.Fatal("старый токен с другой версией должен парситься (проверку версии делает сервер)")
 	}
 }
 

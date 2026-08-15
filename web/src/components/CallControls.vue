@@ -90,9 +90,8 @@ async function leave() {
           <p class="popup-title">Шумоподавление</p>
           <select :value="settings.noiseSuppression" @change="onNoiseChange">
             <option value="off">Выключено</option>
-            <option value="low">Лёгкое (по умолчанию)</option>
-            <option value="medium">Среднее</option>
-            <option value="high">Сильное</option>
+            <option value="low">Включено</option>
+            <option value="high">Сильное (voice isolation)</option>
           </select>
         </div>
       </button>

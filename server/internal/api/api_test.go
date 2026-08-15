@@ -154,7 +154,7 @@ func (a *testApp) sendMsg(t *testing.T, token string, channelID int64, plain str
 func b64(s string) string { return base64.StdEncoding.EncodeToString([]byte(s)) }
 
 func generateTestToken(userID int64, secret string) (string, error) {
-	return auth.GenerateToken(userID, secret, time.Hour)
+	return auth.GenerateToken(userID, 0, secret, time.Hour)
 }
 
 func dialWS(t *testing.T, a *testApp, token string) *websocket.Conn {

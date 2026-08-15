@@ -94,6 +94,11 @@ function wireWs() {
 
 onMounted(async () => {
   await settings.loadConfig().catch(() => undefined)
+  // Токен живёт сутки: при 401 (истёк/сменили пароль) — на экран входа.
+  settings.api.onUnauthorized = () => {
+    auth.logout()
+    if (!window.location.hash.startsWith('#/login')) window.location.hash = '#/login'
+  }
   if (auth.token) {
     try {
       await auth.fetchMe()

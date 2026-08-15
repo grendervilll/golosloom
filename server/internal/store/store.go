@@ -164,7 +164,8 @@ CREATE TABLE IF NOT EXISTS users (
 	is_server_admin INTEGER NOT NULL DEFAULT 0,
 	server_banned INTEGER NOT NULL DEFAULT 0,
 	server_ban_reason TEXT NOT NULL DEFAULT '',
-	created_at TEXT NOT NULL
+	created_at TEXT NOT NULL,
+	token_version INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS devices (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -313,6 +314,8 @@ func (s *Store) migrate() error {
 	// Миграция: файл помечен удалённым администратором (строка остаётся,
 	// чтобы сообщение знало, какие вложения были стёрты).
 	_, _ = s.db.Exec(`ALTER TABLE files ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0`)
+	// Миграция: версия токенов пользователя (разлогин везде при смене пароля).
+	_, _ = s.db.Exec(`ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0`)
 	return nil
 }
 
@@ -447,12 +450,12 @@ func (s *Store) CreateUser(nick, passwordHash string) (*models.User, error) {
 }
 
 func (s *Store) GetUserByID(id int64) (*models.User, error) {
-	row := s.db.QueryRow(`SELECT id, nick, is_server_admin, server_banned, server_ban_reason, created_at, avatar_at FROM users WHERE id = ?`, id)
+	row := s.db.QueryRow(`SELECT id, nick, is_server_admin, server_banned, server_ban_reason, created_at, avatar_at, token_version FROM users WHERE id = ?`, id)
 	return scanUser(row)
 }
 
 func (s *Store) GetUserByNick(nick string) (*models.User, error) {
-	row := s.db.QueryRow(`SELECT id, nick, is_server_admin, server_banned, server_ban_reason, created_at, avatar_at FROM users WHERE nick = ?`, nick)
+	row := s.db.QueryRow(`SELECT id, nick, is_server_admin, server_banned, server_ban_reason, created_at, avatar_at, token_version FROM users WHERE nick = ?`, nick)
 	return scanUser(row)
 }
 
@@ -461,7 +464,7 @@ func scanUser(row *sql.Row) (*models.User, error) {
 	var banned int
 	var createdAt string
 	var avatarAt sql.NullString
-	err := row.Scan(&u.ID, &u.Nick, &u.IsServerAdmin, &banned, &u.ServerBanReason, &createdAt, &avatarAt)
+	err := row.Scan(&u.ID, &u.Nick, &u.IsServerAdmin, &banned, &u.ServerBanReason, &createdAt, &avatarAt, &u.TokenVersion)
 	if err == sql.ErrNoRows {
 		return nil, ErrNotFound
 	}
@@ -510,7 +513,8 @@ func (s *Store) ListUsers() ([]models.User, error) {
 }
 
 func (s *Store) SetPassword(userID int64, passwordHash string) error {
-	res, err := s.db.Exec(`UPDATE users SET password_hash = ? WHERE id = ?`, passwordHash, userID)
+	// Смена пароля: версия токенов растёт, все старые токены умирают.
+	res, err := s.db.Exec(`UPDATE users SET password_hash = ?, token_version = token_version + 1 WHERE id = ?`, passwordHash, userID)
 	if err != nil {
 		return err
 	}

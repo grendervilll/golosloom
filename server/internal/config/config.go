@@ -38,7 +38,7 @@ func Load() Config {
 		Port:              getenv("PORT", "8080"),
 		DBPath:            getenv("DB_PATH", "data/golosloom.db"),
 		JWTSecret:         getenv("JWT_SECRET", "dev-secret-change-me"),
-		JWTTTL:            getenvDur("JWT_TTL", 30*24*time.Hour),
+		JWTTTL:            getenvDur("JWT_TTL", 24*time.Hour),
 		LiveKitURL:        getenv("LIVEKIT_URL", "ws://localhost:7880"),
 		LiveKitAPIKey:     getenv("LIVEKIT_API_KEY", ""),
 		LiveKitAPISecret:  getenv("LIVEKIT_API_SECRET", ""),
