@@ -2,19 +2,12 @@
 // восстановление ключа на «новом устройстве» (как у пользователя).
 // Нужны заранее созданные пользователи E2E_PROD1/E2E_PROD2.
 const { chromium } = require('playwright-core')
-const { EXE, BASE, ok, createChannel, finish } = require('./helpers')
+const { EXE, BASE, ok, register, finish } = require('./helpers')
 
-const PASS = 'Passw0rd!x123'
-const NICK1 = process.env.E2E_PROD1 || 'e2eprod1'
-const NICK2 = process.env.E2E_PROD2 || 'e2eprod2'
-
-async function login(page, nick) {
-  await page.goto(BASE, { waitUntil: 'load' })
-  await page.getByPlaceholder('Ваш ник').fill(nick)
-  await page.getByPlaceholder('Пароль').first().fill(PASS)
-  await page.getByRole('button', { name: 'Войти' }).click()
-  await page.waitForSelector('.sidebar', { timeout: 15000 })
-}
+// Свежие пользователи на каждый прогон: каналы/устройства не накапливаются,
+// и сценарий не зависит от состояния прод-базы (как у реальных пользователей).
+const NICK1 = (process.env.E2E_PROD1 || 'e2eprod1') + Date.now().toString().slice(-6)
+const NICK2 = (process.env.E2E_PROD2 || 'e2eprod2') + Date.now().toString().slice(-6)
 
 async function typeChat(page, text) {
   await page.click('.input-pill textarea')
@@ -46,10 +39,10 @@ async function sendAndWait(page, text, timeout) {
   pageB.on('pageerror', (e) => console.log('[pageerror B]', e.message))
   pageB.on('console', (m) => { if (m.text().includes('[keys]') || m.text().includes('decrypt')) console.log('[B-console]', m.text().slice(0, 300)) })
 
-  await login(pageA, NICK1)
-  console.log('A logged in:', NICK1)
-  await login(pageB, NICK2)
-  console.log('B logged in:', NICK2)
+  await register(pageA, NICK1)
+  console.log('A registered:', NICK1)
+  await register(pageB, NICK2)
+  console.log('B registered:', NICK2)
 
   // DM: A ищет B по нику.
   await pageA.click('.burger', { force: true })
@@ -117,7 +110,11 @@ async function sendAndWait(page, text, timeout) {
   // Восстановление ключа: A заходит с чистого контекста («переустановка»).
   const pageA2 = await browser.newPage()
   pageA2.on('pageerror', (e) => console.log('[pageerror A2]', e.message))
-  await login(pageA2, NICK1)
+  await pageA2.goto(BASE, { waitUntil: 'load' })
+  await pageA2.getByPlaceholder('Ваш ник').fill(NICK1)
+  await pageA2.getByPlaceholder('Пароль').first().fill('Passw0rd!x123')
+  await pageA2.getByRole('button', { name: 'Войти' }).click()
+  await pageA2.waitForSelector('.sidebar', { timeout: 15000 })
   await pageA2.locator('.chat-row:has(.kind-ico)').first().click()
   await pageA2.waitForSelector('.input-pill textarea', { timeout: 15000 })
   await pageA2.waitForTimeout(3000)
