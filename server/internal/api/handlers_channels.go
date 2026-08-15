@@ -775,6 +775,50 @@ func (s *Server) handleSetChannelPermission(w http.ResponseWriter, r *http.Reque
 
 // ---------- Ключи каналов ----------
 
+// handleResetChannelKey — восстановление ключа личного чата/сообщества,
+// когда ключ потерян (все устройства создателя без обёртки, держатель
+// недоступен). Создатель стирает старые обёртки и кладёт новую;
+// участники канала получают событие key.reset и пересинхронизируются.
+func (s *Server) handleResetChannelKey(w http.ResponseWriter, r *http.Request) {
+	channelID := pathID(r, "id")
+	me := userIDFrom(r)
+	c, err := s.Store.GetChannel(channelID)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "канал не найден")
+		return
+	}
+	if c.Kind != "dm" && c.Kind != "community" {
+		writeErr(w, http.StatusForbidden, "восстановление ключа доступно только для личных чатов и сообществ")
+		return
+	}
+	u, _ := s.Store.GetUserByID(me)
+	if c.CreatorID != me && (u == nil || !u.IsServerAdmin) {
+		writeErr(w, http.StatusForbidden, "восстановить ключ может создатель чата")
+		return
+	}
+	if !s.Store.IsMember(channelID, me) {
+		writeErr(w, http.StatusForbidden, "вы не участник канала")
+		return
+	}
+	var req struct {
+		DeviceID   string `json:"device_id"`
+		WrappedKey []byte `json:"wrapped_key"`
+	}
+	if err := readJSON(r, &req); err != nil || req.DeviceID == "" || len(req.WrappedKey) == 0 {
+		writeErr(w, http.StatusBadRequest, "некорректный запрос")
+		return
+	}
+	if err := s.Store.ResetChannelKey(channelID, me, req.DeviceID, req.WrappedKey); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	// Онлайн-участники сбрасывают локальный ключ и получат новый.
+	s.Hub.SendToChannel(channelID, hub.NewEvent("key.reset", map[string]interface{}{
+		"channel_id": channelID,
+	}))
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
 func (s *Server) handleUploadWrappedKey(w http.ResponseWriter, r *http.Request) {
 	channelID := pathID(r, "id")
 	if _, ok := s.requireChannelMember(w, r, channelID); !ok {

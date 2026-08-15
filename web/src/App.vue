@@ -89,6 +89,7 @@ function wireWs() {
     ws.on('member.unbanned', () => void channels.refresh()),
     ws.on('key.needed', (d: any) => void channels.handleKeyNeeded(d)),
     ws.on('key.granted', (d: any) => void channels.handleKeyGranted(d.channel_id)),
+    ws.on('key.reset', (d: any) => void channels.handleKeyReset(d.channel_id)),
   )
 }
 

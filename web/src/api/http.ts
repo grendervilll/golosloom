@@ -196,6 +196,14 @@ export class ApiClient {
   search(q: string): Promise<SearchResult> {
     return this.get('/api/search?q=' + encodeURIComponent(q))
   }
+  // Восстановление ключа личного чата/сообщества (создатель): стирает
+  // старые обёртки (потерянных устройств) и кладёт новую.
+  resetChannelKey(channelId: number, deviceId: string, wrappedKey: string) {
+    return this.post(`/api/channels/${channelId}/keys/reset`, {
+      device_id: deviceId,
+      wrapped_key: wrappedKey,
+    })
+  }
   // Выход из канала / отписка от сообщества.
   leaveChannel(channelId: number) {
     return this.post(`/api/channels/${channelId}/leave`)

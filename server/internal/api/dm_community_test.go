@@ -173,3 +173,38 @@ func TestDMAndCommunity(t *testing.T) {
 		t.Fatalf("владелец отписался: %d", code)
 	}
 }
+
+func TestChannelKeyReset(t *testing.T) {
+	a := newTestApp(t, nil)
+	alice := a.register(t, "ResAlice")
+	bob := a.register(t, "ResBob")
+	dm := mustJSON(t, a, http.MethodPost, "/api/dm", alice.token, map[string]interface{}{"user_id": bob.id})
+	dmID := int64(dm["channel"].(map[string]interface{})["id"].(float64))
+
+	// Устройство создателя (имитируем регистрацию).
+	if code, _ := a.do(t, http.MethodPost, "/api/users/key", alice.token,
+		map[string]interface{}{"device_id": "dev-a", "public_key": b64("pub-a")}); code != http.StatusOK {
+		t.Fatalf("регистрация устройства: %d", code)
+	}
+
+	// Не-создатель не может восстановить ключ.
+	code, _ := a.do(t, http.MethodPost, "/api/channels/"+fmt.Sprint(dmID)+"/keys/reset", bob.token,
+		map[string]interface{}{"device_id": "dev-b", "wrapped_key": b64("w-b")})
+	if code != http.StatusForbidden {
+		t.Fatalf("сброс не-создателем: %d", code)
+	}
+
+	// Создатель восстанавливает ключ (даже если старые обёртки остались
+	// от потерянных устройств).
+	code, body := a.do(t, http.MethodPost, "/api/channels/"+fmt.Sprint(dmID)+"/keys/reset", alice.token,
+		map[string]interface{}{"device_id": "dev-a", "wrapped_key": b64("w-a-new")})
+	if code != http.StatusOK {
+		t.Fatalf("сброс создателем: %d %v", code, body)
+	}
+	// Осталась ровно одна обёртка — новая.
+	var n int
+	_ = a.srv.Store.CountKeyWraps(dmID, &n)
+	if n != 1 {
+		t.Fatalf("обёрток после сброса: %d (ожидали 1)", n)
+	}
+}

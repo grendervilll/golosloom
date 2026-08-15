@@ -40,6 +40,9 @@ export const useChannelsStore = defineStore('channels', {
     keyPollTimer: 0 as number,
     // Хендлер фокуса окна (раздача ключей при возврате на вкладку).
     _focusHandler: null as (() => void) | null,
+    // Каналы, где восстановление ключа уже пробовали (чтобы не долбить
+    // сервер каждые 7 секунд).
+    _keyResetTried: new Set<number>(),
     // Закреплённые чаты/каналы/сообщества в порядке отображения.
     pinned: loadPinned() as number[],
   }),
@@ -337,7 +340,32 @@ export const useChannelsStore = defineStore('channels', {
           }
         }
         const myKey = await storage.loadChannelKey(channelId)
-        if (!myKey) return
+        if (!myKey) {
+          // Ключа нет нигде. Для личных чатов/сообществ создатель может
+          // восстановить его: держатель ключа потерян (устройство умерло),
+          // иначе мы бы уже получили обёртку. Пробуем один раз — сервер
+          // сам решит (ключ есть у другого устройства — вернёт 409).
+          const ch = this.channels.find((c) => c.id === channelId)
+          if (
+            ch &&
+            (ch.kind === 'dm' || ch.kind === 'community') &&
+            ch.creator_id === auth.user?.id &&
+            !this._keyResetTried.has(channelId)
+          ) {
+            this._keyResetTried.add(channelId)
+            try {
+              const fresh = generateChannelKey()
+              const wrapped = await wrapChannelKey(fresh, keys.publicKey)
+              await settings.api.resetChannelKey(channelId, keys.deviceId, bytesToB64(wrapped))
+              await storage.saveChannelKey(channelId, fresh)
+              const chat = useChatStore()
+              await chat.loadHistory(channelId)
+            } catch {
+              /* ключ существует на другом устройстве — раздача идёт штатно */
+            }
+          }
+          return
+        }
         const targets: KeyTarget[] = await settings.api.pendingKeyTargets(channelId)
         for (const target of targets) {
           if (target.user_id === auth.user?.id && target.device_id === keys.deviceId) continue
@@ -422,6 +450,19 @@ export const useChannelsStore = defineStore('channels', {
     },
     async handleKeyGranted(channelId: number) {
       if (channelId === this.currentId) await this.syncKeys(channelId)
+    },
+    // Ключ канала пересоздан (держатель был потерян): сбрасываем локальный
+    // ключ и перечитываем историю — новую обёртку раздаст тот, кто создал.
+    async handleKeyReset(channelId: number) {
+      const storage = await getKeyStorage()
+      await storage.deleteChannelKey(channelId)
+      this._keyResetTried.delete(channelId)
+      const chat = useChatStore()
+      chat.messages.delete(channelId)
+      await this.syncKeys(channelId)
+      if (this.currentId === channelId) {
+        await chat.loadHistory(channelId)
+      }
     },
     async setRole(channelId: number, userId: number, role: string) {
       const settings = useSettingsStore()

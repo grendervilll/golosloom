@@ -7,6 +7,7 @@ export interface KeyStorage {
   init(): Promise<void>
   saveChannelKey(channelId: number, keyBytes: Uint8Array): Promise<void>
   loadChannelKey(channelId: number): Promise<Uint8Array | null>
+  deleteChannelKey(channelId: number): Promise<void>
   // Ключи устройства (identity): сохраняются, чтобы при каждом запуске
   // (особенно в Tauri) не регистрировать новое устройство — иначе ключи
   // личных чатов/сообществ нужно раздавать заново при каждом запуске.
@@ -107,6 +108,19 @@ class IndexedDBStorage implements KeyStorage {
     }
   }
 
+  async deleteChannelKey(channelId: number): Promise<void> {
+    await this.del(STORE, PREFIX + channelId)
+  }
+
+  private del(store: string, key: IDBValidKey): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const tx = this.db!.transaction(store, 'readwrite')
+      tx.objectStore(store).delete(key)
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error)
+    })
+  }
+
   private get(store: string, key: IDBValidKey): Promise<unknown> {
     return new Promise((resolve, reject) => {
       const tx = this.db!.transaction(store, 'readonly')
@@ -124,6 +138,10 @@ class IndexedDBStorage implements KeyStorage {
 
   async rawSet(key: string, value: Uint8Array): Promise<void> {
     await this.put(STORE, key, value)
+  }
+
+  async rawDelete(key: string): Promise<void> {
+    await this.del(STORE, key)
   }
 
   private put(store: string, key: IDBValidKey, value: unknown): Promise<void> {
@@ -176,6 +194,15 @@ class TauriKeychainStorage implements KeyStorage {
     const raw = await this.safeGet(DEVICE)
     if (!raw) return null
     return new TextDecoder().decode(raw)
+  }
+
+  async deleteChannelKey(channelId: number): Promise<void> {
+    try {
+      await window.__TAURI__.core.invoke('secure_delete', { key: PREFIX + channelId })
+    } catch {
+      /* фолбэк ниже */
+    }
+    await (this.idb as any).rawDelete(PREFIX + channelId)
   }
 
   private async ensureIdb() {

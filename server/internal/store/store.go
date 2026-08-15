@@ -1568,6 +1568,29 @@ func (s *Store) GetChannelKey(channelID, userID int64, deviceID string) ([]byte,
 	return wrapped, err
 }
 
+// ResetChannelKey — восстановление ключа канала: стирает ВСЕ обёртки
+// (включая обёртки потерянных устройств) и кладёт новую от создателя.
+func (s *Store) ResetChannelKey(channelID, userID int64, deviceID string, wrappedKey []byte) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM channel_keys WHERE channel_id = ?`, channelID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`INSERT INTO channel_keys (channel_id, user_id, device_id, wrapped_key, updated_at) VALUES (?, ?, ?, ?, ?)`,
+		channelID, userID, deviceID, wrappedKey, now()); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// CountKeyWraps — количество обёрток ключа канала (для тестов и отладки).
+func (s *Store) CountKeyWraps(channelID int64, out *int) error {
+	return s.db.QueryRow(`SELECT COUNT(*) FROM channel_keys WHERE channel_id = ?`, channelID).Scan(out)
+}
+
 // PendingKeyTargets возвращает устройства участников канала,
 // для которых ещё не сохранён обёрнутый ключ канала.
 func (s *Store) PendingKeyTargets(channelID int64) ([]models.Device, error) {
