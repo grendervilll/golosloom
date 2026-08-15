@@ -60,6 +60,12 @@ export const useChannelsStore = defineStore('channels', {
     // Каналы, где восстановление ключа уже пробовали (чтобы не долбить
     // сервер каждые 7 секунд).
     _keyResetTried: new Set<number>(),
+    // Запрос пароля для расшифровки личных сообщений (вход по токену без
+    // пароля: Tauri/веб с сохранённой сессией). Показывается один раз.
+    kekPromptVisible: false as boolean,
+    // Пароль введён, но не подошёл (бэкапы не расшифровались).
+    kekPromptError: '' as string,
+    _kekPromptShown: false as boolean,
     // Закреплённые чаты/каналы/сообщества в порядке отображения.
     pinned: loadPinned() as number[],
   }),
@@ -349,10 +355,59 @@ export const useChannelsStore = defineStore('channels', {
           }
           return k
         }
+        // Вход по токену без пароля и без сохранённого KEK: предлагаем
+        // ввести пароль — иначе парольные бэкапы ключей не расшифровать.
+        if (auth.user && !this._kekPromptShown) {
+          this._kekPromptShown = true
+          this.kekPromptVisible = true
+          this.kekPromptError = ''
+        }
       } catch {
         /* ignore */
       }
       return null
+    },
+    // Ввод пароля из окна «разблокировать личные сообщения»: выводим KEK
+    // и сразу расшифровываем бэкапы всех каналов.
+    async submitKek(password: string): Promise<boolean> {
+      const auth = useAuthStore()
+      if (!auth.user) return false
+      try {
+        const storage = await getKeyStorage()
+        const k = await deriveKek(password, Number(auth.user.id))
+        await storage.saveKek(k)
+        auth.password = password
+        this.kekPromptVisible = false
+        this.kekPromptError = ''
+        // Проверка пароля: расшифровываем первый доступный бэкап.
+        const settings = useSettingsStore()
+        for (const ch of this.channels) {
+          if (!isE2EChannel(ch.kind, !!ch.private) || !ch.is_member) continue
+          let backup: { wrapped_key?: string } | null = null
+          try {
+            backup = await settings.api.getKeyBackup(ch.id)
+          } catch {
+            continue
+          }
+          if (!backup?.wrapped_key) continue
+          try {
+            await unwrapWithKek(k, b64ToBytes(backup.wrapped_key))
+          } catch {
+            this.kekPromptError = 'Неверный пароль — личные сообщения не расшифрованы'
+            this.kekPromptVisible = true
+            return false
+          }
+        }
+        void this.syncAllKeys()
+        return true
+      } catch {
+        this.kekPromptError = 'Не удалось обработать пароль'
+        this.kekPromptVisible = true
+        return false
+      }
+    },
+    dismissKekPrompt() {
+      this.kekPromptVisible = false
     },
     // Парольный бэкап ключа канала (зашифрован ключом из пароля).
     async uploadBackup(channelId: number, key: Uint8Array) {
