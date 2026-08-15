@@ -49,15 +49,26 @@ func (s *Server) hasViewOriginals(role models.Role, channelID int64) bool {
 }
 
 func (s *Server) messageJSON(m models.Message, withHistory bool) map[string]interface{} {
+	// Пустой текст (вложения без текста): отдаём пустую строку, а не null —
+	// иначе клиент расшифрует «null» как бинарный мусор.
+	ct := m.Ciphertext
+	if ct == nil {
+		ct = []byte{}
+	}
+	iv := m.IV
+	if iv == nil {
+		iv = []byte{}
+	}
 	out := map[string]interface{}{
 		"id":         m.ID,
 		"channel_id": m.ChannelID,
 		"sender_id":  m.SenderID,
 		"sender_nick": s.nickOf(m.SenderID),
-		"ciphertext": m.Ciphertext,
-		"iv":         m.IV,
+		"ciphertext": ct,
+		"iv":         iv,
 		"created_at": m.CreatedAt,
 		"deleted":    m.Deleted,
+		"plain":      m.Plain,
 	}
 	if m.EditedAt != nil {
 		out["edited_at"] = m.EditedAt
@@ -109,12 +120,19 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		AttachmentID int64  `json:"attachment_id"`
 		AttachmentIDs []int64 `json:"attachment_ids"`
 		ReplyToID    int64  `json:"reply_to_id"`
+		// Plain — открытое сообщение без E2E (открытые каналы, как в Telegram).
+		Plain bool `json:"plain"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeErr(w, http.StatusBadRequest, "некорректный запрос")
 		return
 	}
-	if len(req.Ciphertext) == 0 || len(req.IV) == 0 {
+	attIDs := req.AttachmentIDs
+	if len(attIDs) == 0 && req.AttachmentID != 0 {
+		attIDs = []int64{req.AttachmentID}
+	}
+	// Пустой текст допустим, если есть вложения (фото/видео/голосовое).
+	if (len(req.Ciphertext) == 0 && len(attIDs) == 0) || (!req.Plain && len(req.IV) == 0) {
 		writeErr(w, http.StatusBadRequest, "пустое сообщение")
 		return
 	}
@@ -132,10 +150,6 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	// Вложения: файлы должны существовать, принадлежать отправителю и каналу,
 	// и ещё не быть привязанными к сообщению.
-	attIDs := req.AttachmentIDs
-	if len(attIDs) == 0 && req.AttachmentID != 0 {
-		attIDs = []int64{req.AttachmentID}
-	}
 	for _, id := range attIDs {
 		f, err := s.Store.GetFile(id)
 		if err != nil {
@@ -147,11 +161,11 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if s.isDuplicateMessage(channelID, userIDFrom(r), req.Ciphertext, req.IV) {
+	if !req.Plain && s.isDuplicateMessage(channelID, userIDFrom(r), req.Ciphertext, req.IV) {
 		writeErr(w, http.StatusConflict, "сообщение уже отправлено")
 		return
 	}
-	m, err := s.Store.CreateMessage(channelID, userIDFrom(r), req.Ciphertext, req.IV, req.ReplyToID)
+	m, err := s.Store.CreateMessage(channelID, userIDFrom(r), req.Ciphertext, req.IV, req.ReplyToID, req.Plain)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -204,12 +218,14 @@ func (s *Server) handleEditMessage(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Ciphertext []byte `json:"ciphertext"`
 		IV         []byte `json:"iv"`
+		// Plain — открытое сообщение без E2E.
+		Plain bool `json:"plain"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeErr(w, http.StatusBadRequest, "некорректный запрос")
 		return
 	}
-	edited, err := s.Store.EditMessage(mid, req.Ciphertext, req.IV)
+	edited, err := s.Store.EditMessage(mid, req.Ciphertext, req.IV, req.Plain)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return

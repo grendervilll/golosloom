@@ -61,16 +61,17 @@ async function recordAndSend(page, mode, ms, text) {
   await register(pageA, 'Ann' + Date.now().toString().slice(-4))
   console.log('A registered (admin)')
   await createChannel(pageA, 'Общий канал')
-  await register(pageB, 'Bob' + Date.now().toString().slice(-4))
+  const nickB = 'Bob' + Date.now().toString().slice(-4)
+  await register(pageB, nickB)
   console.log('B registered')
 
   // ================= ЛИЧНЫЕ СООБЩЕНИЯ =================
   // A ищет B по нику.
   await openBurgerItem(pageA, 'Найти контакт')
   await pageA.waitForSelector('.search-input', { timeout: 3000 })
-  await pageA.fill('.search-input', 'Bob')
+  await pageA.fill('.search-input', nickB)
   await pageA.waitForSelector('.search-row', { timeout: 5000 })
-  const bobRow = pageA.locator('.search-row', { hasText: 'Bob' }).first()
+  const bobRow = pageA.locator('.search-row', { hasText: nickB }).first()
   await bobRow.click()
   // Переключение на DM асинхронное — ждём заголовок личного чата
   // (ник в канале хранится в нижнем регистре).
@@ -164,10 +165,11 @@ async function recordAndSend(page, mode, ms, text) {
   // ================= СООБЩЕСТВА =================
   // Создание сообщества.
   await openBurgerItem(pageA, 'Создать сообщество')
-  await pageA.fill('input[placeholder="Название сообщества"]', 'Секта Енотов')
+  const COMM_NAME = 'Секта Енотов' + Date.now() % 10000
+  await pageA.fill('input[placeholder="Название сообщества"]', COMM_NAME)
   await pageA.getByRole('button', { name: 'Создать', exact: true }).click()
   await pageA.waitForSelector('.readonly-bar', { timeout: 8000 }).catch(() => {})
-  await pageA.waitForSelector('.chat-head h2:has-text("Секта Енотов")', { timeout: 8000 })
+  await pageA.waitForSelector(`.chat-head h2:has-text("${COMM_NAME}")`, { timeout: 8000 })
   ok('сообщество создано и открыто', true)
   await pageA.waitForSelector('.subs-count', { timeout: 5000 })
   const subs1 = await pageA.textContent('.subs-count')
@@ -217,19 +219,19 @@ async function recordAndSend(page, mode, ms, text) {
   ok('сообщение изменено (метка «изменено»)', edited)
 
   // B: сообщества не видно.
-  const bHasCommunity = await pageB.evaluate(() => document.body.innerText.includes('Секта Енотов'))
+  const bHasCommunity = await pageB.evaluate((n) => document.body.innerText.includes(n), COMM_NAME)
   ok('B не видит сообщество до подписки', !bHasCommunity)
 
   // B ищет сообщество по названию и подписывается.
   await openBurgerItem(pageB, 'Найти контакт')
   await pageB.waitForSelector('.search-input', { timeout: 3000 })
-  await pageB.fill('.search-input', 'Секта')
+  await pageB.fill('.search-input', COMM_NAME)
   await pageB.waitForSelector('.search-row', { timeout: 5000 })
-  const commRow = pageB.locator('.search-row', { hasText: 'Секта Енотов' }).first()
+  const commRow = pageB.locator('.search-row', { hasText: COMM_NAME }).first()
   const commId = (await commRow.textContent()).match(/ID (\d+)/)?.[1]
   ok('в результатах поиска виден ID сообщества', !!commId, 'id=' + commId)
   await commRow.click()
-  await pageB.waitForSelector('.chat-head h2:has-text("Секта Енотов")', { timeout: 8000 })
+  await pageB.waitForSelector(`.chat-head h2:has-text("${COMM_NAME}")`, { timeout: 8000 })
   ok('B подписался и открыл сообщество', true)
 
   // B видит контент, но не может писать (readonly).
@@ -249,18 +251,18 @@ async function recordAndSend(page, mode, ms, text) {
   await openBurgerItem(pageB, 'Найти контакт')
   await pageB.fill('.search-input', commId || '3')
   await pageB.waitForTimeout(700)
-  const idRow = await pageB.locator('.search-row', { hasText: 'Секта Енотов' }).count()
+  const idRow = await pageB.locator('.search-row', { hasText: COMM_NAME }).count()
   ok('сообщество находится по ID', idRow > 0)
   await pageB.keyboard.press('Escape')
   await pageB.waitForTimeout(400)
 
   // B отписывается.
-  const commRowB = pageB.locator('.chat-row', { hasText: 'Секта Енотов' }).first()
+  const commRowB = pageB.locator('.chat-row', { hasText: COMM_NAME }).first()
   await commRowB.click({ button: 'right' })
   await pageB.waitForSelector('.row-ctx', { timeout: 3000 })
   await pageB.getByRole('button', { name: 'Отписаться от сообщества' }).click()
   await pageB.waitForTimeout(1000)
-  const bStillSees = await pageB.evaluate(() => document.querySelector('.sidebar')?.innerText.includes('Секта Енотов'))
+  const bStillSees = await pageB.evaluate((n) => document.querySelector('.sidebar')?.innerText.includes(n), COMM_NAME)
   ok('B отписался: сообщества больше нет в меню', !bStillSees)
 
   // Счётчик вернулся к 1.
@@ -270,7 +272,7 @@ async function recordAndSend(page, mode, ms, text) {
   ok('счётчик снова 1 подписчик', (subs3 || '').includes('1 подписчик'), subs3)
 
   // Скрытые ссылки: сам B всё ещё не участник.
-  const notMember = await pageB.locator('.chat-row', { hasText: 'Секта Енотов' }).count()
+  const notMember = await pageB.locator('.chat-row', { hasText: COMM_NAME }).count()
   ok('после отписки сообщество пропало из меню B', notMember === 0)
 
   await browser.close()

@@ -102,6 +102,9 @@ type Message struct {
 	// AttachmentDeleted — все вложения удалены администратором сервера
 	// (файлы стёрты с диска, сообщение и текст остались).
 	AttachmentDeleted bool `json:"attachment_deleted,omitempty"`
+	// Plain — открытое сообщение (без E2E): текст хранится в ciphertext
+	// как UTF-8, iv пустой. Только для открытых каналов (не DM/приватных).
+	Plain bool `json:"plain,omitempty"`
 }
 
 // Attachment — файл, прикреплённый к сообщению. Контент хранится на диске

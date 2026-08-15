@@ -12,7 +12,8 @@ const MD = '# Заголовок\n\n- пункт один\n- [x] сделано\
   pageA.on('pageerror', (e) => console.log('[pageerror A]', e.message))
 
   await register(pageA, 'mdA' + Date.now().toString().slice(-6))
-  await createChannel(pageA, 'MD')
+  const MD_NAME = 'MD' + Date.now() % 10000
+  await createChannel(pageA, MD_NAME)
   await register(pageB, 'mdB' + Date.now().toString().slice(-6))
   console.log('registered')
 
@@ -34,7 +35,7 @@ const MD = '# Заголовок\n\n- пункт один\n- [x] сделано\
   // B (другой пользователь) видит то же форматирование.
   await pageB.reload({ waitUntil: 'load' })
   await pageB.waitForSelector('.chat-row', { timeout: 10000 })
-  await pageB.locator('.chat-row', { hasText: 'MD' }).first().click()
+  await pageB.locator('.chat-row', { hasText: MD_NAME }).first().click()
   await pageB.waitForSelector('.text h1:has-text("Заголовок")', { timeout: 8000, state: 'attached' })
   const htmlB = await pageB.evaluate(() => document.querySelector('.msg:last-of-type')?.innerHTML || '')
   ok('у собеседника тоже h1', htmlB.includes('<h1>Заголовок</h1>'))

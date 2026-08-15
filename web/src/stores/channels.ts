@@ -29,6 +29,13 @@ export interface KeyTarget {
 // Закреплённые чаты: порядок = порядок отображения (localStorage).
 const PINNED_KEY = 'golosloom-pinned'
 
+// Канал с E2E-шифрованием: личные сообщения и приватные каналы.
+// Открытые каналы/сообщества — как в Telegram: сообщения хранятся на
+// сервере открыто и читаются с любого устройства без ключей.
+export function isE2EChannel(kind: string, isPrivate: boolean): boolean {
+  return kind === 'dm' || isPrivate
+}
+
 function loadPinned(): number[] {
   try {
     const raw = localStorage.getItem(PINNED_KEY)
@@ -311,10 +318,13 @@ export const useChannelsStore = defineStore('channels', {
       await this.refresh()
     },
     // Создание ключа канала (создатель) или получение своего обёрнутого ключа.
+    // Только для E2E-каналов: открытые каналы не шифруются (как в Telegram).
     async initChannelKey(channelId: number) {
       const storage = await getKeyStorage()
       const settings = useSettingsStore()
       const keys = await this.ensureDevice()
+      const ch = this.channels.find((c) => c.id === channelId)
+      if (ch && !isE2EChannel(ch.kind, !!ch.private)) return
       const existing = await storage.loadChannelKey(channelId)
       if (existing) return
       const key = generateChannelKey()
@@ -367,6 +377,30 @@ export const useChannelsStore = defineStore('channels', {
         const auth = useAuthStore()
         const keys = await this.ensureDevice()
         const ch = this.channels.find((c) => c.id === channelId)
+        if (ch && !isE2EChannel(ch.kind, !!ch.private)) {
+          // Открытый канал: E2E отключён (как в Telegram) — новый контент
+          // читается с любого устройства без ключей. Старые сообщения из
+          // «E2E-эпохи» расшифровываем своим локальным ключом, если сервер
+          // ещё хранит обёртку для нашего устройства.
+          try {
+            const res = await settings.api.getMyWrappedKey(channelId, keys.deviceId)
+            if (res?.wrapped_key) {
+              const oldKey = await unwrapChannelKey(b64ToBytes(res.wrapped_key), keys.privateKey)
+              const hadKey = await storage.loadChannelKey(channelId)
+              await storage.saveChannelKey(channelId, oldKey)
+              if (!hadKey) {
+                try {
+                  await useChatStore().loadHistory(channelId)
+                } catch {
+                  /* ignore */
+                }
+              }
+            }
+          } catch {
+            /* ignore */
+          }
+          return
+        }
         const isMember = !!auth.user && (ch ? ch.is_member : this.members.some((m) => m.user_id === auth.user?.id))
         let hasServerWrap = false
         if (isMember) {

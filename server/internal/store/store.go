@@ -313,6 +313,9 @@ func (s *Store) migrate() error {
 	_, _ = s.db.Exec(`ALTER TABLE messages ADD COLUMN reply_to INTEGER`)
 	// Миграция: флаг «вложение удалено администратором» (файл стёрт с диска).
 	_, _ = s.db.Exec(`ALTER TABLE messages ADD COLUMN attachment_deleted INTEGER NOT NULL DEFAULT 0`)
+	// Миграция: открытые сообщения без E2E (как в Telegram): текст хранится
+	// в ciphertext как UTF-8, iv пустой. Только для открытых каналов.
+	_, _ = s.db.Exec(`ALTER TABLE messages ADD COLUMN plain INTEGER NOT NULL DEFAULT 0`)
 	// Миграция: файл помечен удалённым администратором (строка остаётся,
 	// чтобы сообщение знало, какие вложения были стёрты).
 	_, _ = s.db.Exec(`ALTER TABLE files ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0`)
@@ -972,13 +975,17 @@ func (s *Store) ChannelPermissions(channelID int64) (map[models.Role]map[models.
 
 // ---------- Messages ----------
 
-func (s *Store) CreateMessage(channelID, senderID int64, ciphertext, iv []byte, replyTo int64) (*models.Message, error) {
+func (s *Store) CreateMessage(channelID, senderID int64, ciphertext, iv []byte, replyTo int64, plain bool) (*models.Message, error) {
 	var r any
 	if replyTo != 0 {
 		r = replyTo
 	}
-	res, err := s.db.Exec(`INSERT INTO messages (channel_id, sender_id, ciphertext, iv, created_at, reply_to)
-		VALUES (?, ?, ?, ?, ?, ?)`, channelID, senderID, ciphertext, iv, now(), r)
+	pl := 0
+	if plain {
+		pl = 1
+	}
+	res, err := s.db.Exec(`INSERT INTO messages (channel_id, sender_id, ciphertext, iv, created_at, reply_to, plain)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`, channelID, senderID, ciphertext, iv, now(), r, pl)
 	if err != nil {
 		return nil, err
 	}
@@ -987,7 +994,7 @@ func (s *Store) CreateMessage(channelID, senderID int64, ciphertext, iv []byte, 
 }
 
 func (s *Store) GetMessage(id int64) (*models.Message, error) {
-	row := s.db.QueryRow(`SELECT id, channel_id, sender_id, ciphertext, iv, history, deleted, deleted_by, deleted_at, created_at, edited_at, reply_to, attachment_deleted
+	row := s.db.QueryRow(`SELECT id, channel_id, sender_id, ciphertext, iv, history, deleted, deleted_by, deleted_at, created_at, edited_at, reply_to, attachment_deleted, plain
 		FROM messages WHERE id = ?`, id)
 	m, err := scanMessage(row)
 	if err != nil {
@@ -1012,8 +1019,10 @@ func scanMessage(row *sql.Row) (*models.Message, error) {
 	var deletedAt, createdAt, editedAt sql.NullString
 	var replyTo sql.NullInt64
 	var attachmentDeleted int
+	var plain int
 	err := row.Scan(&m.ID, &m.ChannelID, &m.SenderID, &m.Ciphertext, &m.IV, &history,
-		&deleted, &deletedBy, &deletedAt, &createdAt, &editedAt, &replyTo, &attachmentDeleted)
+		&deleted, &deletedBy, &deletedAt, &createdAt, &editedAt, &replyTo, &attachmentDeleted, &plain)
+	m.Plain = plain == 1
 	if err == sql.ErrNoRows {
 		return nil, ErrNotFound
 	}
@@ -1041,7 +1050,7 @@ func scanMessage(row *sql.Row) (*models.Message, error) {
 
 func (s *Store) ListMessages(channelID, beforeID int64, limit int) ([]models.Message, error) {
 	rows, err := s.db.Query(`
-		SELECT id, channel_id, sender_id, ciphertext, iv, history, deleted, deleted_by, deleted_at, created_at, edited_at, reply_to, attachment_deleted
+		SELECT id, channel_id, sender_id, ciphertext, iv, history, deleted, deleted_by, deleted_at, created_at, edited_at, reply_to, attachment_deleted, plain
 		FROM messages WHERE channel_id = ? AND (? = 0 OR id < ?)
 		ORDER BY id DESC LIMIT ?`, channelID, beforeID, beforeID, limit)
 	if err != nil {
@@ -1057,10 +1066,12 @@ func (s *Store) ListMessages(channelID, beforeID int64, limit int) ([]models.Mes
 		var deletedAt, createdAt, editedAt sql.NullString
 		var replyTo sql.NullInt64
 		var attachmentDeleted int
+		var plain int
 		if err := rows.Scan(&m.ID, &m.ChannelID, &m.SenderID, &m.Ciphertext, &m.IV, &history,
-			&deleted, &deletedBy, &deletedAt, &createdAt, &editedAt, &replyTo, &attachmentDeleted); err != nil {
+			&deleted, &deletedBy, &deletedAt, &createdAt, &editedAt, &replyTo, &attachmentDeleted, &plain); err != nil {
 			return nil, err
 		}
+		m.Plain = plain == 1
 		m.Deleted = deleted == 1
 		m.AttachmentDeleted = attachmentDeleted == 1
 		if deletedBy.Valid {
@@ -1107,7 +1118,7 @@ func (s *Store) ListMessages(channelID, beforeID int64, limit int) ([]models.Mes
 }
 
 // EditMessage сохраняет новую версию и добавляет предыдущую в историю.
-func (s *Store) EditMessage(id int64, ciphertext, iv []byte) (*models.Message, error) {
+func (s *Store) EditMessage(id int64, ciphertext, iv []byte, plain bool) (*models.Message, error) {
 	m, err := s.GetMessage(id)
 	if err != nil {
 		return nil, err
@@ -1118,8 +1129,12 @@ func (s *Store) EditMessage(id int64, ciphertext, iv []byte) (*models.Message, e
 	if err != nil {
 		return nil, err
 	}
-	_, err = s.db.Exec(`UPDATE messages SET ciphertext = ?, iv = ?, history = ?, edited_at = ? WHERE id = ?`,
-		ciphertext, iv, string(hj), now(), id)
+	pl := 0
+	if plain {
+		pl = 1
+	}
+	_, err = s.db.Exec(`UPDATE messages SET ciphertext = ?, iv = ?, history = ?, edited_at = ?, plain = ? WHERE id = ?`,
+		ciphertext, iv, string(hj), now(), pl, id)
 	if err != nil {
 		return nil, err
 	}

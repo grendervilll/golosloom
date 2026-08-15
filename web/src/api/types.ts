@@ -66,6 +66,8 @@ export interface Message {
   attachments?: Attachment[]
   attachment_deleted?: boolean
   reply_to?: number | null
+  // Открытое сообщение (без E2E): текст лежит в ciphertext как UTF-8.
+  plain?: boolean
 }
 
 export interface AdminFile {

@@ -300,18 +300,21 @@ export class ApiClient {
     iv: Uint8Array,
     attachmentIds: number[],
     replyToId = 0,
+    plain = false,
   ) {
     return this.post(`/api/channels/${channelId}/messages`, {
       ciphertext: Array.from(ciphertext),
       iv: Array.from(iv),
       attachment_ids: attachmentIds,
       reply_to_id: replyToId || undefined,
+      plain,
     })
   }
-  editMessage(channelId: number, messageId: number, ciphertext: Uint8Array, iv: Uint8Array) {
+  editMessage(channelId: number, messageId: number, ciphertext: Uint8Array, iv: Uint8Array, plain = false) {
     return this.patch(`/api/channels/${channelId}/messages/${messageId}`, {
       ciphertext: Array.from(ciphertext),
       iv: Array.from(iv),
+      plain,
     })
   }
   deleteMessage(channelId: number, messageId: number) {

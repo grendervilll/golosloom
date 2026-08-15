@@ -2,7 +2,7 @@
 import { defineStore } from 'pinia'
 import { useSettingsStore } from './settings'
 import { useAuthStore } from './auth'
-import { useChannelsStore } from './channels'
+import { useChannelsStore, isE2EChannel } from './channels'
 import { sounds } from '../audio/sounds'
 import type { Attachment, Message } from '../api/types'
 import { getKeyStorage } from '../crypto/storage'
@@ -218,9 +218,22 @@ export const useChatStore = defineStore('chat', {
     ): Promise<boolean> {
       const settings = useSettingsStore()
       const storage = await getKeyStorage()
-      const key = await storage.loadChannelKey(channelId)
-      if (!key) return false
-      const { ciphertext, iv } = await encryptMessage(key, text)
+      const ch = useChannelsStore().channels.find((c) => c.id === channelId)
+      const plain = ch ? !isE2EChannel(ch.kind, !!ch.private) : false
+      let ciphertext: Uint8Array
+      let iv: Uint8Array
+      let key: Uint8Array | null = null
+      if (plain) {
+        // Открытый канал (как в Telegram): текст хранится на сервере открыто.
+        ciphertext = new TextEncoder().encode(text)
+        iv = new Uint8Array(0)
+      } else {
+        key = await storage.loadChannelKey(channelId)
+        if (!key) return false
+        const enc = await encryptMessage(key, text)
+        ciphertext = enc.ciphertext
+        iv = enc.iv
+      }
       const auth = useAuthStore()
       const tempId = -Date.now()
       const pending: ChatMessage = {
@@ -241,7 +254,7 @@ export const useChatStore = defineStore('chat', {
       this.messages.set(channelId, [...list, pending])
       try {
         const attIds = attachments.map((a) => a.id).filter((id): id is number => !!id)
-        const res: Message = await settings.api.sendMessage(channelId, ciphertext, iv, attIds, replyToId)
+        const res: Message = await settings.api.sendMessage(channelId, ciphertext, iv, attIds, replyToId, plain)
         const real = await this.toChatMessage(res, channelId, key, auth.user?.id || 0)
         // Локальный предпросмотр больше не нужен — освобождаем blob.
         for (const a of attachments) {
@@ -274,10 +287,21 @@ export const useChatStore = defineStore('chat', {
     async edit(channelId: number, messageId: number, text: string) {
       const settings = useSettingsStore()
       const storage = await getKeyStorage()
-      const key = await storage.loadChannelKey(channelId)
-      if (!key) return
-      const { ciphertext, iv } = await encryptMessage(key, text)
-      await settings.api.editMessage(channelId, messageId, ciphertext, iv)
+      const ch = useChannelsStore().channels.find((c) => c.id === channelId)
+      const plain = ch ? !isE2EChannel(ch.kind, !!ch.private) : false
+      let ciphertext: Uint8Array
+      let iv: Uint8Array
+      if (plain) {
+        ciphertext = new TextEncoder().encode(text)
+        iv = new Uint8Array(0)
+      } else {
+        const key = await storage.loadChannelKey(channelId)
+        if (!key) return
+        const enc = await encryptMessage(key, text)
+        ciphertext = enc.ciphertext
+        iv = enc.iv
+      }
+      await settings.api.editMessage(channelId, messageId, ciphertext, iv, plain)
       this.editingId = 0
       this.setDraft(channelId, '')
     },
@@ -425,6 +449,11 @@ export const useChatStore = defineStore('chat', {
       }
       // Удалённые сообщения скрываются у простых пользователей.
       if (m.deleted && !this.canSeeDeleted()) {
+        return base
+      }
+      if (m.plain) {
+        // Открытое сообщение (как в Telegram): текст хранится как UTF-8.
+        base.text = m.ciphertext ? new TextDecoder().decode(b64ToBytes(m.ciphertext)) : ''
         return base
       }
       try {
