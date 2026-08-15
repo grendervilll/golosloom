@@ -441,7 +441,8 @@ async function removeAvatar() {
             </div>
             <div class="row-bottom">
               <span class="chat-preview" :class="{ muted: !preview(ch.id) }">
-                <span v-if="ch.kind === 'community'" class="subs-count">{{ subsLabel(ch.member_count || 0) }}</span>
+                <span v-if="chat.draftOf(ch.id)" class="draft-preview" title="Черновик: {{ chat.draftOf(ch.id) }}">✏️ {{ chat.draftOf(ch.id) }}</span>
+                <template v-else-if="ch.kind === 'community'"><span class="subs-count">{{ subsLabel(ch.member_count || 0) }}</span></template>
                 <template v-else>{{ preview(ch.id) || '…' }}</template>
               </span>
               <span v-if="chat.unreadCount(ch.id)" class="badge">{{ chat.unreadCount(ch.id) }}</span>
@@ -487,7 +488,8 @@ async function removeAvatar() {
             </div>
             <div class="row-bottom">
               <span class="chat-preview" :class="{ muted: !preview(ch.id) }">
-                <span v-if="ch.kind === 'community'" class="subs-count">{{ subsLabel(ch.member_count || 0) }}</span>
+                <span v-if="chat.draftOf(ch.id)" class="draft-preview" title="Черновик: {{ chat.draftOf(ch.id) }}">✏️ {{ chat.draftOf(ch.id) }}</span>
+                <template v-else-if="ch.kind === 'community'"><span class="subs-count">{{ subsLabel(ch.member_count || 0) }}</span></template>
                 <template v-else>{{ preview(ch.id) || '…' }}</template>
               </span>
               <span v-if="chat.unreadCount(ch.id)" class="badge">{{ chat.unreadCount(ch.id) }}</span>
@@ -524,7 +526,8 @@ async function removeAvatar() {
           </div>
           <div class="row-bottom">
             <span class="chat-preview" :class="{ muted: !preview(ch.id) }">
-              <span v-if="ch.kind === 'community'" class="subs-count">{{ subsLabel(ch.member_count || 0) }}</span>
+              <span v-if="chat.draftOf(ch.id)" class="draft-preview" title="Черновик: {{ chat.draftOf(ch.id) }}">✏️ {{ chat.draftOf(ch.id) }}</span>
+              <template v-else-if="ch.kind === 'community'"><span class="subs-count">{{ subsLabel(ch.member_count || 0) }}</span></template>
               <template v-else>{{ preview(ch.id) || '…' }}</template>
             </span>
             <span v-if="chat.unreadCount(ch.id)" class="badge">{{ chat.unreadCount(ch.id) }}</span>
@@ -908,6 +911,18 @@ async function removeAvatar() {
   font-weight: 600;
 }
 .chat-row.active .subs-count {
+  color: #fff;
+}
+/* Индикатор черновика под названием чата. */
+.draft-preview {
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-row.active .draft-preview {
   color: #fff;
 }
 /* Контекстное меню канала (закрепить/открепить, отписка). */

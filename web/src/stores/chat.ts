@@ -35,10 +35,32 @@ export interface ChatMessage {
   replyToId?: number
 }
 
+const DRAFTS_KEY = 'golosloom-drafts'
+
+function loadDrafts(): Map<number, string> {
+  try {
+    const raw = localStorage.getItem(DRAFTS_KEY)
+    if (raw) {
+      const obj = JSON.parse(raw)
+      const map = new Map<number, string>()
+      for (const [k, v] of Object.entries(obj)) {
+        if (v) map.set(Number(k), String(v))
+      }
+      return map
+    }
+  } catch {
+    /* ignore */
+  }
+  return new Map()
+}
+
 export const useChatStore = defineStore('chat', {
   state: () => ({
     messages: new Map<number, ChatMessage[]>(),
-    draft: '' as string,
+    // Черновики сообщений по каналам: написал, но не отправил — при
+    // переключении чата текст остаётся в своём канале. Сохраняются
+    // в localStorage и переживают перезагрузку.
+    drafts: loadDrafts(),
     editingId: 0 as number,
     // Непрочитанные сообщения по каналам (локальный счётчик, сбрасывается
     // при открытии канала).
@@ -59,6 +81,8 @@ export const useChatStore = defineStore('chat', {
   }),
   getters: {
     unreadCount: (state) => (channelId: number) => state.unread.get(channelId) || 0,
+    // Черновик канала (текст, написанный, но не отправленный).
+    draftOf: (state) => (channelId: number) => state.drafts.get(channelId) || '',
     // Список печатающих в канале (актуальные, без себя): user_id → nick.
     typingUsers: (state) => {
       return (channelId: number): { userId: number; nick: string }[] => {
@@ -144,6 +168,16 @@ export const useChatStore = defineStore('chat', {
         this.searchBusy = false
       }
       return matches
+    },
+    // Сохранение черновика канала (с персистом в localStorage).
+    setDraft(channelId: number, text: string) {
+      if (text) this.drafts.set(channelId, text)
+      else this.drafts.delete(channelId)
+      try {
+        localStorage.setItem(DRAFTS_KEY, JSON.stringify(Object.fromEntries(this.drafts)))
+      } catch {
+        /* ignore */
+      }
     },
     // Сообщить серверу, что печатаем (не чаще раза в 2.5 сек).
     typing(channelId: number) {
@@ -245,7 +279,7 @@ export const useChatStore = defineStore('chat', {
       const { ciphertext, iv } = await encryptMessage(key, text)
       await settings.api.editMessage(channelId, messageId, ciphertext, iv)
       this.editingId = 0
-      this.draft = ''
+      this.setDraft(channelId, '')
     },
     // Системное сообщение от клиента (не из истории сервера).
     pushSystem(channelId: number, text: string) {

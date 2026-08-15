@@ -35,6 +35,11 @@ const menuEl = ref<HTMLElement | null>(null)
 const mediaMenuEl = ref<HTMLElement | null>(null)
 
 const messages = computed(() => chat.messages.get(channels.currentId) || [])
+// Черновик текущего канала: при переключении чата текст остаётся в своём.
+const draft = computed({
+  get: () => chat.draftOf(channels.currentId),
+  set: (v: string) => chat.setDraft(channels.currentId, v),
+})
 const channelName = computed(() => channels.current?.name || '')
 const canModerate = computed(() => chat.canSeeDeleted())
 // Сообщества readonly: писать может только владелец.
@@ -236,7 +241,7 @@ onUnmounted(() => {
 })
 // При изменении текста (ввод, начало редактирования, очистка) — подгоняем высоту.
 watch(
-  () => chat.draft,
+  () => draft.value,
   () => void nextTick(autoResize),
 )
 // При переключении канала — считаем его прочитанным.
@@ -250,11 +255,11 @@ watch(
 
 // Отправка «печатает…» при вводе текста (троттлинг — в сторе).
 function onTyping() {
-  if (chat.draft.trim()) chat.typing(channels.currentId)
+  if (draft.value.trim()) chat.typing(channels.currentId)
 }
 
 async function send() {
-  const text = chat.draft.trim()
+  const text = draft.value.trim()
   if (!text && !chat.replyTo) return
   // Длинное сообщение отклоняется сервером (лимит MAX_MESSAGE_LEN) —
   // предупреждаем заранее и показываем понятную ошибку.
@@ -279,7 +284,7 @@ async function send() {
     toast.error(e?.message || 'Не удалось отправить сообщение')
     return
   }
-  chat.draft = ''
+  draft.value = ''
   chat.replyTo = null
 }
 
@@ -337,7 +342,7 @@ function pastedPreview(item: PastedFile): string {
 async function sendPasted() {
   if (!channels.currentId || pasted.value.length === 0) return
   const replyToId = chat.replyTo?.channelId === channels.currentId ? chat.replyTo.messageId : 0
-  const text = chat.draft.trim()
+  const text = draft.value.trim()
   const max = settings.serverConfig?.max_message_len || 2000
   if (new TextEncoder().encode(text).length > max) {
     toast.error(`Сообщение слишком длинное: максимум ${max} символов`)
@@ -380,7 +385,7 @@ async function sendPasted() {
         break
       }
     }
-    chat.draft = ''
+    draft.value = ''
     chat.replyTo = null
     chat.editingId = 0
     clearPasted()
@@ -474,7 +479,7 @@ function onWindowDrop(e: DragEvent) {
 
 // Отправка сообщения с вложением (текст может быть пустым).
 async function sendWithAttachment(att: Attachment, localUrl?: string) {
-  const text = chat.draft.trim()
+  const text = draft.value.trim()
   const max = settings.serverConfig?.max_message_len || 2000
   if (new TextEncoder().encode(text).length > max) {
     toast.error(`Сообщение слишком длинное: максимум ${max} символов`)
@@ -491,7 +496,7 @@ async function sendWithAttachment(att: Attachment, localUrl?: string) {
     toast.error(e?.message || 'Не удалось отправить сообщение')
     return
   }
-  chat.draft = ''
+  draft.value = ''
   chat.editingId = 0
   chat.replyTo = null
 }
@@ -695,9 +700,9 @@ watch(
 
 function insertEmoji(e: string) {
   const el = inputEl.value
-  const start = el?.selectionStart ?? chat.draft.length
+  const start = el?.selectionStart ?? draft.value.length
   const end = el?.selectionEnd ?? start
-  chat.draft = chat.draft.slice(0, start) + e + chat.draft.slice(end)
+  draft.value = draft.value.slice(0, start) + e + draft.value.slice(end)
   void nextTick(() => {
     el?.focus()
     el?.setSelectionRange(start + e.length, start + e.length)
@@ -715,7 +720,7 @@ async function sendGif(url: string) {
 function startEdit(msg: ChatMessage) {
   if (msg.senderId !== auth.user?.id) return
   chat.editingId = msg.id
-  chat.draft = msg.text
+  draft.value = msg.text
   inputEl.value?.focus()
 }
 
@@ -997,7 +1002,7 @@ function onKeydown(e: KeyboardEvent) {
       <div class="input-pill">
         <input ref="fileInput" type="file" class="hidden-input" @change="onPickFile" />
         <textarea
-          v-model="chat.draft"
+          v-model="draft"
           ref="inputEl"
           rows="1"
           :placeholder="chat.editingId ? 'Редактирование сообщения...' : 'Сообщение в чат...'"
@@ -1005,7 +1010,7 @@ function onKeydown(e: KeyboardEvent) {
           @keydown="onKeydown"
           @paste="onPaste"
         ></textarea>
-        <button v-if="chat.editingId" class="icon-btn edit-cancel" title="Отменить редактирование" @click="chat.editingId = 0; chat.draft = ''">
+        <button v-if="chat.editingId" class="icon-btn edit-cancel" title="Отменить редактирование" @click="chat.editingId = 0; draft = ''">
           <svg class="ico" viewBox="0 0 384 512"><path d="M342.6 150.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L192 210.7 86.6 105.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3L146.7 256 41.4 361.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0L192 301.3 297.4 406.6c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L237.3 256 342.6 150.6z" /></svg>
         </button>
         <button class="icon-btn clip-btn" title="Прикрепить файл (до 100 МБ)" @click="fileInput?.click()">
@@ -1018,7 +1023,7 @@ function onKeydown(e: KeyboardEvent) {
           class="send-btn"
           :class="{ rec: !!rec, 'mode-mic': !rec && sendMode === 'mic', 'mode-cam': !rec && sendMode === 'cam' }"
           :title="sendTitle"
-          :disabled="sendMode === 'send' && !chat.draft.trim()"
+          :disabled="sendMode === 'send' && !draft.trim()"
           @click="onSendClick"
           @contextmenu.prevent="cycleSendMode"
         >
