@@ -27,6 +27,17 @@ export interface Channel {
   created_at: string
   is_member: boolean
   role?: Role
+  // kind: channel | dm (личный чат) | community (сообщество).
+  kind?: 'channel' | 'dm' | 'community'
+  // readonly — сообщества: пишет только владелец.
+  readonly?: boolean
+  // member_count — участники канала / подписчики сообщества.
+  member_count?: number
+}
+
+export interface SearchResult {
+  users: { id: number; nick: string; avatar?: string | null; is_server_admin?: boolean }[]
+  communities: { id: number; name: string; member_count: number; creator_id: number }[]
 }
 
 export interface ChannelMember {

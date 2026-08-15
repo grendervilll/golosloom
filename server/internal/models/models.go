@@ -62,6 +62,10 @@ type Channel struct {
 	CreatorID int64      `json:"creator_id"`
 	CreatedAt time.Time  `json:"created_at"`
 	DeletedAt *time.Time `json:"-"`
+	// Kind: channel | dm | community.
+	Kind string `json:"kind"`
+	// Readonly — только для чтения (сообщества: пишет только владелец).
+	Readonly bool `json:"readonly"`
 }
 
 type ChannelMember struct {

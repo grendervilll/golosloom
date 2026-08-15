@@ -2,7 +2,7 @@
 // поиск, аватар + название + время + последнее сообщение + счётчик.
 // Меню (админка, настройки, выход) — за кнопкой-бургером.
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useChannelsStore } from '../stores/channels'
 import { useChatStore } from '../stores/chat'
@@ -24,6 +24,8 @@ const emit = defineEmits<{
   (e: 'toggle-chat'): void
   (e: 'logout'): void
   (e: 'open-admin'): void
+  (e: 'open-search'): void
+  (e: 'open-community'): void
   (e: 'close'): void
 }>()
 
@@ -181,6 +183,68 @@ async function declineInvite(id: number) {
   await channels.declineInvite(id)
 }
 
+// --- Закрепление чатов и контекстное меню канала ---
+const rowMenu = ref<{ x: number; y: number; id: number } | null>(null)
+const rowMenuEl = ref<HTMLElement | null>(null)
+// Индекс перетаскиваемого закреплённого чата.
+const dragFrom = ref(-1)
+
+function openRowMenu(e: MouseEvent, id: number) {
+  e.preventDefault()
+  rowMenu.value = { x: e.clientX, y: e.clientY, id }
+  void nextTick(() => {
+    const el = rowMenuEl.value
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    const pad = 8
+    rowMenu.value = {
+      ...rowMenu.value!,
+      x: Math.max(pad, Math.min(rowMenu.value!.x, window.innerWidth - r.width - pad)),
+      y: Math.max(pad, Math.min(rowMenu.value!.y, window.innerHeight - r.height - pad)),
+    }
+  })
+}
+
+function togglePin(id: number) {
+  if (channels.pinned.includes(id)) channels.unpinChannel(id)
+  else channels.pinChannel(id)
+  rowMenu.value = null
+}
+
+function rowChannel(id: number) {
+  return channels.channels.find((c) => c.id === id)
+}
+
+async function unsubscribeRow(id: number) {
+  rowMenu.value = null
+  const c = rowChannel(id)
+  if (!confirm(`Отписаться от сообщества «${c?.name || ''}»?`)) return
+  try {
+    await channels.unsubscribeCommunity(id)
+    toast.info('Вы отписались от сообщества')
+  } catch (e: any) {
+    toast.error(String(e?.message || e).slice(0, 120))
+  }
+}
+
+// Число подписчиков: точно до 1 млн, дальше 1.1М, 1.2М…
+function subs(n: number): string {
+  if (n >= 1_000_000) {
+    const m = n / 1_000_000
+    return (m >= 10 ? Math.round(m) : Math.round(m * 10) / 10) + 'М'
+  }
+  return String(n)
+}
+function subsLabel(n: number): string {
+  const s = subs(n)
+  if (n >= 1_000_000) return s + ' подписчиков'
+  const last = n % 10
+  const last2 = n % 100
+  if (last === 1 && last2 !== 11) return s + ' подписчик'
+  if (last >= 2 && last <= 4 && (last2 < 12 || last2 > 14)) return s + ' подписчика'
+  return s + ' подписчиков'
+}
+
 // Смена/удаление своего аватара (ограничение сервера — 5 МБ).
 function changeAvatarClick() {
   avatarInput.value?.click()
@@ -252,6 +316,16 @@ async function removeAvatar() {
         <button v-if="auth.isServerAdmin" @click="emit('open-admin')">
           <svg class="ico" viewBox="0 0 512 512"><path d="M256 0c4.6 0 9.2 1 13.4 2.9L457.7 82.8c22 9.3 38.4 31 38.3 57.2c-.5 99.2-41.3 280.7-213.6 363.2c-16.7 8-36.1 8-52.8 0C57.3 420.7 16.5 239.2 16 140c-.1-26.2 16.3-47.9 38.3-57.2L242.7 2.9C246.8 1 251.4 0 256 0zm0 66.8l0 378.1C394 378 431.1 230.1 432 141.4L256 66.8s0 0 0 0z" /></svg>
           Админ панель сервера
+        </button>
+        <button @click="emit('open-search')">
+          <svg class="ico" viewBox="0 0 512 512"><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352a144 144 0 1 0 0-288 144 144 0 1 0 0 288z" /></svg>
+          Найти контакт
+          <span class="chevron-right">›</span>
+        </button>
+        <button @click="emit('open-community')">
+          <svg class="ico" viewBox="0 0 640 512"><path d="M72 88a56 56 0 1 1 112 0A56 56 0 1 1 72 88zM64 245.7C54 256.9 48 271.8 48 288s6 31.1 16 42.3V416c0 35.3 28.7 64 64 64h64c35.3 0 64-28.7 64-64v-85.7c10-11.1 16-26.1 16-42.3s-6-31.1-16-42.3V176c0-35.3-28.7-64-64-64H128c-35.3 0-64 28.7-64 64v69.7zM352 32c64 0 116 52 116 116v104c0 6.4 5.2 11.6 11.6 11.6H528c8.8 0 16 7.2 16 16v48c0 8.8-7.2 16-16 16h-48.4c-6.4 0-11.6 5.2-11.6 11.6V496c0 8.8-7.2 16-16 16h-48c-8.8 0-16-7.2-16-16V356c0-6.4-5.2-11.6-11.6-11.6H368c-6.4 0-11.6-5.2-11.6-11.6V288c0-8.8 7.2-16 16-16h48.4c6.4 0 11.6-5.2 11.6-11.6V148c0-20.4-16.5-36.9-36.9-36.9c-3.4 0-6.9.5-10.2 1.4V52.8C407.7 34.5 386 32 367.3 32H352z" /></svg>
+          Создать сообщество
+          <span class="chevron-right">›</span>
         </button>
         <button @click="openSettings">
           <svg class="ico" viewBox="0 0 512 512"><path d="M495.9 166.6c3.2 8.7 .5 18.4-6.4 24.6l-43.3 39.4c1.1 8.3 1.7 16.8 1.7 25.4s-.6 17.1-1.7 25.4l43.3 39.4c6.9 6.2 9.6 15.9 6.4 24.6c-4.4 11.9-9.7 23.3-15.8 34.3l-4.7 8.1c-6.6 11-14 21.4-22.1 31.2c-5.9 7.2-15.7 9.6-24.5 6.8l-55.7-17.7c-13.4 10.3-28.2 18.9-44 25.4l-12.5 57.1c-2 9.1-9.3 15.9-18.6 15.9l-84.1 0c-9.3 0-16.6-6.8-18.6-15.9l-12.5-57.1c-15.8-6.6-30.6-15.2-44-25.4l-55.7 17.7c-8.8 2.8-18.6.4-24.5-6.8c-8.1-9.8-15.5-20.2-22.1-31.2l-4.7-8.1c-6.1-11-11.4-22.4-15.8-34.3c-3.2-8.7-.5-18.4 6.4-24.6l43.3-39.4C92.6 273.1 92 264.6 92 256s.6-17.1 1.7-25.4l-43.3-39.4c-6.9-6.2-9.6-15.9-6.4-24.6c4.4-11.9 9.7-23.3 15.8-34.3l4.7-8.1c6.6-11 14-21.4 22.1-31.2c5.9-7.2 15.7-9.6 24.5-6.8l55.7-17.7c13.4-10.3 28.2-18.9 44-25.4l12.5-57.1c2-9.1 9.3-15.9 18.6-15.9l84.1 0c9.3 0 16.6 6.8 18.6 15.9l12.5 57.1c15.8 6.6 30.6 15.2 44 25.4l55.7-17.7c8.8-2.8 18.6-.4 24.5 6.8c8.1 9.8 15.5 20.2 22.1 31.2l4.7 8.1c6.1 11 11.4 22.4 15.8 34.3zM256 336a80 80 0 1 0 0-160 80 80 0 1 0 0 160z" /></svg>
@@ -338,12 +412,97 @@ async function removeAvatar() {
     </div>
 
     <div class="chat-list">
+      <!-- При поиске — отфильтрованный список без группировки. -->
+      <template v-if="search.trim()">
+        <div
+          v-for="ch in filteredChannels"
+          :key="ch.id"
+          class="chat-row"
+          :class="{ active: ch.id === channels.currentId }"
+          @click="select(ch.id)"
+          @contextmenu.prevent="openRowMenu($event, ch.id)"
+        >
+          <Avatar
+            class="chat-avatar"
+            :user-id="ch.id"
+            :nick="ch.name"
+            :avatar="null"
+            :size="48"
+            :color="avatarColor(ch.id)"
+          />
+          <div class="row-details">
+            <div class="row-top">
+              <span class="chat-name">
+                <span v-if="ch.kind === 'community'" class="kind-ico" title="Сообщество">📣</span>
+                <span v-else-if="ch.kind === 'dm'" class="kind-ico" title="Личный чат">💬</span>
+                {{ ch.name }}
+              </span>
+              <span class="chat-time">{{ lastTime(ch.id) }}</span>
+            </div>
+            <div class="row-bottom">
+              <span class="chat-preview" :class="{ muted: !preview(ch.id) }">
+                <span v-if="ch.kind === 'community'" class="subs-count">{{ subsLabel(ch.member_count || 0) }}</span>
+                <template v-else>{{ preview(ch.id) || '…' }}</template>
+              </span>
+              <span v-if="chat.unreadCount(ch.id)" class="badge">{{ chat.unreadCount(ch.id) }}</span>
+            </div>
+          </div>
+        </div>
+        <p v-if="filteredChannels.length === 0" class="muted empty">Ничего не найдено</p>
+      </template>
+
+      <template v-else>
+      <!-- Закреплённые чаты: перетаскиванием меняется порядок. -->
+      <template v-if="channels.pinnedChannels.length">
+        <p class="section-title">Закреплённые</p>
+        <div
+          v-for="(ch, idx) in channels.pinnedChannels"
+          :key="ch.id"
+          class="chat-row pinned-row"
+          :class="{ active: ch.id === channels.currentId }"
+          draggable="true"
+          @dragstart="dragFrom = idx"
+          @dragover.prevent
+          @drop="channels.movePinned(dragFrom, idx)"
+          @click="select(ch.id)"
+          @contextmenu.prevent="openRowMenu($event, ch.id)"
+        >
+          <Avatar
+            class="chat-avatar"
+            :user-id="ch.id"
+            :nick="ch.name"
+            :avatar="null"
+            :size="48"
+            :color="avatarColor(ch.id)"
+          />
+          <div class="row-details">
+            <div class="row-top">
+              <span class="chat-name">
+                <span v-if="ch.kind === 'community'" class="kind-ico" title="Сообщество">📣</span>
+                <span v-else-if="ch.kind === 'dm'" class="kind-ico" title="Личный чат">💬</span>
+                <svg v-if="ch.private && ch.kind !== 'dm'" class="lock-ico" viewBox="0 0 448 512"><path d="M144 144v48H304V144c0-44.2-35.8-80-80-80s-80 35.8-80 80zM80 192V144C80 64.5 144.5 0 224 0s144 64.5 144 144v48h16c35.3 0 64 28.7 64 64V448c0 35.3-28.7 64-64 64H64c-35.3 0-64-28.7-64-64V256c0-35.3 28.7-64 64-64H80z" /></svg>
+                {{ ch.name }}
+              </span>
+              <span class="chat-time">{{ lastTime(ch.id) }}</span>
+            </div>
+            <div class="row-bottom">
+              <span class="chat-preview" :class="{ muted: !preview(ch.id) }">
+                <span v-if="ch.kind === 'community'" class="subs-count">{{ subsLabel(ch.member_count || 0) }}</span>
+                <template v-else>{{ preview(ch.id) || '…' }}</template>
+              </span>
+              <span v-if="chat.unreadCount(ch.id)" class="badge">{{ chat.unreadCount(ch.id) }}</span>
+            </div>
+          </div>
+        </div>
+      </template>
+
       <div
-        v-for="ch in filteredChannels"
+        v-for="ch in channels.unpinnedChannels"
         :key="ch.id"
         class="chat-row"
         :class="{ active: ch.id === channels.currentId }"
         @click="select(ch.id)"
+        @contextmenu.prevent="openRowMenu($event, ch.id)"
       >
         <Avatar
           class="chat-avatar"
@@ -356,18 +515,43 @@ async function removeAvatar() {
         <div class="row-details">
           <div class="row-top">
             <span class="chat-name">
-              <svg v-if="ch.private" class="lock-ico" viewBox="0 0 448 512"><path d="M144 144v48H304V144c0-44.2-35.8-80-80-80s-80 35.8-80 80zM80 192V144C80 64.5 144.5 0 224 0s144 64.5 144 144v48h16c35.3 0 64 28.7 64 64V448c0 35.3-28.7 64-64 64H64c-35.3 0-64-28.7-64-64V256c0-35.3 28.7-64 64-64H80z" /></svg>
+              <span v-if="ch.kind === 'community'" class="kind-ico" title="Сообщество">📣</span>
+              <span v-else-if="ch.kind === 'dm'" class="kind-ico" title="Личный чат">💬</span>
+              <svg v-if="ch.private && ch.kind !== 'dm'" class="lock-ico" viewBox="0 0 448 512"><path d="M144 144v48H304V144c0-44.2-35.8-80-80-80s-80 35.8-80 80zM80 192V144C80 64.5 144.5 0 224 0s144 64.5 144 144v48h16c35.3 0 64 28.7 64 64V448c0 35.3-28.7 64-64 64H64c-35.3 0-64-28.7-64-64V256c0-35.3 28.7-64 64-64H80z" /></svg>
               {{ ch.name }}
             </span>
             <span class="chat-time">{{ lastTime(ch.id) }}</span>
           </div>
           <div class="row-bottom">
-            <span class="chat-preview" :class="{ muted: !preview(ch.id) }">{{ preview(ch.id) || '…' }}</span>
+            <span class="chat-preview" :class="{ muted: !preview(ch.id) }">
+              <span v-if="ch.kind === 'community'" class="subs-count">{{ subsLabel(ch.member_count || 0) }}</span>
+              <template v-else>{{ preview(ch.id) || '…' }}</template>
+            </span>
             <span v-if="chat.unreadCount(ch.id)" class="badge">{{ chat.unreadCount(ch.id) }}</span>
           </div>
         </div>
       </div>
-      <p v-if="filteredChannels.length === 0" class="muted empty">Чатов пока нет</p>
+      <p v-if="channels.channels.length === 0" class="muted empty">Чатов пока нет</p>
+      </template>
+
+      <!-- Контекстное меню канала: закрепить/открепить, отписка. -->
+      <Teleport to="body">
+        <div
+          v-if="rowMenu"
+          ref="rowMenuEl"
+          class="row-ctx"
+          :style="{ left: rowMenu.x + 'px', top: rowMenu.y + 'px' }"
+          @pointerdown.stop
+          @click.stop
+        >
+          <button @click="togglePin(rowMenu.id)">
+            {{ channels.pinned.includes(rowMenu.id) ? 'Открепить' : 'Закрепить' }}
+          </button>
+          <button v-if="rowChannel(rowMenu.id)?.kind === 'community'" class="danger" @click="unsubscribeRow(rowMenu.id)">
+            Отписаться от сообщества
+          </button>
+        </div>
+      </Teleport>
     </div>
 
     <div v-if="channels.invites.length" class="invites">
@@ -712,6 +896,54 @@ async function removeAvatar() {
 .empty {
   padding: 16px;
   text-align: center;
+}
+/* Иконки вида чата и счётчик подписчиков сообщества. */
+.kind-ico {
+  font-size: 13px;
+  flex-shrink: 0;
+}
+.subs-count {
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+}
+.chat-row.active .subs-count {
+  color: #fff;
+}
+/* Контекстное меню канала (закрепить/открепить, отписка). */
+.row-ctx {
+  position: fixed;
+  z-index: 400;
+  pointer-events: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 200px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+.row-ctx button {
+  text-align: left;
+  background: transparent;
+  border-radius: 6px;
+  font-size: 13px;
+  padding: 8px 10px;
+}
+.row-ctx button:hover {
+  background: var(--bg3);
+}
+.row-ctx button.danger {
+  color: var(--red);
+}
+/* Строка закреплённого чата перетаскивается. */
+.chat-row[draggable="true"] {
+  cursor: grab;
+}
+.chat-row[draggable="true"]:active {
+  cursor: grabbing;
 }
 
 .invites {

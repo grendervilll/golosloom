@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	"golosloom/server/internal/auth"
@@ -13,6 +14,26 @@ import (
 type createChannelReq struct {
 	Name    string `json:"name"`
 	Private bool   `json:"private"`
+}
+
+// canPostInChannel — можно ли писать/грузить файлы/звонить в канале.
+// В сообществах (readonly) пишет только владелец (и админ сервера).
+func (s *Server) canPostInChannel(w http.ResponseWriter, r *http.Request, c *models.Channel, role models.Role) bool {
+	if c.Kind == "community" && !c.Readonly {
+		return true
+	}
+	if c.Kind == "community" && c.Readonly {
+		u, _ := s.Store.GetUserByID(userIDFrom(r))
+		if u != nil && u.IsServerAdmin {
+			return true
+		}
+		if userIDFrom(r) == c.CreatorID || role == models.RoleChannelAdmin {
+			return true
+		}
+		writeErr(w, http.StatusForbidden, "сообщество доступно только для чтения")
+		return false
+	}
+	return true
 }
 
 func (s *Server) handleCreateChannel(w http.ResponseWriter, r *http.Request) {
@@ -50,6 +71,120 @@ func (s *Server) handleCreateChannel(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+
+// handleCreateDM — личный чат с пользователем: находит существующий
+// или создаёт новый (приватный, kind=dm, оба — участники).
+func (s *Server) handleCreateDM(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		UserID int64 `json:"user_id"`
+	}
+	if err := readJSON(r, &req); err != nil || req.UserID <= 0 {
+		writeErr(w, http.StatusBadRequest, "укажите user_id")
+		return
+	}
+	me := userIDFrom(r)
+	if req.UserID == me {
+		writeErr(w, http.StatusBadRequest, "нельзя начать чат с собой")
+		return
+	}
+	other, err := s.Store.GetUserByID(req.UserID)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "пользователь не найден")
+		return
+	}
+	if c, err := s.Store.FindDM(me, req.UserID); err == nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{"channel": c, "created": false})
+		return
+	}
+	meUser, _ := s.Store.GetUserByID(me)
+	name := meUser.Nick + " и " + other.Nick
+	c, err := s.Store.CreateChannelFull(name, true, "dm", false, me)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	_ = s.Store.AddMember(c.ID, me, models.RoleChannelAdmin)
+	_ = s.Store.AddMember(c.ID, req.UserID, models.RoleChannelAdmin)
+	writeJSON(w, http.StatusCreated, map[string]interface{}{"channel": c, "created": true})
+}
+
+// handleCreateCommunity — новое сообщество: владелец может публиковать,
+// подписчики — только читать. Названия могут повторяться, id уникален.
+func (s *Server) handleCreateCommunity(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, "некорректный запрос")
+		return
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" || len([]rune(name)) > 100 {
+		writeErr(w, http.StatusBadRequest, "укажите название сообщества (до 100 символов)")
+		return
+	}
+	me := userIDFrom(r)
+	c, err := s.Store.CreateChannelFull(name, false, "community", true, me)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	// Владелец — админ сообщества (может публиковать).
+	if err := s.Store.AddMember(c.ID, me, models.RoleChannelAdmin); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]interface{}{"channel": c})
+}
+
+// handleSearch — поиск людей и сообществ по нику/названию или id.
+func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	if q == "" {
+		writeJSON(w, http.StatusOK, map[string]interface{}{"users": []interface{}{}, "communities": []interface{}{}})
+		return
+	}
+	users, _ := s.Store.SearchUsers(q, 10)
+	communities, _ := s.Store.SearchCommunities(q, 10)
+	uOut := make([]map[string]interface{}, 0, len(users))
+	for _, u := range users {
+		uOut = append(uOut, map[string]interface{}{
+			"id": u.ID, "nick": u.Nick,
+			"avatar": u.AvatarAt, "is_server_admin": u.IsServerAdmin,
+		})
+	}
+	counts, _ := s.Store.ChannelMemberCounts()
+	cOut := make([]map[string]interface{}, 0, len(communities))
+	for _, c := range communities {
+		cOut = append(cOut, map[string]interface{}{
+			"id": c.ID, "name": c.Name, "kind": c.Kind,
+			"member_count": counts[c.ID], "creator_id": c.CreatorID,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"users": uOut, "communities": cOut})
+}
+
+// handleLeaveChannel — выход из канала (отписка от сообщества).
+func (s *Server) handleLeaveChannel(w http.ResponseWriter, r *http.Request) {
+	id := pathID(r, "id")
+	me := userIDFrom(r)
+	c, err := s.Store.GetChannel(id)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "канал не найден")
+		return
+	}
+	// Владелец сообщества не может отписаться (он его создал).
+	if c.Kind == "community" && c.CreatorID == me {
+		writeErr(w, http.StatusForbidden, "владелец сообщества не может отписаться")
+		return
+	}
+	if err := s.Store.RemoveMember(id, me); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
 func (s *Server) handleListChannels(w http.ResponseWriter, r *http.Request) {
 	var channels []models.Channel
 	var err error
@@ -64,16 +199,21 @@ func (s *Server) handleListChannels(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	// Добавляем флаг is_member и роль для текущего пользователя.
+	// Счётчики участников/подписчиков (для сообществ — число подписчиков).
+	counts, _ := s.Store.ChannelMemberCounts()
+	// Добавляем флаг is_member, роль и счётчик участников.
 	out := make([]map[string]interface{}, 0, len(channels))
 	for _, c := range channels {
 		item := map[string]interface{}{
-			"id":         c.ID,
-			"name":       c.Name,
-			"private":    c.Private,
-			"creator_id": c.CreatorID,
-			"created_at": c.CreatedAt,
-			"is_member":  false,
+			"id":           c.ID,
+			"name":         c.Name,
+			"private":      c.Private,
+			"creator_id":   c.CreatorID,
+			"created_at":   c.CreatedAt,
+			"kind":         c.Kind,
+			"readonly":     c.Readonly,
+			"member_count": counts[c.ID],
+			"is_member":    false,
 		}
 		if m, err := s.Store.GetMember(c.ID, userIDFrom(r)); err == nil && !m.Banned {
 			item["is_member"] = true
@@ -115,6 +255,8 @@ func (s *Server) handleGetChannel(w http.ResponseWriter, r *http.Request) {
 		"private":    c.Private,
 		"creator_id": c.CreatorID,
 		"created_at": c.CreatedAt,
+		"kind":       c.Kind,
+		"readonly":   c.Readonly,
 		"is_member":  member,
 		"role":       role,
 	})
@@ -170,7 +312,7 @@ func (s *Server) handleJoinChannel(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "канал не найден")
 		return
 	}
-	if c.Private {
+	if c.Private && c.Kind != "community" {
 		writeErr(w, http.StatusForbidden, "приватный канал — вход только по приглашению")
 		return
 	}

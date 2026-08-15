@@ -34,6 +34,12 @@ func (s *Server) handleCreateCall(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			return
 		}
+		// В сообществах звонить может только владелец (readonly-контент).
+		if c, err := s.Store.GetChannel(channelID); err == nil {
+			if !s.canPostInChannel(w, r, c, role) {
+				return
+			}
+		}
 		_ = role
 	}
 	if len(req.TargetIDs) == 0 {

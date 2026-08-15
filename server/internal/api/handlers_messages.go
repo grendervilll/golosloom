@@ -88,6 +88,14 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	c, err := s.Store.GetChannel(channelID)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "канал не найден")
+		return
+	}
+	if !s.canPostInChannel(w, r, c, role) {
+		return
+	}
 	if !s.can(w, role, channelID, models.PermSendMessage) {
 		return
 	}
@@ -167,6 +175,14 @@ func (s *Server) handleEditMessage(w http.ResponseWriter, r *http.Request) {
 	mid := pathID(r, "mid")
 	role, ok := s.requireChannelMember(w, r, channelID)
 	if !ok {
+		return
+	}
+	c, err := s.Store.GetChannel(channelID)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "канал не найден")
+		return
+	}
+	if !s.canPostInChannel(w, r, c, role) {
 		return
 	}
 	if !s.can(w, role, channelID, models.PermSendMessage) {

@@ -1,6 +1,7 @@
 // HTTP-клиент к Go-серверу.
 // Базовый адрес сервера хранится в настройках (вводится при первом запуске
 // в Tauri; в вебе подставляется автоматически из адресной строки).
+import type { Attachment, SearchResult } from './types'
 
 export interface HttpError {
   status: number
@@ -181,7 +182,23 @@ export class ApiClient {
 
   // --- Каналы ---
   createChannel(name: string, isPrivate: boolean) {
-    return this.post('/api/channels', { name, private: isPrivate })
+    return this.post('/api/channels', { name, isPrivate })
+  }
+  // Личный чат с пользователем: находит существующий или создаёт новый.
+  createDM(userId: number) {
+    return this.post('/api/dm', { user_id: userId })
+  }
+  // Создание сообщества (владелец публикует, подписчики читают).
+  createCommunity(name: string) {
+    return this.post('/api/communities', { name })
+  }
+  // Поиск людей и сообществ по нику/названию или id.
+  search(q: string): Promise<SearchResult> {
+    return this.get('/api/search?q=' + encodeURIComponent(q))
+  }
+  // Выход из канала / отписка от сообщества.
+  leaveChannel(channelId: number) {
+    return this.post(`/api/channels/${channelId}/leave`)
   }
   listChannels() {
     return this.get('/api/channels')

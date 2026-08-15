@@ -46,6 +46,14 @@ func (s *Server) handleFileUpload(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusForbidden, "вы не участник канала")
 		return
 	}
+	// В сообществах грузить файлы может только владелец.
+	if c, err := s.Store.GetChannel(channelID); err == nil {
+		if m, err := s.Store.GetMember(channelID, userID); err == nil {
+			if !s.canPostInChannel(w, r, c, m.Role) {
+				return
+			}
+		}
+	}
 	// Жёсткий лимит размера: не даёт загрузить больше MAX_FILE_SIZE.
 	r.Body = http.MaxBytesReader(w, r.Body, s.Cfg.MaxFileSize)
 	if err := r.ParseMultipartForm(32 << 20); err != nil {

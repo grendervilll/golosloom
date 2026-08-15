@@ -37,6 +37,8 @@ const mediaMenuEl = ref<HTMLElement | null>(null)
 const messages = computed(() => chat.messages.get(channels.currentId) || [])
 const channelName = computed(() => channels.current?.name || '')
 const canModerate = computed(() => chat.canSeeDeleted())
+// Сообщества readonly: писать может только владелец.
+const readonlyChat = computed(() => !channels.canPost)
 // Приглашение на регистрацию — только админ сервера или админ канала.
 const canCreateRegInvite = computed(
   () => auth.isServerAdmin || channels.currentRole === 'channel_admin',
@@ -167,6 +169,41 @@ async function scrollBottom() {
   if (listEl.value) listEl.value.scrollTop = listEl.value.scrollHeight
 }
 
+// --- Кнопка спуска к последним сообщениям ---
+const showScrollBtn = ref(false)
+function onScrollList() {
+  const el = listEl.value
+  if (!el) return
+  showScrollBtn.value = el.scrollHeight - el.scrollTop - el.clientHeight > 200
+}
+function scrollToBottomBtn() {
+  const el = listEl.value
+  if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+}
+
+// --- Разделители дат: одна дата на день ---
+function dayKey(t: string): string {
+  const d = new Date(t)
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+}
+function dateChip(m: ChatMessage, i: number): boolean {
+  if (i === 0) return true
+  return dayKey(m.createdAt) !== dayKey(messages.value[i - 1].createdAt)
+}
+function dateLabel(t: string): string {
+  const d = new Date(t)
+  const now = new Date()
+  const same = (a: Date, b: Date) =>
+    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
+  if (same(d, now)) return 'Сегодня'
+  const y = new Date(now)
+  y.setDate(now.getDate() - 1)
+  if (same(d, y)) return 'Вчера'
+  const opts: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'long' }
+  if (d.getFullYear() !== now.getFullYear()) opts.year = 'numeric'
+  return d.toLocaleDateString('ru-RU', opts)
+}
+
 // Авторасширение поля ввода: растёт до 13 строк, дальше — прокрутка.
 const MAX_INPUT_HEIGHT = 276
 function autoResize() {
@@ -268,6 +305,7 @@ const pastedUploading = computed(() => pasted.value.filter((p) => p.uploading).l
 const pastedOk = computed(() => pasted.value.filter((p) => p.uploadedId).length)
 
 function onPaste(e: ClipboardEvent) {
+  if (readonlyChat.value) return
   const files = Array.from(e.clipboardData?.files || [])
   if (files.length === 0) return
   // Только не-текст: текст вставляется обычным образом.
@@ -416,6 +454,7 @@ function onDrop(e: DragEvent) {
   e.preventDefault()
   dragDepth = 0
   dragging.value = false
+  if (readonlyChat.value) return
   const files = Array.from(e.dataTransfer?.files || [])
   if (files.length === 0 || !channels.currentId) return
   // Как вставка из буфера: файлы копятся в области предпросмотра,
@@ -893,27 +932,41 @@ function onKeydown(e: KeyboardEvent) {
       >
         <svg class="ico" viewBox="0 0 512 512"><path d="M48 64C21.5 64 0 85.5 0 112c0 15.1 7.1 29.3 19.2 38.4L236.8 313.6c11.4 8.5 27 8.5 38.4 0L492.8 150.4c12.1-9.1 19.2-23.3 19.2-38.4c0-26.5-21.5-48-48-48L48 64zM0 176L0 384c0 35.3 28.7 64 64 64l384 0c35.3 0 64-28.7 64-64l0-208L294.4 339.2c-22.8 17.1-54 17.1-76.8 0L0 176z" /></svg>
       </button>
-      <button v-if="!calls.inCall" class="icon-btn" title="Позвонить участникам канала" @click="emit('open-call')">
+      <button v-if="!calls.inCall && !readonlyChat" class="icon-btn" title="Позвонить участникам канала" @click="emit('open-call')">
         <svg class="ico" viewBox="0 0 512 512"><path d="M164.9 24.6c-7.7-18.6-28-28.5-47.4-23.2l-88 24C12.1 30.2 0 46 0 64C0 311.4 200.6 512 448 512c18 0 33.8-12.1 38.6-29.5l24-88c5.3-19.4-4.6-39.7-23.2-47.4l-96-40c-16.3-6.8-35.2-2.1-46.3 11.6L304.7 368C234.3 334.7 177.3 277.7 144 207.3L193.3 167c13.7-11.2 18.4-30 11.6-46.3l-40-96z" /></svg>
       </button>
     </div>
     <!-- Плеер голосового сообщения: вверху рабочей зоны канала. -->
     <AudioPlayer />
-    <div ref="listEl" class="chat-list">
-      <MessageItem
-        v-for="m in messages"
-        :key="m.id"
-        :msg="m"
-        :my-id="auth.user?.id || 0"
-        :can-moderate="canModerate"
-        :highlight="m.id === highlightId"
-        @contextmenu="(e) => openMenu(e, m)"
-        @reply="setReply(m)"
-        @jump="scrollToMessage"
-      />
+    <div ref="listEl" class="chat-list" @scroll="onScrollList">
+      <template v-for="(m, i) in messages" :key="m.id">
+        <div v-if="dateChip(m, i)" class="date-chip">{{ dateLabel(m.createdAt) }}</div>
+        <MessageItem
+          :msg="m"
+          :my-id="auth.user?.id || 0"
+          :can-moderate="canModerate"
+          :highlight="m.id === highlightId"
+          @contextmenu="(e) => openMenu(e, m)"
+          @reply="setReply(m)"
+          @jump="scrollToMessage"
+        />
+      </template>
       <p v-if="messages.length === 0" class="muted empty">Сообщений пока нет</p>
+      <!-- Кнопка спуска к последним сообщениям. -->
+      <button
+        v-if="showScrollBtn"
+        class="scroll-down"
+        title="К последним сообщениям"
+        @click="scrollToBottomBtn"
+      >
+        <svg class="ico" viewBox="0 0 384 512"><path d="M169.4 470.6c12.5 12.5 32.8 12.5 45.3 0l160-160c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L224 370.8 224 64c0-17.7-14.3-32-32-32s-32 14.3-32 32l0 306.7L54.6 265.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3l160 160z" /></svg>
+      </button>
     </div>
-    <div class="chat-input">
+    <!-- Сообщество readonly: только чтение, поле ввода скрыто. -->
+    <div v-if="readonlyChat" class="readonly-bar">
+      🔒 Сообщество доступно только для чтения — писать может владелец
+    </div>
+    <div v-else class="chat-input">
       <!-- Панель ответа на сообщение. -->
       <div v-if="replyPreview" class="reply-bar">
         <span class="reply-ico">↩</span>
@@ -1391,6 +1444,60 @@ function onKeydown(e: KeyboardEvent) {
 .empty {
   text-align: center;
   margin-top: 40px;
+}
+/* Разделитель дат в чате: маленький попап по центру. */
+.date-chip {
+  align-self: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  margin: 6px 0 2px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+/* Кнопка спуска к последним сообщениям: круглая, при наведении
+   плавно расширяется на 40px. */
+.scroll-down {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  z-index: 20;
+  transition: width 0.2s ease, height 0.2s ease, border-radius 0.2s ease;
+  overflow: hidden;
+}
+.scroll-down .ico {
+  width: 16px;
+  height: 16px;
+  fill: #fff;
+  flex-shrink: 0;
+}
+.scroll-down:hover {
+  width: 80px;
+  height: 80px;
+  border-radius: 40px;
+  transition: width 0.2s ease, height 0.2s ease, border-radius 0.2s ease;
+}
+/* Полоса «только чтение» вместо поля ввода в сообществе. */
+.readonly-bar {
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-dim);
+  font-size: 13px;
+  text-align: center;
 }
 .chat-input {
   padding: 8px 12px;

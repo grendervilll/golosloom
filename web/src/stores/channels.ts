@@ -1,4 +1,5 @@
 // Каналы: список, создание, приглашения, участники, права, ключи каналов.
+// Плюс: личные чаты (dm), сообщества (community), закрепление чатов.
 import { defineStore } from 'pinia'
 import { useSettingsStore } from './settings'
 import { toast } from 'vue-sonner'
@@ -15,6 +16,19 @@ export interface KeyTarget {
   public_key: string
 }
 
+// Закреплённые чаты: порядок = порядок отображения (localStorage).
+const PINNED_KEY = 'golosloom-pinned'
+
+function loadPinned(): number[] {
+  try {
+    const raw = localStorage.getItem(PINNED_KEY)
+    if (raw) return JSON.parse(raw)
+  } catch {
+    /* ignore */
+  }
+  return []
+}
+
 export const useChannelsStore = defineStore('channels', {
   state: () => ({
     channels: [] as Channel[],
@@ -24,6 +38,8 @@ export const useChannelsStore = defineStore('channels', {
     invites: [] as Invite[],
     deviceKeys: null as ReturnType<typeof generateDeviceKeys> | null,
     keyPollTimer: 0 as number,
+    // Закреплённые чаты/каналы/сообщества в порядке отображения.
+    pinned: loadPinned() as number[],
   }),
   getters: {
     current(): Channel | undefined {
@@ -35,8 +51,56 @@ export const useChannelsStore = defineStore('channels', {
       if (auth.isServerAdmin) return 'server_admin'
       return c?.role || 'user'
     },
+    // Можно ли писать в текущем канале (сообщества readonly для подписчиков).
+    canPost(): boolean {
+      const c = this.current
+      if (!c) return true
+      if (c.kind === 'community' && c.readonly) {
+        const auth = useAuthStore()
+        if (auth.isServerAdmin) return true
+        if (this.currentRole === 'channel_admin') return true
+        return c.creator_id === auth.user?.id
+      }
+      return true
+    },
+    // Видимые закреплённые чаты (в порядке закрепления).
+    pinnedChannels(): Channel[] {
+      const map = new Map(this.channels.map((c) => [c.id, c]))
+      return this.pinned.map((id) => map.get(id)).filter((c): c is Channel => !!c)
+    },
+    // Остальные (незакреплённые) чаты.
+    unpinnedChannels(): Channel[] {
+      const pinnedSet = new Set(this.pinned)
+      return this.channels.filter((c) => !pinnedSet.has(c.id))
+    },
   },
   actions: {
+    // --- Закрепление ---
+    pinChannel(channelId: number) {
+      if (this.pinned.includes(channelId)) return
+      this.pinned.push(channelId)
+      this.persistPinned()
+    },
+    unpinChannel(channelId: number) {
+      this.pinned = this.pinned.filter((id) => id !== channelId)
+      this.persistPinned()
+    },
+    // Перемещение закреплённого чата: from → to (индексы в списке закреплённых).
+    movePinned(from: number, to: number) {
+      if (from < 0 || to < 0 || from >= this.pinned.length || to >= this.pinned.length) return
+      const arr = [...this.pinned]
+      const [id] = arr.splice(from, 1)
+      arr.splice(to, 0, id)
+      this.pinned = arr
+      this.persistPinned()
+    },
+    persistPinned() {
+      try {
+        localStorage.setItem(PINNED_KEY, JSON.stringify(this.pinned))
+      } catch {
+        /* ignore */
+      }
+    },
     ensureDevice(): ReturnType<typeof generateDeviceKeys> {
       if (!this.deviceKeys) {
         this.deviceKeys = generateDeviceKeys()
@@ -103,6 +167,50 @@ export const useChannelsStore = defineStore('channels', {
       auth.ws.send('channel.join', { channel_id: channelId })
       await this.refresh()
       await this.openChannel(channelId)
+    },
+    // Личный чат с пользователем (создаёт при первом обращении).
+    async openDM(userId: number) {
+      const settings = useSettingsStore()
+      const res = await settings.api.createDM(userId)
+      const ch = res.channel as Channel
+      await this.refresh()
+      if (res.created) {
+        // Новый личный чат: инициатор создаёт ключ канала.
+        this.currentId = ch.id
+        await this.initChannelKey(ch.id)
+      }
+      await this.enterChannel(ch.id)
+      return ch
+    },
+    // Создание сообщества: владелец публикует, подписчики читают.
+    async createCommunity(name: string): Promise<Channel> {
+      const settings = useSettingsStore()
+      const res = await settings.api.createCommunity(name)
+      const ch = res.channel as Channel
+      await this.refresh()
+      this.currentId = ch.id
+      await this.initChannelKey(ch.id)
+      await this.openChannel(ch.id)
+      return ch
+    },
+    // Подписка на сообщество (найдено по названию/id).
+    async subscribeCommunity(channelId: number) {
+      const settings = useSettingsStore()
+      await settings.api.joinChannel(channelId)
+      await this.refresh()
+      await this.enterChannel(channelId)
+    },
+    // Отписка от сообщества.
+    async unsubscribeCommunity(channelId: number) {
+      const settings = useSettingsStore()
+      const chat = useChatStore()
+      const calls = useCallStore()
+      await settings.api.leaveChannel(channelId)
+      if (this.currentId === channelId) this.currentId = 0
+      chat.messages.delete(channelId)
+      calls.endAllInChannel(channelId)
+      this.unpinChannel(channelId)
+      await this.refresh()
     },
     // Открытие канала: вступление в публичный канал при необходимости,
     // загрузка участников, истории, синхронизация ключей.

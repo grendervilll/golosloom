@@ -24,6 +24,8 @@ import UpdateModal from '../components/UpdateModal.vue'
 import MobileTabBar from '../components/MobileTabBar.vue'
 import CallBar from '../components/CallBar.vue'
 import AdminFilesPanel from '../components/AdminFilesPanel.vue'
+import SearchModal from '../components/SearchModal.vue'
+import CreateCommunityModal from '../components/CreateCommunityModal.vue'
 import { initPush } from '../utils/push'
 
 const router = useRouter()
@@ -35,6 +37,8 @@ const settings = useSettingsStore()
 
 const showAdmin = ref(false)
 const showFilesAdmin = ref(false)
+const showSearch = ref(false)
+const showCommunity = ref(false)
 const showInvite = ref(false)
 const showRegInvite = ref(false)
 const showCallPicker = ref(false)
@@ -165,6 +169,8 @@ function onTabChat() {
       @toggle-chat="toggleChat"
       @logout="logout"
       @open-admin="showAdmin = true"
+      @open-search="showSearch = true"
+      @open-community="showCommunity = true"
     />
 
     <div class="center-col">
@@ -232,6 +238,8 @@ function onTabChat() {
       @close="showFilesAdmin = false"
       @jump-message="onJumpMessage"
     />
+    <SearchModal v-if="showSearch" @close="showSearch = false" />
+    <CreateCommunityModal v-if="showCommunity" @close="showCommunity = false" />
     <InviteModal v-if="showInvite" @close="showInvite = false" />
     <RegistrationInviteModal v-if="showRegInvite" :channel-id="channels.currentId" @close="showRegInvite = false" />
     <CallModal v-if="showCallPicker" @close="showCallPicker = false" />

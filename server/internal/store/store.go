@@ -181,7 +181,9 @@ CREATE TABLE IF NOT EXISTS channels (
 	private INTEGER NOT NULL DEFAULT 0,
 	creator_id INTEGER NOT NULL REFERENCES users(id),
 	created_at TEXT NOT NULL,
-	deleted_at TEXT
+	deleted_at TEXT,
+	kind TEXT NOT NULL DEFAULT 'channel',
+	readonly INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS channel_members (
 	channel_id INTEGER NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
@@ -316,6 +318,9 @@ func (s *Store) migrate() error {
 	_, _ = s.db.Exec(`ALTER TABLE files ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0`)
 	// Миграция: версия токенов пользователя (разлогин везде при смене пароля).
 	_, _ = s.db.Exec(`ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0`)
+	// Миграция: личные сообщения и сообщества (kind + readonly).
+	_, _ = s.db.Exec(`ALTER TABLE channels ADD COLUMN kind TEXT NOT NULL DEFAULT 'channel'`)
+	_, _ = s.db.Exec(`ALTER TABLE channels ADD COLUMN readonly INTEGER NOT NULL DEFAULT 0`)
 	return nil
 }
 
@@ -607,12 +612,21 @@ func (s *Store) UserDevices(userID int64) ([]models.Device, error) {
 // ---------- Channels ----------
 
 func (s *Store) CreateChannel(name string, private bool, creatorID int64) (*models.Channel, error) {
-	var priv int
+	return s.CreateChannelFull(name, private, "channel", false, creatorID)
+}
+
+// CreateChannelFull создаёт канал любого вида: channel (обычный),
+// dm (личный), community (сообщество, readonly — только для чтения).
+func (s *Store) CreateChannelFull(name string, private bool, kind string, readonly bool, creatorID int64) (*models.Channel, error) {
+	var priv, ro int
 	if private {
 		priv = 1
 	}
-	res, err := s.db.Exec(`INSERT INTO channels (name, private, creator_id, created_at) VALUES (?, ?, ?, ?)`,
-		name, priv, creatorID, now())
+	if readonly {
+		ro = 1
+	}
+	res, err := s.db.Exec(`INSERT INTO channels (name, private, creator_id, created_at, kind, readonly) VALUES (?, ?, ?, ?, ?, ?)`,
+		name, priv, creatorID, now(), kind, ro)
 	if err != nil {
 		return nil, err
 	}
@@ -622,11 +636,11 @@ func (s *Store) CreateChannel(name string, private bool, creatorID int64) (*mode
 
 func (s *Store) GetChannel(id int64) (*models.Channel, error) {
 	var c models.Channel
-	var priv int
+	var priv, ro int
 	var deletedAt sql.NullString
 	var createdAt string
-	err := s.db.QueryRow(`SELECT id, name, private, creator_id, created_at, deleted_at FROM channels WHERE id = ?`, id).
-		Scan(&c.ID, &c.Name, &priv, &c.CreatorID, &createdAt, &deletedAt)
+	err := s.db.QueryRow(`SELECT id, name, private, creator_id, created_at, deleted_at, kind, readonly FROM channels WHERE id = ?`, id).
+		Scan(&c.ID, &c.Name, &priv, &c.CreatorID, &createdAt, &deletedAt, &c.Kind, &ro)
 	if err == sql.ErrNoRows {
 		return nil, ErrNotFound
 	}
@@ -634,6 +648,7 @@ func (s *Store) GetChannel(id int64) (*models.Channel, error) {
 		return nil, err
 	}
 	c.Private = priv == 1
+	c.Readonly = ro == 1
 	c.DeletedAt = timeOrNil(deletedAt)
 	if t, err := parseTime(createdAt); err == nil {
 		c.CreatedAt = t
@@ -647,11 +662,13 @@ func (s *Store) GetChannel(id int64) (*models.Channel, error) {
 // ListChannelsForUser возвращает каналы, видимые пользователю:
 // публичные (не удалённые) + приватные, где он состоит (принял приглашение).
 func (s *Store) ListChannelsForUser(userID int64) ([]models.Channel, error) {
+	// Публичные обычные каналы видны всем; приватные, личные (dm) и
+	// сообщества (community) — только их участникам/подписчикам.
 	rows, err := s.db.Query(`
-		SELECT c.id, c.name, c.private, c.creator_id, c.created_at
+		SELECT c.id, c.name, c.private, c.creator_id, c.created_at, c.kind, c.readonly
 		FROM channels c
 		WHERE c.deleted_at IS NULL AND (
-			c.private = 0 OR EXISTS (
+			(c.kind = 'channel' AND c.private = 0) OR EXISTS (
 				SELECT 1 FROM channel_members m
 				WHERE m.channel_id = c.id AND m.user_id = ?
 			)
@@ -665,7 +682,7 @@ func (s *Store) ListChannelsForUser(userID int64) ([]models.Channel, error) {
 }
 
 func (s *Store) ListAllChannels() ([]models.Channel, error) {
-	rows, err := s.db.Query(`SELECT id, name, private, creator_id, created_at FROM channels WHERE deleted_at IS NULL ORDER BY id`)
+	rows, err := s.db.Query(`SELECT id, name, private, creator_id, created_at, kind, readonly FROM channels WHERE deleted_at IS NULL ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -677,12 +694,13 @@ func scanChannels(rows *sql.Rows) ([]models.Channel, error) {
 	var out []models.Channel
 	for rows.Next() {
 		var c models.Channel
-		var priv int
+		var priv, ro int
 		var createdAt string
-		if err := rows.Scan(&c.ID, &c.Name, &priv, &c.CreatorID, &createdAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.Name, &priv, &c.CreatorID, &createdAt, &c.Kind, &ro); err != nil {
 			return nil, err
 		}
 		c.Private = priv == 1
+		c.Readonly = ro == 1
 		if t, err := parseTime(createdAt); err == nil {
 			c.CreatedAt = t
 		}
@@ -713,6 +731,65 @@ func (s *Store) DeleteChannel(id int64) error {
 		return err
 	}
 	_, err = s.db.Exec(`DELETE FROM channel_role_permissions WHERE channel_id = ?`, id)
+	return err
+}
+
+// ChannelMemberCounts — количество участников/подписчиков по каналам.
+func (s *Store) ChannelMemberCounts() (map[int64]int, error) {
+	rows, err := s.db.Query(`SELECT channel_id, COUNT(*) FROM channel_members GROUP BY channel_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64]int{}
+	for rows.Next() {
+		var cid int64
+		var n int
+		if err := rows.Scan(&cid, &n); err != nil {
+			return nil, err
+		}
+		out[cid] = n
+	}
+	return out, rows.Err()
+}
+
+// FindDM — личный канал двух пользователей (или nil).
+func (s *Store) FindDM(a, b int64) (*models.Channel, error) {
+	row := s.db.QueryRow(`
+		SELECT c.id, c.name, c.private, c.creator_id, c.created_at, c.kind, c.readonly
+		FROM channels c
+		WHERE c.deleted_at IS NULL AND c.kind = 'dm' AND c.private = 1
+			AND EXISTS (SELECT 1 FROM channel_members m1 WHERE m1.channel_id = c.id AND m1.user_id = ?)
+			AND EXISTS (SELECT 1 FROM channel_members m2 WHERE m2.channel_id = c.id AND m2.user_id = ?)
+		ORDER BY c.id LIMIT 1`, a, b)
+	c, err := scanChannel(row)
+	if err == sql.ErrNoRows {
+		return nil, ErrNotFound
+	}
+	return c, err
+}
+
+func scanChannel(row *sql.Row) (*models.Channel, error) {
+	var c models.Channel
+	var priv, ro int
+	var deletedAt sql.NullString
+	var createdAt string
+	err := row.Scan(&c.ID, &c.Name, &priv, &c.CreatorID, &createdAt, &c.Kind, &ro)
+	if err != nil {
+		return nil, err
+	}
+	c.Private = priv == 1
+	c.Readonly = ro == 1
+	_ = deletedAt
+	if t, err := parseTime(createdAt); err == nil {
+		c.CreatedAt = t
+	}
+	return &c, nil
+}
+
+// RemoveMember — выход из канала (отписка от сообщества).
+func (s *Store) RemoveMember(channelID, userID int64) error {
+	_, err := s.db.Exec(`DELETE FROM channel_members WHERE channel_id = ? AND user_id = ?`, channelID, userID)
 	return err
 }
 
@@ -1323,6 +1400,67 @@ func (s *Store) OrphanFiles(olderThan time.Time) ([]StoredFile, error) {
 		out = append(out, f)
 	}
 	return out, rows.Err()
+}
+
+// SearchUsers — поиск пользователей по нику (подстрока, без учёта регистра)
+// или точному id.
+func (s *Store) SearchUsers(q string, limit int) ([]models.User, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	rows, err := s.db.Query(`
+		SELECT id, nick, is_server_admin, server_banned, server_ban_reason, created_at, avatar_at, token_version
+		FROM users WHERE nick LIKE ? ESCAPE '\' OR CAST(id AS TEXT) = ?
+		ORDER BY id LIMIT ?`, "%"+escapeLike(q)+"%", strings.TrimSpace(q), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []models.User
+	for rows.Next() {
+		var u models.User
+		var banned int
+		var createdAt string
+		var avatarAt sql.NullString
+		if err := rows.Scan(&u.ID, &u.Nick, &u.IsServerAdmin, &banned, &u.ServerBanReason, &createdAt, &avatarAt, &u.TokenVersion); err != nil {
+			return nil, err
+		}
+		u.ServerBanned = banned == 1
+		if t, err := parseTime(createdAt); err == nil {
+			u.CreatedAt = t
+		}
+		if avatarAt.Valid {
+			if t, err := parseTime(avatarAt.String); err == nil {
+				u.AvatarAt = &t
+			}
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+// SearchCommunities — поиск сообществ по названию (подстрока) или точному id.
+// Названия сообществ могут повторяться, id уникален.
+func (s *Store) SearchCommunities(q string, limit int) ([]models.Channel, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	rows, err := s.db.Query(`
+		SELECT id, name, private, creator_id, created_at, kind, readonly
+		FROM channels
+		WHERE deleted_at IS NULL AND kind = 'community'
+			AND (name LIKE ? ESCAPE '\' OR CAST(id AS TEXT) = ?)
+		ORDER BY id LIMIT ?`, "%"+escapeLike(q)+"%", strings.TrimSpace(q), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanChannels(rows)
+}
+
+func escapeLike(q string) string {
+	r := strings.NewReplacer("\\", "\\\\", "%", "\\%", "_", "\\_")
+	return r.Replace(q)
 }
 
 // ---------- Invites ----------
