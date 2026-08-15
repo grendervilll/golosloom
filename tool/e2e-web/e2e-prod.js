@@ -112,7 +112,8 @@ async function sendAndWait(page, text, timeout) {
   ok('B не может писать (readonly)', roBar === 1 && noInput === 0)
 
   // Восстановление ключа: A заходит с чистого контекста («переустановка»).
-  const pageA2 = await ctxA.newPage()
+  const ctxA2 = await browser.newContext()
+  const pageA2 = await ctxA2.newPage()
   pageA2.on('pageerror', (e) => console.log('[pageerror A2]', e.message))
   await pageA2.goto(BASE, { waitUntil: 'load' })
   await pageA2.getByPlaceholder('Ваш ник').fill(NICK1)
