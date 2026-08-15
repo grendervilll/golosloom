@@ -340,12 +340,20 @@ export const useChannelsStore = defineStore('channels', {
           }
         }
         const myKey = await storage.loadChannelKey(channelId)
+        // Локальный ключ есть, но сервер не имеет обёртки для моего
+        // устройства — ключ пересоздан (потерянный держатель). Сбрасываем
+        // устаревший ключ: новый придёт через обмен от создателя. Это
+        // покрывает устройства, не получившие событие key.reset (не в сети
+        // или не подписанные на канал).
+        if (myKey && ch && (ch.kind === 'dm' || ch.kind === 'community') && !res.wrapped_key) {
+          await storage.deleteChannelKey(channelId)
+          return
+        }
         if (!myKey) {
           // Ключа нет нигде. Для личных чатов/сообществ создатель может
           // восстановить его: держатель ключа потерян (устройство умерло),
           // иначе мы бы уже получили обёртку. Пробуем один раз — сервер
           // сам решит (ключ есть у другого устройства — вернёт 409).
-          const ch = this.channels.find((c) => c.id === channelId)
           if (
             ch &&
             (ch.kind === 'dm' || ch.kind === 'community') &&
