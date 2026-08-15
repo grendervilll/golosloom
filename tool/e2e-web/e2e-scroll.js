@@ -54,6 +54,20 @@ const { EXE, BASE, ok, register, createChannel, finish } = require('./helpers')
   const out = await page.locator('.scroll-down').boundingBox()
   ok('после ухода сжимается обратно до 40', out && Math.round(out.width) === 40, JSON.stringify(out))
 
+  // Кнопка не перекрывает поле ввода (учёт расширения до 13 строк).
+  await page.evaluate(() => {
+    const el = document.querySelector('.chat-panel .chat-list')
+    el.scrollTop = el.scrollHeight / 4
+    el.dispatchEvent(new Event('scroll'))
+  })
+  await page.waitForSelector('.scroll-down', { timeout: 3000 })
+  const overlap = await page.evaluate(() => {
+    const btn = document.querySelector('.scroll-down').getBoundingClientRect()
+    const input = document.querySelector('.chat-input').getBoundingClientRect()
+    return { btnBottom: btn.bottom, inputTop: input.top, overlap: btn.bottom > input.top }
+  })
+  ok('кнопка не наезжает на поле ввода', !overlap.overlap, JSON.stringify(overlap))
+
   // Клик — прокрутка к последним сообщениям, кнопка скрывается.
   await page.click('.scroll-down')
   await page.waitForTimeout(900)

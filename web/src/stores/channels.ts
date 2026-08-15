@@ -38,6 +38,8 @@ export const useChannelsStore = defineStore('channels', {
     invites: [] as Invite[],
     deviceKeys: null as ReturnType<typeof generateDeviceKeys> | null,
     keyPollTimer: 0 as number,
+    // Хендлер фокуса окна (раздача ключей при возврате на вкладку).
+    _focusHandler: null as (() => void) | null,
     // Закреплённые чаты/каналы/сообщества в порядке отображения.
     pinned: loadPinned() as number[],
   }),
@@ -336,6 +338,21 @@ export const useChannelsStore = defineStore('channels', {
           void this.syncKeys(ch.id)
         }
       }, 7000)
+      // Возврат на вкладку после долгого отсутствия: сразу раздаём ключи.
+      this._focusHandler = () => {
+        void this.syncAllKeys()
+      }
+      window.addEventListener('focus', this._focusHandler)
+    },
+    stopKeyPoll() {
+      if (this.keyPollTimer) {
+        clearInterval(this.keyPollTimer)
+        this.keyPollTimer = 0
+      }
+      if (this._focusHandler) {
+        window.removeEventListener('focus', this._focusHandler)
+        this._focusHandler = null
+      }
     },
     async handleInviteEvent(invite: Invite) {
       const toastId = toast(`Приглашение в канал «${invite.channel_name}» от ${invite.invited_by_nick}`, {

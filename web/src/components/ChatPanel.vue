@@ -938,21 +938,24 @@ function onKeydown(e: KeyboardEvent) {
     </div>
     <!-- Плеер голосового сообщения: вверху рабочей зоны канала. -->
     <AudioPlayer />
-    <div ref="listEl" class="chat-list" @scroll="onScrollList">
-      <template v-for="(m, i) in messages" :key="m.id">
-        <div v-if="dateChip(m, i)" class="date-chip">{{ dateLabel(m.createdAt) }}</div>
-        <MessageItem
-          :msg="m"
-          :my-id="auth.user?.id || 0"
-          :can-moderate="canModerate"
-          :highlight="m.id === highlightId"
-          @contextmenu="(e) => openMenu(e, m)"
-          @reply="setReply(m)"
-          @jump="scrollToMessage"
-        />
-      </template>
-      <p v-if="messages.length === 0" class="muted empty">Сообщений пока нет</p>
-      <!-- Кнопка спуска к последним сообщениям. -->
+    <div class="chat-list-wrap">
+      <div ref="listEl" class="chat-list" @scroll="onScrollList">
+        <template v-for="(m, i) in messages" :key="m.id">
+          <div v-if="dateChip(m, i)" class="date-chip">{{ dateLabel(m.createdAt) }}</div>
+          <MessageItem
+            :msg="m"
+            :my-id="auth.user?.id || 0"
+            :can-moderate="canModerate"
+            :highlight="m.id === highlightId"
+            @contextmenu="(e) => openMenu(e, m)"
+            @reply="setReply(m)"
+            @jump="scrollToMessage"
+          />
+        </template>
+        <p v-if="messages.length === 0" class="muted empty">Сообщений пока нет</p>
+      </div>
+      <!-- Кнопка спуска к последним сообщениям: над полем ввода, не зависит
+           от его высоты (расширение до 13 строк) и не перекрывает его. -->
       <button
         v-if="showScrollBtn"
         class="scroll-down"
@@ -1432,8 +1435,16 @@ function onKeydown(e: KeyboardEvent) {
 .reg-invite-btn .ico {
   fill: var(--accent);
 }
+.chat-list-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
 .chat-list {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 10px 16px;
   display: flex;
