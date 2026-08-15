@@ -330,6 +330,7 @@ export const useChannelsStore = defineStore('channels', {
           const res = await settings.api.getMyWrappedKey(channelId, keys.deviceId)
           hasServerWrap = !!res?.wrapped_key
           if (res.wrapped_key) {
+            console.log('[keys] got wrap', channelId, 'device', keys.deviceId)
             const key = await unwrapChannelKey(b64ToBytes(res.wrapped_key), keys.privateKey)
             const hadKey = await storage.loadChannelKey(channelId)
             await storage.saveChannelKey(channelId, key)
@@ -352,6 +353,7 @@ export const useChannelsStore = defineStore('channels', {
         // покрывает устройства, не получившие событие key.reset (не в сети
         // или не подписанные на канал).
         if (myKey && ch && isMember && (ch.kind === 'dm' || ch.kind === 'community') && !hasServerWrap) {
+          console.warn('[keys] stale delete', channelId, 'myKey?', !!myKey, 'wrap?', hasServerWrap)
           await storage.deleteChannelKey(channelId)
           return
         }
@@ -368,6 +370,7 @@ export const useChannelsStore = defineStore('channels', {
           ) {
             this._keyResetTried.add(channelId)
             try {
+              console.warn('[keys] RESET', channelId, 'device', keys.deviceId)
               const fresh = generateChannelKey()
               const wrapped = await wrapChannelKey(fresh, keys.publicKey)
               await settings.api.resetChannelKey(channelId, keys.deviceId, bytesToB64(wrapped))
