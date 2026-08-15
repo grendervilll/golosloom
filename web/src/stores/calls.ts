@@ -73,7 +73,7 @@ export const useCallStore = defineStore('calls', {
       const settings = useSettingsStore()
       const auth = useAuthStore()
       const channels = useChannelsStore()
-      const deviceId = channels.ensureDevice().deviceId
+      const deviceId = (await channels.ensureDevice()).deviceId
       const res = await settings.api.createCall(channelId, targetIds, deviceId)
       const call = res.call as Call
       this.calls.push({
@@ -95,7 +95,7 @@ export const useCallStore = defineStore('calls', {
     async accept(call: Call) {
       const settings = useSettingsStore()
       const channels = useChannelsStore()
-      const deviceId = channels.ensureDevice().deviceId
+      const deviceId = (await channels.ensureDevice()).deviceId
       // Звук звонка гасим сразу, ДО запроса к серверу: если accept упадёт
       // (сеть, "звонок завершён") — гудков уже не будет.
       this.stopIncoming(call.id)
@@ -129,7 +129,7 @@ export const useCallStore = defineStore('calls', {
     async join(callId: number) {
       const settings = useSettingsStore()
       const channels = useChannelsStore()
-      const deviceId = channels.ensureDevice().deviceId
+      const deviceId = (await channels.ensureDevice()).deviceId
       this.stopIncoming(callId)
       sounds.stopAll()
       const res = await settings.api.joinCall(callId, deviceId)

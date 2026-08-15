@@ -1,4 +1,6 @@
-// Глобальная подготовка тестов: localStorage для jsdom.
+// Глобальная подготовка тестов: localStorage и IndexedDB для jsdom.
+import 'fake-indexeddb/auto'
+
 class MemoryStorage {
   private data = new Map<string, string>()
   getItem(k: string): string | null {

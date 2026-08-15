@@ -103,16 +103,49 @@ export const useChannelsStore = defineStore('channels', {
         /* ignore */
       }
     },
-    ensureDevice(): ReturnType<typeof generateDeviceKeys> {
+    // Устройство (ключевая пара) сохраняется в хранилище: при каждом запуске
+    // (особенно в Tauri) не создаётся новое устройство, а переиспользуется
+    // старое — иначе ключи личных чатов/сообществ приходится раздавать
+    // заново, пока держатель ключа не в сети.
+    async ensureDevice(): Promise<ReturnType<typeof generateDeviceKeys>> {
       if (!this.deviceKeys) {
-        this.deviceKeys = generateDeviceKeys()
+        const storage = await getKeyStorage()
+        const saved = await storage.loadDevice()
+        if (saved) {
+          try {
+            const d = JSON.parse(saved)
+            if (d.deviceId && d.privateKey && d.publicKey) {
+              this.deviceKeys = {
+                deviceId: d.deviceId,
+                privateKey: b64ToBytes(d.privateKey),
+                publicKey: b64ToBytes(d.publicKey),
+              }
+              return this.deviceKeys
+            }
+          } catch {
+            /* повреждены — генерируем новые */
+          }
+        }
+        const keys = generateDeviceKeys()
+        this.deviceKeys = keys
+        try {
+          await storage.saveDevice(
+            JSON.stringify({
+              deviceId: keys.deviceId,
+              privateKey: bytesToB64(keys.privateKey),
+              publicKey: bytesToB64(keys.publicKey),
+            }),
+          )
+        } catch {
+          /* не критично: устройство пересоздастся */
+        }
       }
       return this.deviceKeys
     },
     async init() {
       const settings = useSettingsStore()
       const auth = useAuthStore()
-      const keys = this.ensureDevice()
+      const keys = await this.ensureDevice()
       await settings.api.uploadKey(keys.deviceId, bytesToB64(keys.publicKey))
       await this.refresh()
       await this.refreshInvites()
@@ -264,7 +297,7 @@ export const useChannelsStore = defineStore('channels', {
     async initChannelKey(channelId: number) {
       const storage = await getKeyStorage()
       const settings = useSettingsStore()
-      const keys = this.ensureDevice()
+      const keys = await this.ensureDevice()
       const existing = await storage.loadChannelKey(channelId)
       if (existing) return
       const key = generateChannelKey()
@@ -282,7 +315,7 @@ export const useChannelsStore = defineStore('channels', {
         const storage = await getKeyStorage()
         const settings = useSettingsStore()
         const auth = useAuthStore()
-        const keys = this.ensureDevice()
+        const keys = await this.ensureDevice()
         const ch = this.channels.find((c) => c.id === channelId)
         const isMember = ch ? ch.is_member : this.members.some((m) => m.user_id === auth.user?.id)
         if (auth.user && isMember) {

@@ -152,7 +152,7 @@ describe('звонки', () => {
   })
 
   it('кнопка "Пнуть" срабатывает не чаще раза в 10 секунд', async () => {
-    vi.useFakeTimers()
+    vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(1000000)
     setup()
     const calls = useCallStore()

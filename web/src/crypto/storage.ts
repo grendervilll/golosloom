@@ -7,12 +7,18 @@ export interface KeyStorage {
   init(): Promise<void>
   saveChannelKey(channelId: number, keyBytes: Uint8Array): Promise<void>
   loadChannelKey(channelId: number): Promise<Uint8Array | null>
+  // Ключи устройства (identity): сохраняются, чтобы при каждом запуске
+  // (особенно в Tauri) не регистрировать новое устройство — иначе ключи
+  // личных чатов/сообществ нужно раздавать заново при каждом запуске.
+  saveDevice(deviceJson: string): Promise<void>
+  loadDevice(): Promise<string | null>
 }
 
 const DB_NAME = 'golosloom-keys'
 const STORE = 'keys'
 const MASTER = 'master'
 const PREFIX = 'ch:'
+const DEVICE = 'device'
 
 export function isTauri(): boolean {
   return typeof window !== 'undefined' && !!(window as any).__TAURI_INTERNALS__
@@ -74,6 +80,33 @@ class IndexedDBStorage implements KeyStorage {
     return new Uint8Array(plain)
   }
 
+  // Устройство хранится зашифрованным мастер-ключом (как ключи каналов).
+  async saveDevice(deviceJson: string): Promise<void> {
+    const master = await this.getMaster()
+    const bytes = new TextEncoder().encode(deviceJson)
+    const iv = crypto.getRandomValues(new Uint8Array(12))
+    const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, master, bytes)
+    const blob = new Uint8Array(iv.length + ciphertext.byteLength)
+    blob.set(iv, 0)
+    blob.set(new Uint8Array(ciphertext), iv.length)
+    await this.put(STORE, DEVICE, blob)
+  }
+
+  async loadDevice(): Promise<string | null> {
+    const master = await this.getMaster()
+    const blob = await this.get(STORE, DEVICE)
+    if (!blob) return null
+    const data = blob as Uint8Array
+    const iv = data.slice(0, 12)
+    const ciphertext = data.slice(12)
+    try {
+      const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, master, ciphertext)
+      return new TextDecoder().decode(plain)
+    } catch {
+      return null
+    }
+  }
+
   private get(store: string, key: IDBValidKey): Promise<unknown> {
     return new Promise((resolve, reject) => {
       const tx = this.db!.transaction(store, 'readonly')
@@ -131,6 +164,18 @@ class TauriKeychainStorage implements KeyStorage {
     const wrapped = await this.safeGet(PREFIX + channelId)
     if (!wrapped) return null
     return unwrapWithMaster(wrapped, this.masterKey!)
+  }
+
+  // Устройство в Keychain хранится открытым текстом (Keychain шифрует сама),
+  // при фолбэке на IndexedDB — тоже (внутри изолированного хранилища вебвью).
+  async saveDevice(deviceJson: string): Promise<void> {
+    await this.safeSet(DEVICE, new TextEncoder().encode(deviceJson))
+  }
+
+  async loadDevice(): Promise<string | null> {
+    const raw = await this.safeGet(DEVICE)
+    if (!raw) return null
+    return new TextDecoder().decode(raw)
   }
 
   private async ensureIdb() {
