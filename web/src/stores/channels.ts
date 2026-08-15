@@ -326,7 +326,9 @@ export const useChannelsStore = defineStore('channels', {
         const ch = this.channels.find((c) => c.id === channelId)
         const isMember = ch ? ch.is_member : this.members.some((m) => m.user_id === auth.user?.id)
         if (auth.user && isMember) {
+          console.log('[keys] sync', channelId, 'device', keys.deviceId)
           const res = await settings.api.getMyWrappedKey(channelId, keys.deviceId)
+          console.log('[keys] getMyWrappedKey', !!res?.wrapped_key)
           if (res.wrapped_key) {
             const key = await unwrapChannelKey(b64ToBytes(res.wrapped_key), keys.privateKey)
             const hadKey = await storage.loadChannelKey(channelId)
@@ -379,6 +381,7 @@ export const useChannelsStore = defineStore('channels', {
           return
         }
         const targets: KeyTarget[] = await settings.api.pendingKeyTargets(channelId)
+        console.log('[keys] pending targets', targets.length)
         for (const target of targets) {
           if (target.user_id === auth.user?.id && target.device_id === keys.deviceId) continue
           // Одна неисправная цель (битый публичный ключ устройства и т.п.)
@@ -390,9 +393,11 @@ export const useChannelsStore = defineStore('channels', {
             // Диагностика: при сбое раздачи пишем причину в консоль.
             console.warn('[keys] wrap fail', channelId, target.user_id, target.device_id, e)
           }
+          console.log('[keys] uploaded for', target.user_id, target.device_id)
         }
-      } catch {
+      } catch (e) {
         // Не критично: синхронизация повторится таймером.
+        console.warn('[keys] syncKeys aborted', channelId, e)
       }
     },
     // Раздача/получение ключей для всех каналов (при старте и при появлении
