@@ -306,8 +306,14 @@ export const useChannelsStore = defineStore('channels', {
         const targets: KeyTarget[] = await settings.api.pendingKeyTargets(channelId)
         for (const target of targets) {
           if (target.user_id === auth.user?.id && target.device_id === keys.deviceId) continue
-          const wrapped = await wrapChannelKey(myKey, b64ToBytes(target.public_key))
-          await settings.api.uploadWrappedKey(channelId, target.user_id, target.device_id, wrapped)
+          // Одна неисправная цель (битый публичный ключ устройства и т.п.)
+          // не должна блокировать раздачу ключа остальным участникам.
+          try {
+            const wrapped = await wrapChannelKey(myKey, b64ToBytes(target.public_key))
+            await settings.api.uploadWrappedKey(channelId, target.user_id, target.device_id, wrapped)
+          } catch {
+            /* пропускаем — остальные цели обработаются */
+          }
         }
       } catch {
         // Не критично: синхронизация повторится таймером.
@@ -320,10 +326,15 @@ export const useChannelsStore = defineStore('channels', {
         await this.syncKeys(ch.id)
       }
     },
+    // Фоновая раздача ключей: обходим ВСЕ каналы, а не только открытый.
+    // Иначе ключ личного чата застревает, если держатель ключа сидит
+    // в другом канале (а у собеседника — «Ключ канала ещё не получен»).
     startKeyPoll() {
       if (this.keyPollTimer) return
       this.keyPollTimer = window.setInterval(() => {
-        if (this.currentId) void this.syncKeys(this.currentId)
+        for (const ch of this.channels) {
+          void this.syncKeys(ch.id)
+        }
       }, 7000)
     },
     async handleInviteEvent(invite: Invite) {
