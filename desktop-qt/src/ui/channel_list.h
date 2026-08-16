@@ -27,6 +27,10 @@ class ChannelList : public QWidget {
   void invitesRequested();
   void logoutRequested();
   void themeToggleRequested();
+  void deleteChannelRequested(qint64 id);
+
+ protected:
+  void contextMenuEvent(QContextMenuEvent* event) override;
 
  private:
   void refreshBadge();

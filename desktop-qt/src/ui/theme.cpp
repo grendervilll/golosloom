@@ -122,6 +122,11 @@ QLineEdit#searchField {
 #encLabel { color: #949ba4; font-style: italic; }
 #msgAtts QPushButton { color: #5ab8ff; }
 #msgBubble.mine #msgAtts QPushButton { color: #ffffff; }
+#replyQuote {
+  background: #383a40; border-radius: 8px; padding: 4px 10px;
+  font-size: 12px; color: #949ba4;
+}
+#msgBubble.mine #replyQuote { background: rgba(255, 255, 255, 0.15); color: rgba(255, 255, 255, 0.9); }
 
 QDialog#authDialog {
   background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
@@ -250,6 +255,11 @@ QLineEdit#searchField {
 #encLabel { color: #707579; font-style: italic; }
 #msgAtts QPushButton { color: #1d97d4; }
 #msgBubble.mine #msgAtts QPushButton { color: #ffffff; }
+#replyQuote {
+  background: #f1f5f9; border-radius: 8px; padding: 4px 10px;
+  font-size: 12px; color: #707579;
+}
+#msgBubble.mine #replyQuote { background: rgba(255, 255, 255, 0.15); color: rgba(255, 255, 255, 0.9); }
 
 QDialog#authDialog {
   background: qlineargradient(x1:0, y1:0, x2:1, y2:1,

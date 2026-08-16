@@ -7,10 +7,11 @@
 #include <QVBoxLayout>
 #include <QWidget>
 
+#include "models.h"
+
 namespace gl {
 
 class AppState;
-struct Message;
 
 // Панель чата: шапка (название + звонок), лента сообщений с разделителями
 // дат, кнопка «вниз» (спуск к последним), поле ввода с ответом/редактированием
@@ -43,6 +44,8 @@ class ChatPanel : public QWidget {
   void cancelMode();
   void attachFile();
   void downloadAttachment(qint64 fileId, const QString& filename);
+  QString replyNickFor(const Message& m) const;
+  QString replyTextFor(const Message& m) const;
   QWidget* modeRow() { return modeRow_; }
 
  protected:

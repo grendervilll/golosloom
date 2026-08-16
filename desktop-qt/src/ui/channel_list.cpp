@@ -1,8 +1,10 @@
 #include "ui/channel_list.h"
 
+#include <QContextMenuEvent>
 #include <QDateTime>
 #include <QHBoxLayout>
 #include <QListWidgetItem>
+#include <QMenu>
 #include <QVBoxLayout>
 
 #include "core/app_state.h"
@@ -193,6 +195,22 @@ void ChannelList::refreshBadge() {
   const int n = state_->pendingInvites();
   invitesBadge_->setText(n > 0 ? QString::number(n) : QString());
   invitesBadge_->setVisible(n > 0);
+}
+
+void ChannelList::contextMenuEvent(QContextMenuEvent* event) {
+  QListWidgetItem* item = list_->itemAt(list_->viewport()->mapFromGlobal(event->globalPos()));
+  if (!item) {
+    QWidget::contextMenuEvent(event);
+    return;
+  }
+  const qint64 id = item->data(Qt::UserRole).toLongLong();
+  const Channel* ch = state_->findChannel(id);
+  QMenu menu(this);
+  auto* del = menu.addAction("Удалить канал");
+  del->setEnabled(ch && (ch->creatorId == state_->user().id || state_->user().isServerAdmin));
+  if (menu.exec(event->globalPos()) == del) {
+    emit deleteChannelRequested(id);
+  }
 }
 
 void ChannelList::applyFilter() {

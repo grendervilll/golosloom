@@ -24,7 +24,8 @@ QString humanSize(qint64 bytes) {
 }
 }  // namespace
 
-MessageWidget::MessageWidget(const Message& msg, bool mine, QWidget* parent)
+MessageWidget::MessageWidget(const Message& msg, bool mine, const QString& replyNick,
+                             const QString& replyText, QWidget* parent)
     : QWidget(parent), mine_(mine) {
   setObjectName("msgBubble");
   setProperty("mine", mine);
@@ -38,6 +39,21 @@ MessageWidget::MessageWidget(const Message& msg, bool mine, QWidget* parent)
   meta_ = new QLabel(this);
   meta_->setObjectName("msgNick");
   content_->addWidget(meta_);
+
+  // Цитата ответа (как reply-quote в вебе).
+  replyQuote_ = new QLabel(this);
+  replyQuote_->setObjectName("replyQuote");
+  replyQuote_->setWordWrap(true);
+  replyQuote_->setTextFormat(Qt::RichText);
+  replyQuote_->setVisible(false);
+  content_->addWidget(replyQuote_);
+  if (!replyNick.isEmpty() || !replyText.isEmpty()) {
+    QString q = replyNick.isEmpty() ? QString() : replyNick + ": ";
+    QString t = replyText;
+    if (t.size() > 80) t = t.left(80) + "…";
+    replyQuote_->setText(QString("<b>%1</b>%2").arg(q.toHtmlEscaped(), t.toHtmlEscaped()));
+    replyQuote_->setVisible(true);
+  }
 
   text_ = new QLabel(this);
   text_->setTextFormat(Qt::RichText);

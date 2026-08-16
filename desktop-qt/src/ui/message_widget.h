@@ -8,11 +8,13 @@ namespace gl {
 struct Message;
 
 // Пузырь сообщения (как .msg в вебе): никель, время, markdown-текст,
-// метка «зашифровано», вложения, контекстное меню (ответить/редактировать/удалить).
+// метка «зашифровано», вложения, цитата ответа, контекстное меню.
 class MessageWidget : public QWidget {
   Q_OBJECT
  public:
-  explicit MessageWidget(const Message& msg, bool mine, QWidget* parent = nullptr);
+  // replyNick/replyText — цитата отвечаемого сообщения (если есть).
+  explicit MessageWidget(const Message& msg, bool mine, const QString& replyNick,
+                         const QString& replyText, QWidget* parent = nullptr);
   void updateMessage(const Message& msg);
   QSize sizeHint() const override;
 
@@ -36,6 +38,7 @@ class MessageWidget : public QWidget {
   QLabel* meta_;
   QLabel* encrypted_;
   QWidget* attsRow_ = nullptr;
+  QLabel* replyQuote_ = nullptr;
 };
 
 }  // namespace gl

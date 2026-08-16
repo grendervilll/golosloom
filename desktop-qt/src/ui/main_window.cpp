@@ -242,6 +242,21 @@ MainWindow::MainWindow(AppState* state, QWidget* parent) : QMainWindow(parent), 
     qApp->setStyleSheet(gl::themeQss(dark));
     channelList_->refresh();
   });
+  connect(channelList_, &ChannelList::deleteChannelRequested, this, [this](qint64 id) {
+    const Channel* ch = state_->findChannel(id);
+    if (!ch) return;
+    if (QMessageBox::question(this, "Удалить канал",
+                              QString("Удалить канал «%1»? Это удалит все сообщения.")
+                                  .arg(ch->name)) == QMessageBox::Yes) {
+      state_->api()->deleteChannel(id, [this](const QJsonObject&, const QString& err) {
+        if (!err.isEmpty()) {
+          QMessageBox::warning(this, "Не удалось удалить канал", err);
+          return;
+        }
+        state_->refreshChannelsPublic();
+      });
+    }
+  });
   connect(channelList_, &ChannelList::logoutRequested, this, [this]() {
     if (QMessageBox::question(this, "Выйти", "Выйти из аккаунта?") == QMessageBox::Yes) {
       state_->logout();

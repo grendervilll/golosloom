@@ -215,7 +215,8 @@ void ChatPanel::rebuildMessages() {
       msgsLayout_->insertWidget(msgsLayout_->count() - 1, dateLbl);
       lastDateLabel_ = dl;
     }
-    auto* w = new MessageWidget(m, m.senderId == state_->user().id, container_);
+    auto* w = new MessageWidget(m, m.senderId == state_->user().id,
+                                replyNickFor(m), replyTextFor(m), container_);
     connect(w, &MessageWidget::replyRequested, this, &ChatPanel::startReply);
     connect(w, &MessageWidget::editRequested, this, &ChatPanel::startEdit);
     connect(w, &MessageWidget::deleteRequested, this, [this](qint64 mid) {
@@ -253,6 +254,29 @@ void ChatPanel::scrollToBottom() {
     QScrollBar* bar = scroll_->verticalScrollBar();
     if (bar) bar->setValue(bar->maximum());
   });
+}
+
+// Цитата ответа: ник и текст отвечаемого сообщения (если оно в загруженной
+// истории), как reply-quote в вебе.
+QString ChatPanel::replyNickFor(const Message& m) const {
+  if (!m.replyTo) return QString();
+  for (const Message& x : state_->messages(currentId_)) {
+    if (x.id == m.replyTo) return x.senderNick;
+  }
+  return QString();
+}
+
+QString ChatPanel::replyTextFor(const Message& m) const {
+  if (!m.replyTo) return QString();
+  for (const Message& x : state_->messages(currentId_)) {
+    if (x.id == m.replyTo) {
+      if (x.encrypted) return "🔒 Сообщение";
+      if (x.deleted) return "🗑 Сообщение удалено";
+      if (x.text.isEmpty() && !x.attachments.isEmpty()) return "📎 Файл";
+      return x.text;
+    }
+  }
+  return QString();
 }
 
 void ChatPanel::sendCurrent() {
