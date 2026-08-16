@@ -48,6 +48,8 @@ class AppState : public QObject {
   // Авто-вход по сохранённому токену (как localStorage в вебе).
   void restoreSession(std::function<void(bool ok, const QString& err)> done);
   void logout();
+  // Пароль для KEK (запоминаем при входе, чтобы расшифровать бэкапы).
+  void setPassword(const QString& password) { password_ = password; }
   // Создание канала + ключ канала (как в вебе).
   void createChannel(const QString& name, bool isPrivate, std::function<void(const QString&)> done);
   // Вступление в канал: REST join + подписка на события по WS.
@@ -99,14 +101,18 @@ class AppState : public QObject {
   void processMessage(qint64 channelId, const Message& raw, bool fromHistory);
   Message decryptMessage(const Message& raw);
   void loadHistory(qint64 channelId);
+  QByteArray getKek();
+  void uploadBackup(qint64 channelId, const QByteArray& key);
 
   ApiClient api_;
   WsClient ws_;
   KeyStorage* storage_ = nullptr;
   QString serverUrl_;
   QString token_;
+  QString password_;
   User user_;
   DeviceKeys device_;
+  QByteArray kek_;  // закэшированный ключ из пароля
   bool deviceReady_ = false;
   QHash<qint64, QVector<Message>> messages_;
   QHash<qint64, int> unread_;

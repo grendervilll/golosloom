@@ -53,6 +53,8 @@ class ApiClient : public QObject {
   void uploadWrappedKey(qint64 channelId, qint64 userId, const QString& deviceId, const QByteArray& wrapped,
                         Callback cb);
   void pendingKeyTargets(qint64 channelId, Callback cb);
+  void getKeyBackup(qint64 channelId, Callback cb);
+  void uploadKeyBackup(qint64 channelId, const QByteArray& wrapped, Callback cb);
   void uploadFile(qint64 channelId, const QString& filePath, Callback cb);
   // Скачивание файла (короткоживущий файловый токен). При download=true —
   // принудительное скачивание, иначе открытие в браузере.

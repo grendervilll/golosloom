@@ -32,7 +32,7 @@ bool gTimeout = false;
 
 void runNext() {
   if (gSteps.empty()) {
-    qInfo() << (gFails == 0 ? "\nCALL SMOKE ALL PASSED" : QString("\nCALL SMOKE FAILURES: %1").arg(gFails));
+    qInfo().noquote() << (gFails == 0 ? "CALL SMOKE ALL PASSED" : QString("CALL SMOKE FAILURES: %1").arg(gFails));
     QCoreApplication::exit(gFails == 0 ? 0 : 1);
     return;
   }

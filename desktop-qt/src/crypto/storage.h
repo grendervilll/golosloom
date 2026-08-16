@@ -23,6 +23,10 @@ class KeyStorage {
   void saveDevice(const QString& json);
   QString loadDevice();
 
+  // KEK (ключ из пароля) — для парольных бэкапов ключей каналов.
+  void saveKek(const QByteArray& kek);
+  QByteArray loadKek();
+
   // Сессия: токен для авто-входа (как localStorage в вебе).
   void saveToken(const QString& token);
   QString loadToken();

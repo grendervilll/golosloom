@@ -224,7 +224,7 @@ void ChatPanel::sendCurrent() {
     const qint64 mid = editId_;
     cancelMode();
     input_->clear();
-    state_->editMessage(currentId_, mid, text, [this](const QString& err) {
+    state_->editMessage(currentId_, mid, text, [this, text](const QString& err) {
       if (!err.isEmpty()) {
         qWarning() << "edit error:" << err;
         input_->setPlainText(text);

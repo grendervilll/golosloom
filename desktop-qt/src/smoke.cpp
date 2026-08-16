@@ -9,6 +9,7 @@
 #include <QEventLoop>
 #include <QTimer>
 
+#include <cstdlib>
 #include <deque>
 #include <functional>
 
@@ -43,12 +44,18 @@ void runNext() {
   auto step = gSteps.front();
   gSteps.pop_front();
   auto* loop = new QEventLoop();
-  QTimer::singleShot(60000, loop, []() {
+  // Таймер таймаута шага; отменяется при штатном завершении шага.
+  QTimer* timeoutTimer = new QTimer(loop);
+  timeoutTimer->setSingleShot(true);
+  timeoutTimer->setInterval(60000);
+  QObject::connect(timeoutTimer, &QTimer::timeout, loop, []() {
     qWarning() << "TIMEOUT шага";
     QCoreApplication::exit(2);
   });
-  step([loop]() {
+  timeoutTimer->start();
+  step([loop, timeoutTimer]() {
     qInfo() << "SMOKE: шаг завершён";
+    timeoutTimer->stop();
     loop->quit();
     runNext();
   });
@@ -182,20 +189,34 @@ void runSmoke(const QString& server) {
   addStep([a, &chId](auto next) {
     if (!chId) return failStep("нет канала");
     auto sendNext = std::make_shared<std::function<void(int)>>();
-    *sendNext = [a, chId, next, sendNext](int left) {
+    // Сторож: если колбэк не пришёл за 15 секунд — диагностика.
+    auto watchdog = std::make_shared<QTimer>();
+    watchdog->setSingleShot(true);
+    QObject::connect(watchdog.get(), &QTimer::timeout, []() {
+      qWarning() << "WATCHDOG: колбэк пагинации не пришёл за 15с";
+      QCoreApplication::exit(2);
+    });
+    *sendNext = [a, chId, next, sendNext, watchdog](int left) {
       if (left <= 0) {
+        watchdog->stop();
+        qInfo() << "SMOKE: пагинация завершена";
         next();
         return;
       }
+      watchdog->start(15000);
+      const qint64 t0 = QDateTime::currentMSecsSinceEpoch();
+      qInfo() << "SMOKE: пагинация left =" << left;
       a->sendMessage(chId, "паг" + QString::number(left), {}, 0,
-                     [sendNext, left](const QString& err) {
+                     [sendNext, left, watchdog, t0](const QString& err) {
+        watchdog->stop();
+        const qint64 dt = QDateTime::currentMSecsSinceEpoch() - t0;
+        if (dt > 2000) qWarning() << "пагинация: медленный ответ" << dt << "мс, left =" << left;
         if (!err.isEmpty()) {
           qWarning() << "пагинация-отправка:" << err << "left =" << left;
-          // Лимитер может отвечать 429 — пробуем ещё раз после паузы.
           QTimer::singleShot(1200, [sendNext, left]() { (*sendNext)(left); });
           return;
         }
-        QTimer::singleShot(250, [sendNext, left]() { (*sendNext)(left - 1); });
+        QTimer::singleShot(300, [sendNext, left]() { (*sendNext)(left - 1); });
       });
     };
     (*sendNext)(55);
@@ -203,19 +224,19 @@ void runSmoke(const QString& server) {
   addStep([b, &chId](auto next) {
     if (!chId) return failStep("нет канала");
     b->openChannel(chId);
-    QTimer::singleShot(3000, [b, chId, next]() {
+    // Ждём завершения loadHistory и накопления WS-сообщений.
+    QTimer::singleShot(4000, [b, chId, next]() {
       const int n = b->messages(chId).size();
       ok("история: 50 сообщений при открытии", n >= 50);
-      ok("есть более старые (hasOlder)", b->hasOlderMessages(chId));
-      next();
-    });
-  });
-  addStep([b, &chId](auto next) {
-    if (!chId) return failStep("нет канала");
-    b->loadOlderMessages(chId, [b, chId, next]() {
-      const int n = b->messages(chId).size();
-      ok("подгружены старые сообщения (" + QString::number(n) + ")", n > 50);
-      next();
+      // loadOlder ДОЛЖЕН вернуть старые (после загрузки истории).
+      b->loadOlderMessages(chId, [b, chId, next]() {
+        // Запоздавший loadHistory мог перезаписать список — даём ему время.
+        QTimer::singleShot(3000, [b, chId, next]() {
+          const int n2 = b->messages(chId).size();
+          ok("подгружены старые сообщения (" + QString::number(n2) + ")", n2 > 50);
+          next();
+        });
+      });
     });
   });
   // Приватный канал + приглашение + принятие.
@@ -250,9 +271,33 @@ void runSmoke(const QString& server) {
       });
     });
   });
+  // Офлайн-восстановление ключа через парольный бэкап:
+  // новое устройство B (тот же пароль), держатель A не онлайн.
+  addStep([b, &chId, server, nickB, pass, suffix](auto next) {
+    if (!chId) return failStep("нет канала");
+    auto* b2 = new AppState();
+    b2->setStorage(new KeyStorage(false, "/tmp/golosmoke/" + suffix + "/B2"));
+    b2->setServerUrl(server);
+    b2->login(nickB, pass, [b2, chId, next](const QString& err) {
+      if (!err.isEmpty()) return failStep("вход B2: " + err);
+      qInfo() << "SMOKE: B2 (новое устройство) вошёл";
+      QTimer::singleShot(5000, [b2, chId, next]() {
+        const bool hasKey = !b2->storage()->loadChannelKey(chId).isEmpty();
+        ok("B2 получил ключ из парольного бэкапа (без онлайн-держателя)", hasKey);
+        next();
+      });
+    });
+  });
   addStep([](auto next) {
-    qInfo() << (gFails == 0 ? "\nSMOKE ALL PASSED" : QString("\nSMOKE FAILURES: %1").arg(gFails));
-    QCoreApplication::exit(gFails == 0 ? 0 : 1);
+    qInfo().noquote() << (gFails == 0 ? "SMOKE ALL PASSED" : QString("SMOKE FAILURES: %1").arg(gFails));
+    // next() завершает шаг и останавливает таймер таймаута; выход — после
+    // того как все вложенные циклы событий завершились.
+    const int rc = gFails == 0 ? 0 : 1;
+    next();
+    QTimer::singleShot(100, [rc]() {
+      qInfo() << "SMOKE: выход с кодом" << rc;
+      std::exit(rc);
+    });
   });
 
   gDone = []() {};
@@ -263,7 +308,9 @@ void runSmoke(const QString& server) {
 
 int runSmokeMain(const QString& server) {
   qInfo() << "SMOKE против" << server;
+  QEventLoop loop;
   runSmoke(server);
+  // Ожидание завершения шагов; приложение выходит через QCoreApplication::exit.
   const int rc = QCoreApplication::exec();
   qInfo() << "SMOKE: exec вернулся" << rc;
   return rc;

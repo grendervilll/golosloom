@@ -173,6 +173,30 @@ QString decryptMessage(const QByteArray& channelKey, const QByteArray& ciphertex
   return QString::fromUtf8(plain);
 }
 
+QByteArray deriveKek(const QString& password, qint64 userId) {
+  const QByteArray salt = QByteArray("golosloom-kek-v1:") + QByteArray::number(userId);
+  QByteArray out(kKeyLen, Qt::Uninitialized);
+  if (PKCS5_PBKDF2_HMAC(password.toUtf8().constData(), password.toUtf8().size(),
+                        reinterpret_cast<const unsigned char*>(salt.constData()), salt.size(), 200000,
+                        EVP_sha256(), kKeyLen, reinterpret_cast<unsigned char*>(out.data())) != 1) {
+    return {};
+  }
+  return out;
+}
+
+QByteArray wrapWithKek(const QByteArray& kek, const QByteArray& channelKey) {
+  QByteArray iv = randomBytes(kIvLen);
+  QByteArray ct = aesGcm(kek, iv, channelKey, true);
+  return iv + ct;
+}
+
+QByteArray unwrapWithKek(const QByteArray& kek, const QByteArray& wrapped) {
+  if (wrapped.size() < kIvLen + 16) return {};
+  QByteArray iv = wrapped.left(kIvLen);
+  QByteArray ct = wrapped.mid(kIvLen);
+  return aesGcm(kek, iv, ct, false);
+}
+
 QByteArray sha256Hex(const QByteArray& data) {
   return QCryptographicHash::hash(data, QCryptographicHash::Sha256).toHex();
 }

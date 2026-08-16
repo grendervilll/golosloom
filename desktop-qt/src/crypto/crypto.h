@@ -28,6 +28,12 @@ struct Encrypted {
 Encrypted encryptMessage(const QByteArray& channelKey, const QString& plaintext);
 QString decryptMessage(const QByteArray& channelKey, const QByteArray& ciphertext, const QByteArray& iv);
 
+// Ключ из пароля (KEK) + шифрование ключа канала ключом из пароля
+// (парольный бэкап: новое устройство получает ключ без онлайн-держателя).
+QByteArray deriveKek(const QString& password, qint64 userId);
+QByteArray wrapWithKek(const QByteArray& kek, const QByteArray& channelKey);
+QByteArray unwrapWithKek(const QByteArray& kek, const QByteArray& wrapped);
+
 // SHA-256 (для отладки/печати).
 QByteArray sha256Hex(const QByteArray& data);
 

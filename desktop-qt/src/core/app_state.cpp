@@ -175,7 +175,8 @@ void AppState::ensureDevice() {
 }
 
 void AppState::login(const QString& nick, const QString& password, std::function<void(const QString&)> done) {
-  api_.login(nick, password, [this, done](const QJsonObject& res, const QString& err) {
+  password_ = password;
+  api_.login(nick, password, [this, password, done](const QJsonObject& res, const QString& err) {
     if (!err.isEmpty()) {
       done(err);
       return;
@@ -183,12 +184,17 @@ void AppState::login(const QString& nick, const QString& password, std::function
     token_ = res.value("token").toString();
     api_.setToken(token_);
     storage_->saveToken(token_);
-    api_.me([this, done](const QJsonObject& me, const QString& err2) {
+    api_.me([this, password, done](const QJsonObject& me, const QString& err2) {
       if (!err2.isEmpty()) {
         done(err2);
         return;
       }
       user_ = User::fromJson(me);
+      // KEK из пароля сохраняем сразу (как в вебе) — для парольных бэкапов.
+      if (!password.isEmpty() && user_.id) {
+        kek_ = deriveKek(password, user_.id);
+        storage_->saveKek(kek_);
+      }
       ensureDevice();
       api_.listChannels([this, done](const QJsonObject& chs, const QString& err3) {
         channels_.clear();
@@ -240,6 +246,8 @@ void AppState::restoreSession(std::function<void(bool, const QString&)> done) {
       return;
     }
     user_ = User::fromJson(me);
+    // KEK из хранилища (сохранён при первом входе по паролю).
+    kek_ = storage_->loadKek();
     ensureDevice();
     api_.listChannels([this, done](const QJsonObject& chs, const QString& err3) {
       if (!err3.isEmpty()) {
@@ -284,6 +292,7 @@ void AppState::initChannelKey(qint64 channelId) {
   api_.uploadWrappedKey(channelId, user_.id, device_.deviceId, wrapped, [this, channelId, key](const QJsonObject&, const QString& err) {
     if (!err.isEmpty()) return;
     storage_->saveChannelKey(channelId, key);
+    uploadBackup(channelId, key);
   });
 }
 
@@ -295,6 +304,8 @@ void AppState::logout() {
   storage_->clearToken();
   api_.setToken(QString());
   user_ = User();
+  password_.clear();
+  kek_.clear();
   channels_.clear();
   messages_.clear();
   currentId_ = 0;
@@ -411,6 +422,12 @@ void AppState::loadHistory(qint64 channelId) {
     QVector<Message> out;
     for (const QJsonValue& v : arrOf(res, "_array")) {
       out.append(decryptMessage(Message::fromJson(v.toObject())));
+    }
+    // Повторная загрузка (синхронизация ключей) может вернуть пустоту,
+    // пока сообщения ещё не написаны — не перезаписываем уже накопленное.
+    const auto it = messages_.constFind(channelId);
+    if (out.isEmpty() && it != messages_.constEnd() && !it.value().isEmpty()) {
+      return;
     }
     // Если получили полную страницу (50) — старее сообщения возможны.
     hasMore_.insert(channelId, out.size() >= 50);
@@ -677,12 +694,41 @@ void AppState::respondInvite(qint64 inviteId, bool accept, std::function<void(co
 void AppState::syncKeys(qint64 channelId) {
   ensureDevice();
   Channel* ch = findChannel(channelId);
-  KeyStorage* st = storage_;
 
   const bool isMember = ch ? ch->isMember : false;
   if (!isMember) return;
 
-  // Последовательно (как в вебе): обёртка с сервера → stale-проверка → раздача.
+  // Последовательно (как в вебе): парольный бэкап → обёртка с сервера →
+  // stale-проверка → раздача новым устройствам.
+  std::function<void(std::function<void()>)> stepBackup = [this, channelId](std::function<void()> next) {
+    // Если ключ уже есть локально — бэкап не нужен (повторный поллинг).
+    if (!storage_->loadChannelKey(channelId).isEmpty()) {
+      next();
+      return;
+    }
+    const QByteArray kek = getKek();
+    if (kek.isEmpty()) {
+      next();
+      return;
+    }
+    api_.getKeyBackup(channelId, [this, channelId, kek, next](const QJsonObject& res, const QString&) {
+      const QByteArray wrapped = b64Decode(res.value("wrapped_key").toString());
+      if (!wrapped.isEmpty()) {
+        const QByteArray bkey = unwrapWithKek(kek, wrapped);
+        if (!bkey.isEmpty()) {
+          storage_->saveChannelKey(channelId, bkey);
+          // Своя обёртка — чтобы сервер знал, что устройство держит ключ.
+          api_.uploadWrappedKey(channelId, user_.id, device_.deviceId,
+                                wrapChannelKey(bkey, device_.publicKey),
+                                [this, channelId, next](const QJsonObject&, const QString&) {
+            next();
+          });
+          return;
+        }
+      }
+      next();
+    });
+  };
   std::function<void(std::function<void()>)> stepServerWrap = [this, channelId](std::function<void()> next) {
     api_.getMyWrappedKey(channelId, device_.deviceId, [this, channelId, next](const QJsonObject& res, const QString&) {
       const QByteArray wrapped = b64Decode(res.value("wrapped_key").toString());
@@ -691,7 +737,11 @@ void AppState::syncKeys(qint64 channelId) {
         if (!key.isEmpty()) {
           const bool had = !storage_->loadChannelKey(channelId).isEmpty();
           storage_->saveChannelKey(channelId, key);
-          if (!had) loadHistory(channelId);
+          if (!had) uploadBackup(channelId, key);
+          // История загружается при открытии канала (openChannel).
+          if (currentId_ == channelId && messages_.value(channelId).isEmpty()) {
+            loadHistory(channelId);
+          }
         }
       }
       next();
@@ -730,9 +780,29 @@ void AppState::syncKeys(qint64 channelId) {
     });
   };
 
-  stepServerWrap([stepStale]() {
-    stepStale([]() {});
+  stepBackup([stepServerWrap, stepStale]() {
+    stepServerWrap([stepStale]() {
+      stepStale([]() {});
+    });
   });
+}
+
+QByteArray AppState::getKek() {
+  if (!kek_.isEmpty()) return kek_;
+  kek_ = storage_->loadKek();
+  if (!kek_.isEmpty()) return kek_;
+  if (!password_.isEmpty() && user_.id) {
+    kek_ = deriveKek(password_, user_.id);
+    storage_->saveKek(kek_);
+    return kek_;
+  }
+  return {};
+}
+
+void AppState::uploadBackup(qint64 channelId, const QByteArray& key) {
+  const QByteArray kek = getKek();
+  if (kek.isEmpty()) return;
+  api_.uploadKeyBackup(channelId, wrapWithKek(kek, key), [](const QJsonObject&, const QString&) {});
 }
 
 void AppState::syncAllKeys() {

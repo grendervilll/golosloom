@@ -30,7 +30,10 @@ QNetworkReply* ApiClient::request(const QString& method, const QString& path, co
                                   Callback cb) {
   QNetworkRequest req(QUrl(baseUrl_ + path));
   req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+  // HTTP/2 через некоторые VPN-туннели работает медленно — отключаем.
+  req.setAttribute(QNetworkRequest::Http2AllowedAttribute, false);
   if (!token_.isEmpty()) req.setRawHeader("Authorization", ("Bearer " + token_).toUtf8());
+  req.setTransferTimeout(30000);
   QNetworkReply* reply = nullptr;
   if (method == "GET") {
     reply = net_->get(req);
@@ -187,6 +190,15 @@ void ApiClient::uploadWrappedKey(qint64 channelId, qint64 userId, const QString&
 
 void ApiClient::pendingKeyTargets(qint64 channelId, Callback cb) {
   get("/api/channels/" + QString::number(channelId) + "/keys/pending", std::move(cb));
+}
+
+void ApiClient::getKeyBackup(qint64 channelId, Callback cb) {
+  get("/api/channels/" + QString::number(channelId) + "/keys/backup", std::move(cb));
+}
+
+void ApiClient::uploadKeyBackup(qint64 channelId, const QByteArray& wrapped, Callback cb) {
+  put("/api/channels/" + QString::number(channelId) + "/keys/backup",
+      {{"wrapped_key", QString::fromLatin1(wrapped.toBase64())}}, std::move(cb));
 }
 
 void ApiClient::uploadFile(qint64 channelId, const QString& filePath, Callback cb) {

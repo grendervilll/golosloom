@@ -150,6 +150,16 @@ QString KeyStorage::loadDevice() {
   return QString::fromUtf8(v);
 }
 
+void KeyStorage::saveKek(const QByteArray& kek) {
+  if (!keychainSet("kek", kek)) fileSet("kek", kek);
+}
+
+QByteArray KeyStorage::loadKek() {
+  QByteArray v = keychainGet("kek");
+  if (v.isEmpty()) v = fileGet("kek");
+  return v;
+}
+
 void KeyStorage::saveToken(const QString& token) {
   if (!keychainSet("token", token.toUtf8())) fileSet("token", token.toUtf8());
 }
