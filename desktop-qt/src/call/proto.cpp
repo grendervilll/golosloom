@@ -40,6 +40,13 @@ QByteArray Pb::boolean(int field, bool b) {
 Pb::Reader::Reader(const QByteArray& data) : data_(data) {}
 
 bool Pb::Reader::next() {
+  // Если предыдущее поле было length-delimited (wire 2), его данные ещё
+  // не прочитаны (asBytes/asString возвращают копию, не двигая позицию) —
+  // перешагиваем их, иначе ключ следующего поля прочитается из данных.
+  if (wire_ == 2 && pos_ < data_.size()) {
+    pos_ += len_;
+    if (pos_ > data_.size()) pos_ = data_.size();
+  }
   if (pos_ >= data_.size()) return false;
   quint64 k = 0;
   int shift = 0;

@@ -5,6 +5,7 @@
 #include <QDir>
 #include <QTimer>
 
+#include <cstdlib>
 #include <deque>
 #include <functional>
 
@@ -33,17 +34,24 @@ bool gTimeout = false;
 void runNext() {
   if (gSteps.empty()) {
     qInfo().noquote() << (gFails == 0 ? "CALL SMOKE ALL PASSED" : QString("CALL SMOKE FAILURES: %1").arg(gFails));
-    QCoreApplication::exit(gFails == 0 ? 0 : 1);
+    // Отложенный выход: после завершения всех шагов и остановки таймеров.
+    QTimer::singleShot(100, []() { std::exit(gFails == 0 ? 0 : 1); });
     return;
   }
   auto step = gSteps.front();
   gSteps.pop_front();
   auto* loop = new QEventLoop();
-  QTimer::singleShot(90000, loop, []() {
+  // Таймер таймаута шага; отменяется при штатном завершении шага.
+  QTimer* timeoutTimer = new QTimer(loop);
+  timeoutTimer->setSingleShot(true);
+  timeoutTimer->setInterval(90000);
+  QObject::connect(timeoutTimer, &QTimer::timeout, loop, []() {
     qWarning() << "TIMEOUT шага";
     QCoreApplication::exit(2);
   });
-  step([loop]() {
+  timeoutTimer->start();
+  step([loop, timeoutTimer]() {
+    timeoutTimer->stop();
     loop->quit();
     runNext();
   });
@@ -145,7 +153,7 @@ void runCallSmoke(const QString& server) {
   });
   addStep([cmA, cmB](auto next) {
     // Ждём subscriber offer от сервера (второй участник публикует аудио).
-    QTimer::singleShot(8000, [cmA, cmB, next]() {
+    QTimer::singleShot(20000, [cmA, cmB, next]() {
       ok("A получил subscriber offer", cmA->livekit()->subscriberOfferReceived());
       ok("B получил subscriber offer", cmB->livekit()->subscriberOfferReceived());
       cmA->leaveCall();

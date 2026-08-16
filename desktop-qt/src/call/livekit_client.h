@@ -1,5 +1,6 @@
 #pragma once
 #include <QObject>
+#include <QVector>
 #include <QWebSocket>
 
 #include <gst/gst.h>
@@ -49,6 +50,7 @@ class LiveKitClient : public QObject {
   void handleOffer(const QByteArray& sdpBytes);
   void handleTrickle(const QByteArray& trickle);
   void handleTrackPublished(const QByteArray& data);
+  void handleParticipantUpdate(const QByteArray& data);
   void startPublish();
   void createPublisherOffer();
   void handleSdpAnswer(const QByteArray& sdpBytes);
@@ -83,6 +85,14 @@ class LiveKitClient : public QObject {
   GstElement* pubVideoSrc_ = nullptr;
   bool offerSent_ = false;
   bool started_ = false;
+  // Кандидаты, пришедшие до создания webrtcbin (добавляются при создании).
+  struct PendingTrickle {
+    int target = 0;
+    guint mlineindex = 0;
+    QString candidate;
+  };
+  QVector<PendingTrickle> pendingTrickles_;
+  void flushPendingTrickles();
 };
 
 }  // namespace gl

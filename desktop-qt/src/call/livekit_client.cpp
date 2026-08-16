@@ -21,6 +21,7 @@ constexpr int kSignalRequestOffer = 1;
 constexpr int kSignalRequestAnswer = 2;
 constexpr int kSignalRequestTrickle = 3;
 constexpr int kSignalRequestAddTrack = 4;
+constexpr int kSignalRequestUpdateSub = 6;
 constexpr int kSignalRequestLeave = 8;
 
 constexpr int kSignalResponseJoin = 1;
@@ -37,8 +38,12 @@ QByteArray encodeSessionDescription(const QString& type, const QString& sdp) {
 }
 
 QByteArray encodeTrickle(const QString& candidate, int target, bool final) {
+  // TrickleRequest.candidateInit — JSON-строка RTCIceCandidateInit,
+  // а не сырой SDP-кандидат: {"candidate":"candidate:...","sdpMid":"0","sdpMLineIndex":0}.
+  const QString json = QStringLiteral("{\"candidate\":\"%1\",\"sdpMid\":\"0\",\"sdpMLineIndex\":0}")
+                           .arg(QString(candidate).replace('\\', "\\\\").replace('"', "\\\""));
   QByteArray m;
-  m += Pb::str(1, candidate);
+  m += Pb::str(1, json);
   m += Pb::var(2, static_cast<quint64>(target));
   m += Pb::boolean(3, final);
   return m;
@@ -76,27 +81,19 @@ void LiveKitClient::connectRoom(const QString& wsUrl, const QString& token, bool
   publisherAnswered_ = false;
   subscriberOfferReceived_ = false;
   started_ = false;
-  // Первое сообщение (JoinRequest) передаётся в URL параметром join_request
-  // (base64url WrappedJoinRequest {compression=NONE, join_request=...}).
-  QByteArray joinRequest;
-  QByteArray clientInfo;
-  clientInfo += Pb::var(1, 1);        // sdk = GO
-  clientInfo += Pb::str(2, "0.1.0");  // version
-  clientInfo += Pb::var(3, 3);        // protocol
-  joinRequest += Pb::msg(1, clientInfo);
-  QByteArray wrapped;
-  wrapped += Pb::var(1, 0);  // compression = NONE
-  wrapped += Pb::bytes(2, joinRequest);
-  // LiveKit требует base64url С паддингом (как btoa в браузере).
-  const QByteArray joinB64 = wrapped.toBase64().replace('+', "-").replace('/', "_");
-  // Сигналинг LiveKit проксируется Caddy по пути /rtc (v1 — современный
-  // протокол: join_request в URL, бинарные WS-сообщения).
+  // Старый сигнальный путь /rtc (v0): НЕ требует join_request, поэтому
+  // LiveKit НЕ включает single Peer Connection — publisher и subscriber
+  // идут раздельными транспортами, subscriber offer приходит на поле 3.
+  // (join_request в URL в v1.13.5 принудительно включает single-PC.)
   QString base = wsUrl;
   while (base.endsWith('/')) base.chop(1);
-  QUrl url(base + "/rtc/v1");
+  QUrl url(base + "/rtc");
   QUrlQuery q;
   q.addQueryItem("access_token", token);
-  q.addQueryItem("join_request", QString::fromLatin1(joinB64));
+  q.addQueryItem("protocol", "2");
+  q.addQueryItem("sdk", "cpp");
+  q.addQueryItem("version", "0.1.0");
+  q.addQueryItem("auto_subscribe", "true");
   url.setQuery(q);
   QFile f("/tmp/lk-token.txt");
   if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
@@ -163,6 +160,12 @@ void LiveKitClient::handleResponse(const QByteArray& data) {
   while (r.next()) {
     const int f = r.field();
     if (f == kSignalResponseJoin) {
+      const QByteArray joinBytes = r.asBytes();
+      Pb::Reader jr(joinBytes);
+      while (jr.next()) {
+        if (jr.field() == 6) qInfo() << "LK join: subscriber_primary = true";
+        if (jr.field() == 15) qInfo() << "LK join: fast_publish = true";
+      }
       connected_ = true;
       emit connectedChanged(true);
       startPublish();
@@ -174,8 +177,39 @@ void LiveKitClient::handleResponse(const QByteArray& data) {
       handleTrickle(r.asBytes());
     } else if (f == kSignalResponseTrackPublished) {
       handleTrackPublished(r.asBytes());
+    } else if (f == 5) {
+      // ParticipantUpdate: новые участники с их треками — подписываемся.
+      handleParticipantUpdate(r.asBytes());
     }
   }
+}
+
+void LiveKitClient::handleParticipantUpdate(const QByteArray& data) {
+  // ParticipantUpdate { participants=1 (repeated ParticipantInfo) }
+  // ParticipantInfo { sid=1, identity=2, state=3, tracks=4 (repeated TrackInfo) }
+  // TrackInfo { sid=1 }
+  Pb::Reader r(data);
+  QStringList sids;
+  while (r.next()) {
+    if (r.field() != 1) continue;
+    const QByteArray piBytes = r.asBytes();  // копия — вложенный Reader живёт дольше
+    Pb::Reader p(piBytes);
+    while (p.next()) {
+      if (p.field() == 4) {
+        const QByteArray trBytes = p.asBytes();
+        Pb::Reader tr(trBytes);
+        while (tr.next()) {
+          if (tr.field() == 1) sids << tr.asString();
+        }
+      }
+    }
+  }
+  if (sids.isEmpty()) return;
+  // Подписка на треки: UpdateSubscription { track_sids=1, subscribe=2 }.
+  QByteArray sub;
+  for (const QString& sid : sids) sub += Pb::str(1, sid);
+  sub += Pb::boolean(2, true);
+  sendSignalRequest(Pb::msg(kSignalRequestUpdateSub, sub));
 }
 
 void LiveKitClient::handleTrackPublished(const QByteArray& data) {
@@ -187,7 +221,8 @@ void LiveKitClient::handleTrackPublished(const QByteArray& data) {
       cid = r.asString();
     } else if (r.field() == 2) {
       // TrackInfo { sid=1 }
-      Pb::Reader tr(r.asBytes());
+      const QByteArray tiBytes = r.asBytes();  // копия для вложенного Reader
+      Pb::Reader tr(tiBytes);
       while (tr.next()) {
         if (tr.field() == 1) {
           publisherTrackSid_ = tr.asString();
@@ -203,19 +238,43 @@ void LiveKitClient::handleTrackPublished(const QByteArray& data) {
 
 void LiveKitClient::handleTrickle(const QByteArray& trickle) {
   Pb::Reader r(trickle);
-  QString candidate;
+  QString candidateJson;
   int target = 0;
   while (r.next()) {
     if (r.field() == 1) {
-      candidate = r.asString();
+      candidateJson = r.asString();
     } else if (r.field() == 2) {
       target = static_cast<int>(r.asVarint());
     }
   }
+  if (candidateJson.isEmpty()) return;
+  // candidateInit — JSON RTCIceCandidateInit: {"candidate":"...","sdpMid":...}.
+  QString candidate = candidateJson;
+  const QJsonObject obj = QJsonDocument::fromJson(candidateJson.toUtf8()).object();
+  if (obj.contains("candidate")) candidate = obj.value("candidate").toString();
   if (candidate.isEmpty()) return;
   GstElement* pc = target == 0 ? pub_ : sub_;
-  if (!pc) return;
-  g_signal_emit_by_name(pc, "add-ice-candidate", candidate.toUtf8().constData());
+  guint mlineindex = 0;
+  if (obj.contains("sdpMLineIndex")) mlineindex = static_cast<guint>(obj.value("sdpMLineIndex").toInt());
+  if (!pc) {
+    // webrtcbin ещё не создан — откладываем кандидата.
+    PendingTrickle t;
+    t.target = target;
+    t.mlineindex = mlineindex;
+    t.candidate = candidate;
+    pendingTrickles_.append(t);
+    return;
+  }
+  g_signal_emit_by_name(pc, "add-ice-candidate", mlineindex, candidate.toUtf8().constData());
+}
+
+void LiveKitClient::flushPendingTrickles() {
+  for (const PendingTrickle& t : pendingTrickles_) {
+    GstElement* pc = t.target == 0 ? pub_ : sub_;
+    if (!pc) continue;
+    g_signal_emit_by_name(pc, "add-ice-candidate", t.mlineindex, t.candidate.toUtf8().constData());
+  }
+  pendingTrickles_.clear();
 }
 
 void LiveKitClient::handleOffer(const QByteArray& sdpBytes) {
@@ -242,11 +301,22 @@ void LiveKitClient::handleOffer(const QByteArray& sdpBytes) {
   g_signal_emit_by_name(sub_, "set-remote-description", desc, nullptr);
   gst_webrtc_session_description_free(desc);
 
-  GstWebRTCSessionDescription* answer = nullptr;
-  g_signal_emit_by_name(sub_, "create-answer", nullptr, &answer);
-  g_signal_emit_by_name(sub_, "set-local-description", answer, nullptr);
-  sendAnswer(answer);
-  gst_webrtc_session_description_free(answer);
+  // create-answer в 1.28: (GstStructure* options, GstPromise*) — через promise.
+  GstPromise* promise = gst_promise_new_with_change_func(
+      [](GstPromise* p, gpointer data) {
+        auto* client = static_cast<LiveKitClient*>(data);
+        const GstStructure* reply = gst_promise_get_reply(p);
+        if (!reply) return;
+        GstWebRTCSessionDescription* answer = nullptr;
+        gst_structure_get(reply, "answer", GST_TYPE_WEBRTC_SESSION_DESCRIPTION, &answer, nullptr);
+        if (!answer) return;
+        g_signal_emit_by_name(client->sub_, "set-local-description", answer, nullptr);
+        client->sendAnswer(answer);
+        gst_webrtc_session_description_free(answer);
+      },
+      this, nullptr);
+  g_signal_emit_by_name(sub_, "create-answer", nullptr, promise);
+  gst_promise_unref(promise);
 }
 
 void LiveKitClient::handleSdpAnswer(const QByteArray& sdpBytes) {
@@ -258,9 +328,23 @@ void LiveKitClient::handleSdpAnswer(const QByteArray& sdpBytes) {
   if (!sdp.isEmpty()) {
     publisherAnswered_ = true;
     publisherSdp_ = sdp;
-    emit publisherAnsweredSignal();
+      emit publisherAnsweredSignal();
   }
   if (sdp.isEmpty() || !pub_) return;
+  // LiveKit (ICE-lite) отвечает m=audio 0 (порт 0 = «rejected» для GStreamer)
+  // и шлёт кандидатов trickle'ом. Заменяем порт 0 на ненулевой, иначе
+  // GStreamer отвергнет m-line и не запустит DTLS.
+  const QStringList lines = sdp.split('\n');
+  QStringList patched;
+  patched.reserve(lines.size());
+  for (const QString& line : lines) {
+    if (line.startsWith("m=audio 0 ")) {
+      patched.append("m=audio 9 " + line.mid(10));
+    } else {
+      patched.append(line);
+    }
+  }
+  sdp = patched.join('\n');
   GstSDPMessage* sdpMsg = nullptr;
   if (gst_sdp_message_new(&sdpMsg) != GST_SDP_OK) return;
   if (gst_sdp_message_parse_buffer(reinterpret_cast<const guint8*>(sdp.toUtf8().constData()), sdp.toUtf8().size(),
@@ -285,6 +369,12 @@ void onPubIce(GstElement* webrtc, guint mlineindex, gchar* candidate, gpointer u
   auto* client = static_cast<LiveKitClient*>(user_data);
   QByteArray msg = Pb::msg(kSignalRequestTrickle, encodeTrickle(QString::fromUtf8(candidate), 0, false));
   client->sendSignalRequest(msg);
+}
+
+void onConnStateNotify(GObject* obj, GParamSpec*, gpointer) {
+  GstWebRTCPeerConnectionState st = GST_WEBRTC_PEER_CONNECTION_STATE_NEW;
+  g_object_get(obj, "connection-state", &st, nullptr);
+  qInfo() << "LK PC state:" << static_cast<int>(st);
 }
 
 void onSubIce(GstElement* webrtc, guint mlineindex, gchar* candidate, gpointer user_data) {
@@ -370,7 +460,9 @@ void LiveKitClient::initPublisherPipeline() {
   g_signal_connect(webrtc, "on-ice-candidate", G_CALLBACK(onPubIce), this);
   g_signal_connect(webrtc, "pad-added", G_CALLBACK(onPubPadAdded), this);
   g_signal_connect(webrtc, "on-negotiation-needed", G_CALLBACK(onPubNegotiationNeeded), this);
+  g_signal_connect(webrtc, "notify::connection-state", G_CALLBACK(onConnStateNotify), this);
   gst_element_set_state(bin, GST_STATE_PLAYING);
+  flushPendingTrickles();
 }
 
 void LiveKitClient::initSubscriberPipeline() {
@@ -385,7 +477,9 @@ void LiveKitClient::initSubscriberPipeline() {
   subBin_ = bin;
   g_signal_connect(webrtc, "on-ice-candidate", G_CALLBACK(onSubIce), this);
   g_signal_connect(webrtc, "pad-added", G_CALLBACK(onSubPadAdded), this);
+  g_signal_connect(webrtc, "notify::connection-state", G_CALLBACK(onConnStateNotify), this);
   gst_element_set_state(bin, GST_STATE_PLAYING);
+  flushPendingTrickles();
 }
 
 void LiveKitClient::startPublish() {
@@ -419,13 +513,33 @@ void LiveKitClient::createPublisherOffer() {
         GstWebRTCSessionDescription* offer = nullptr;
         gst_structure_get(reply, "offer", GST_TYPE_WEBRTC_SESSION_DESCRIPTION, &offer, nullptr);
         if (!offer) return;
-        g_signal_emit_by_name(client->pub_, "set-local-description", offer, nullptr);
-        client->sendPublisherOffer(offer);
+        // LiveKit-клиенты инициируют DTLS (setup:active). GStreamer ставит
+        // actpass — переписываем локальное описание на active, чтобы роль
+        // DTLS определилась корректно (мы — client).
+        gchar* sdpText = gst_sdp_message_as_text(offer->sdp);
+        QString sdpStr = QString::fromUtf8(sdpText);
+        g_free(sdpText);
+        sdpStr.replace(QStringLiteral("a=setup:actpass"), QStringLiteral("a=setup:active"));
+
+        GstSDPMessage* mod = nullptr;
+        if (gst_sdp_message_new(&mod) == GST_SDP_OK &&
+            gst_sdp_message_parse_buffer(reinterpret_cast<const guint8*>(sdpStr.toUtf8().constData()),
+                                         sdpStr.toUtf8().size(), mod) == GST_SDP_OK) {
+          GstWebRTCSessionDescription* local =
+              gst_webrtc_session_description_new(GST_WEBRTC_SDP_TYPE_OFFER, mod);
+          g_signal_emit_by_name(client->pub_, "set-local-description", local, nullptr);
+          client->sendPublisherOffer(local);
+          gst_webrtc_session_description_free(local);
+        } else {
+          if (mod) gst_sdp_message_free(mod);
+          g_signal_emit_by_name(client->pub_, "set-local-description", offer, nullptr);
+          client->sendPublisherOffer(offer);
+        }
         client->offerSent_ = true;
         gst_webrtc_session_description_free(offer);
       },
       this, nullptr);
-  g_signal_emit_by_name(pub_, "create-offer", promise);
+  g_signal_emit_by_name(pub_, "create-offer", nullptr, promise);
   gst_promise_unref(promise);
 }
 
