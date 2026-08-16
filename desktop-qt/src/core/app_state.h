@@ -59,6 +59,11 @@ class AppState : public QObject {
   void logout();
   // Пароль для KEK (запоминаем при входе, чтобы расшифровать бэкапы).
   void setPassword(const QString& password) { password_ = password; }
+  // Нужен ли пароль для расшифровки (KEK нет нигде).
+  bool kekNeeded() const { return kek_.isEmpty() && storage_->loadKek().isEmpty() && !password_.isEmpty(); }
+  bool kekMissing() const { return kek_.isEmpty() && storage_->loadKek().isEmpty(); }
+  // Ввод пароля на новом устройстве: выводит KEK, пересинхронизирует всё.
+  void submitKek(const QString& password, std::function<void(bool ok, const QString& err)> done);
   // Создание канала + ключ канала (как в вебе).
   void createChannel(const QString& name, bool isPrivate, std::function<void(const QString&)> done);
   // Вступление в канал: REST join + подписка на события по WS.
@@ -95,6 +100,8 @@ class AppState : public QObject {
   void connectionChanged(bool connected);
   void invitesChanged();
   void typingChanged(qint64 channelId, const QString& nick);
+  // Запросить пароль для расшифровки (KEK отсутствует, есть зашифрованные каналы).
+  void kekPromptNeeded();
 
  public:
   void refreshChannelsPublic() { refreshChannels(); }
@@ -112,6 +119,7 @@ class AppState : public QObject {
   void loadHistory(qint64 channelId);
   QByteArray getKek();
   void uploadBackup(qint64 channelId, const QByteArray& key);
+  void finishKek(const QString& password, const QByteArray& kek, std::function<void(bool, const QString&)> done);
 
   ApiClient api_;
   WsClient ws_;

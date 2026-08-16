@@ -23,6 +23,7 @@ import CallModal from '../components/CallModal.vue'
 import UpdateModal from '../components/UpdateModal.vue'
 import MobileTabBar from '../components/MobileTabBar.vue'
 import CallBar from '../components/CallBar.vue'
+import KekPromptModal from '../components/KekPromptModal.vue'
 import AdminFilesPanel from '../components/AdminFilesPanel.vue'
 import { initPush } from '../utils/push'
 
@@ -237,6 +238,7 @@ function onTabChat() {
     <CallModal v-if="showCallPicker" @close="showCallPicker = false" />
     <ServerUrlModal v-if="showServerUrl" @close="showServerUrl = false" />
     <UpdateModal />
+    <KekPromptModal />
   </div>
 </template>
 

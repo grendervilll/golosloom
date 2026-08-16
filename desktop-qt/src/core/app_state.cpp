@@ -265,9 +265,64 @@ void AppState::restoreSession(std::function<void(bool, const QString&)> done) {
       loadInvites([](const QVector<Invite>&) {});
       emit loginChanged();
       emit channelsChanged();
+      // На новом устройстве KEK нет — нужен пароль для расшифровки бэкапов.
+      if (kekMissing() && !channels_.isEmpty()) {
+        emit kekPromptNeeded();
+      }
       done(true, QString());
     });
   });
+}
+
+// Ввод пароля на новом устройстве: выводим KEK и пересинхронизируем ключи.
+void AppState::submitKek(const QString& password, std::function<void(bool, const QString&)> done) {
+  if (!user_.id) {
+    done(false, "нет пользователя");
+    return;
+  }
+  const QByteArray k = deriveKek(password, user_.id);
+  if (k.isEmpty()) {
+    done(false, "не удалось вывести ключ из пароля");
+    return;
+  }
+  // Проверка пароля: расшифровываем первый доступный бэкап. Если ни одного
+  // бэкапа нет — пароль считаем верным (ключей просто нет).
+  auto checked = std::make_shared<bool>(false);
+  int pending = 0;
+  for (const Channel& ch : channels_) {
+    if (!ch.isMember) continue;
+    pending++;
+    api_.getKeyBackup(ch.id, [this, password, k, done, checked](const QJsonObject& res, const QString&) {
+      if (*checked) return;
+      const QByteArray wrapped = b64Decode(res.value("wrapped_key").toString());
+      if (wrapped.isEmpty()) return;  // бэкапа нет — пробуем следующий канал
+      *checked = true;
+      if (unwrapWithKek(k, wrapped).isEmpty()) {
+        done(false, "Неверный пароль — сообщения не расшифрованы");
+      } else {
+        finishKek(password, k, done);
+      }
+    });
+  }
+  if (pending == 0) {
+    finishKek(password, k, done);
+  } else {
+    // Если все запросы вернулись без бэкапов — ждём последний колбэк.
+    // Время на ответы: поллинг сам подхватит; здесь просто финализируем.
+    QTimer::singleShot(1500, this, [this, password, k, done, checked]() {
+      if (!*checked) finishKek(password, k, done);
+    });
+  }
+}
+
+void AppState::finishKek(const QString& password, const QByteArray& k,
+                         std::function<void(bool, const QString&)> done) {
+  password_ = password;
+  kek_ = k;
+  storage_->saveKek(k);
+  syncAllKeys();
+  if (currentId_) loadHistory(currentId_);
+  done(true, QString());
 }
 
 // Создание ключа канала (создатель) — только для E2E-каналов.
@@ -525,7 +580,30 @@ void AppState::sendMessage(qint64 channelId, const QString& text, const QVector<
   if (!done) done = [](const QString&) {};
   const QByteArray key = storage_->loadChannelKey(channelId);
   if (key.isEmpty()) {
-    done("Ключ канала ещё не получен, повторите позже");
+    // Ключа нет: сначала пробуем синхронизацию (бэкап/раздача), повторяем
+    // несколько раз, и только потом сообщаем пользователю.
+    syncKeys(channelId);
+    QTimer::singleShot(800, this, [this, channelId, text, attachmentIds, replyToId, done]() {
+      const QByteArray k2 = storage_->loadChannelKey(channelId);
+      if (k2.isEmpty()) {
+        syncKeys(channelId);
+        QTimer::singleShot(800, this, [this, channelId, text, attachmentIds, replyToId, done]() {
+          const QByteArray k3 = storage_->loadChannelKey(channelId);
+          if (k3.isEmpty()) {
+            if (kekMissing()) {
+              emit kekPromptNeeded();
+              done("Для отправки нужен пароль аккаунта (расшифровка ключей)");
+            } else {
+              done("Ключ канала ещё не получен, повторите позже");
+            }
+            return;
+          }
+          sendMessage(channelId, text, attachmentIds, replyToId, done);
+        });
+        return;
+      }
+      sendMessage(channelId, text, attachmentIds, replyToId, done);
+    });
     return;
   }
   const Encrypted enc = gl::encryptMessage(key, text);

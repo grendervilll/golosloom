@@ -288,6 +288,33 @@ void runSmoke(const QString& server) {
       });
     });
   });
+  // Авто-вход без пароля (по токену) на новом устройстве: KEK отсутствует,
+  // запрашиваем пароль (submitKek) → ключи восстановлены из бэкапов.
+  addStep([&chId, server, nickB, pass, suffix](auto next) {
+    if (!chId) return failStep("нет канала");
+    auto* b3 = new AppState();
+    b3->setStorage(new KeyStorage(false, "/tmp/golosmoke/" + suffix + "/B3"));
+    b3->setServerUrl(server);
+    // Токен для B3 берём из B2-хранилища (вход «по токену»).
+    b3->api()->login(nickB, pass, [b3, chId, pass, next](const QJsonObject& res, const QString& err) {
+      if (!err.isEmpty()) return failStep("логин B3: " + err);
+      const QString token = res.value("token").toString();
+      b3->storage()->saveToken(token);
+      b3->restoreSession([b3, chId, pass, next](bool restored, const QString& err2) {
+        if (!restored) return failStep("авто-вход B3: " + err2);
+        ok("B3 вошёл по токену без пароля", b3->kekMissing());
+        // Пароль не введён — KEK должен отсутствовать → нужен submitKek.
+        b3->submitKek(pass, [b3, chId, next](bool ok2, const QString& err3) {
+          if (!ok2) return failStep("submitKek B3: " + err3);
+          QTimer::singleShot(4000, [b3, chId, next]() {
+            const bool hasKey = !b3->storage()->loadChannelKey(chId).isEmpty();
+            ok("B3 восстановил ключи после ввода пароля", hasKey);
+            next();
+          });
+        });
+      });
+    });
+  });
   addStep([](auto next) {
     qInfo().noquote() << (gFails == 0 ? "SMOKE ALL PASSED" : QString("SMOKE FAILURES: %1").arg(gFails));
     // next() завершает шаг и останавливает таймер таймаута; выход — после

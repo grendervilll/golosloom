@@ -34,6 +34,12 @@ export const useChannelsStore = defineStore('channels', {
     invites: [] as Invite[],
     deviceKeys: null as ReturnType<typeof generateDeviceKeys> | null,
     keyPollTimer: 0 as number,
+    // Запрос пароля для расшифровки (вход по токену без пароля: KEK нет,
+    // а каналы зашифрованы). Показывается один раз.
+    kekPromptVisible: false as boolean,
+    // Пароль введён, но не подошёл (бэкапы не расшифровались).
+    kekPromptError: '' as string,
+    _kekPromptShown: false as boolean,
   }),
   getters: {
     current(): Channel | undefined {
@@ -189,10 +195,59 @@ export const useChannelsStore = defineStore('channels', {
           }
           return k
         }
+        // Вход по токену без пароля и без сохранённого KEK: предлагаем
+        // ввести пароль — иначе парольные бэкапы ключей не расшифровать.
+        if (auth.user && !this._kekPromptShown) {
+          this._kekPromptShown = true
+          this.kekPromptVisible = true
+          this.kekPromptError = ''
+        }
       } catch {
         /* ignore */
       }
       return null
+    },
+    // Ввод пароля из окна «расшифровать переписку»: выводим KEK
+    // и сразу расшифровываем бэкапы всех каналов.
+    async submitKek(password: string): Promise<boolean> {
+      const auth = useAuthStore()
+      if (!auth.user) return false
+      try {
+        const storage = await getKeyStorage()
+        const k = await deriveKek(password, Number(auth.user.id))
+        await storage.saveKek(k)
+        auth.password = password
+        this.kekPromptVisible = false
+        this.kekPromptError = ''
+        // Проверка пароля: расшифровываем первый доступный бэкап.
+        const settings = useSettingsStore()
+        for (const ch of this.channels) {
+          if (!ch.is_member) continue
+          let backup: { wrapped_key?: string } | null = null
+          try {
+            backup = await settings.api.getKeyBackup(ch.id)
+          } catch {
+            continue
+          }
+          if (!backup?.wrapped_key) continue
+          try {
+            await unwrapWithKek(k, b64ToBytes(backup.wrapped_key))
+          } catch {
+            this.kekPromptError = 'Неверный пароль — сообщения не расшифрованы'
+            this.kekPromptVisible = true
+            return false
+          }
+        }
+        void this.syncAllKeys()
+        return true
+      } catch {
+        this.kekPromptError = 'Не удалось обработать пароль'
+        this.kekPromptVisible = true
+        return false
+      }
+    },
+    dismissKekPrompt() {
+      this.kekPromptVisible = false
     },
     // Парольный бэкап ключа канала (зашифрован ключом из пароля).
     // Новое устройство получит ключ без онлайн-держателя — достаточно пароля.

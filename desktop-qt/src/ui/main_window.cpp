@@ -295,6 +295,8 @@ MainWindow::MainWindow(AppState* state, QWidget* parent) : QMainWindow(parent), 
     });
   });
 
+  connect(state_, &AppState::kekPromptNeeded, this, &MainWindow::onKekPrompt);
+
   login_ = nullptr;
   if (!state_->loggedIn()) {
     // Авто-вход по сохранённому токену; иначе — окно логина.
@@ -330,6 +332,26 @@ void MainWindow::showLogin() {
   login_->show();
   login_->raise();
   login_->activateWindow();
+}
+
+// Запрос пароля на новом устройстве: KEK отсутствует, а каналы зашифрованы.
+void MainWindow::onKekPrompt() {
+  bool ok = false;
+  const QString pass = QInputDialog::getText(
+      this, "Расшифровать переписку",
+      "Введите пароль аккаунта, чтобы расшифровать ключи каналов "
+      "и открыть переписку на этом устройстве:",
+      QLineEdit::Password, QString(), &ok);
+  if (!ok || pass.isEmpty()) {
+    toasts_->showToast("Переписка зашифрована", "Введите пароль, чтобы расшифровать");
+    return;
+  }
+  state_->submitKek(pass, [this](bool success, const QString& err) {
+    if (!success) {
+      QMessageBox::warning(this, "Не удалось расшифровать", err);
+      state_->kekPromptNeeded();  // переспросим
+    }
+  });
 }
 
 void MainWindow::initCallControls() {

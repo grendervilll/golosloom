@@ -19,6 +19,7 @@ class MainWindow : public QMainWindow {
 
  private:
   void showLogin();
+  void onKekPrompt();
   void onWsEvent(const QString& type, const QJsonObject& data);
   void initCallControls();
 
