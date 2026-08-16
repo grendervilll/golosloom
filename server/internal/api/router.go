@@ -82,6 +82,8 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("POST /api/channels/{id}/keys/wrap", s.requireAuth(s.handleUploadWrappedKey))
 	mux.HandleFunc("GET /api/channels/{id}/keys/me", s.requireAuth(s.handleGetMyWrappedKey))
 	mux.HandleFunc("GET /api/channels/{id}/keys/pending", s.requireAuth(s.handlePendingKeyTargets))
+	mux.HandleFunc("GET /api/channels/{id}/keys/backup", s.requireAuth(s.handleGetKeyBackup))
+	mux.HandleFunc("PUT /api/channels/{id}/keys/backup", s.requireAuth(s.handleUploadKeyBackup))
 
 	// Сообщения
 	mux.HandleFunc("GET /api/channels/{id}/messages", s.requireAuth(s.handleListMessages))

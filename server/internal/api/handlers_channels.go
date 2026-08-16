@@ -713,3 +713,43 @@ func (s *Server) handlePendingKeyTargets(w http.ResponseWriter, r *http.Request)
 	}
 	writeJSON(w, http.StatusOK, out)
 }
+
+// handleUploadKeyBackup — сохранить парольный бэкап ключа канала
+// (ключ, зашифрованный ключом из пароля пользователя). Новое устройство
+// получает ключ без участия онлайн-держателя: достаточно пароля.
+func (s *Server) handleUploadKeyBackup(w http.ResponseWriter, r *http.Request) {
+	channelID := pathID(r, "id")
+	if _, ok := s.requireChannelMember(w, r, channelID); !ok {
+		return
+	}
+	var req struct {
+		WrappedKey []byte `json:"wrapped_key"`
+	}
+	if err := readJSON(r, &req); err != nil || len(req.WrappedKey) == 0 {
+		writeErr(w, http.StatusBadRequest, "некорректный запрос")
+		return
+	}
+	if err := s.Store.SaveKeyBackup(channelID, userIDFrom(r), req.WrappedKey); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// handleGetKeyBackup — парольный бэкап ключа канала для текущего пользователя.
+func (s *Server) handleGetKeyBackup(w http.ResponseWriter, r *http.Request) {
+	channelID := pathID(r, "id")
+	if _, ok := s.requireChannelMember(w, r, channelID); !ok {
+		return
+	}
+	wrapped, err := s.Store.GetKeyBackup(channelID, userIDFrom(r))
+	if err == store.ErrNotFound {
+		writeJSON(w, http.StatusOK, map[string]interface{}{"wrapped_key": nil})
+		return
+	}
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"wrapped_key": wrapped})
+}

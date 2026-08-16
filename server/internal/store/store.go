@@ -1430,6 +1430,46 @@ func (s *Store) GetChannelKey(channelID, userID int64, deviceID string) ([]byte,
 	return wrapped, err
 }
 
+// ---------- Парольные бэкапы ключей каналов ----------
+// Ключ канала, зашифрованный ключом из пароля пользователя (KEK).
+// Новое устройство получает ключ без участия онлайн-держателя:
+// достаточно пароля. Сервер хранит только зашифрованный бэкап.
+
+func (s *Store) ensureBackupsTable() error {
+	_, err := s.db.Exec(`CREATE TABLE IF NOT EXISTS channel_key_backups (
+		channel_id INTEGER NOT NULL,
+		user_id INTEGER NOT NULL,
+		wrapped_key BLOB NOT NULL,
+		updated_at TEXT NOT NULL,
+		PRIMARY KEY (channel_id, user_id)
+	)`)
+	return err
+}
+
+func (s *Store) SaveKeyBackup(channelID, userID int64, wrappedKey []byte) error {
+	if err := s.ensureBackupsTable(); err != nil {
+		return err
+	}
+	_, err := s.db.Exec(`INSERT INTO channel_key_backups (channel_id, user_id, wrapped_key, updated_at)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(channel_id, user_id) DO UPDATE SET wrapped_key = excluded.wrapped_key, updated_at = excluded.updated_at`,
+		channelID, userID, wrappedKey, now())
+	return err
+}
+
+func (s *Store) GetKeyBackup(channelID, userID int64) ([]byte, error) {
+	var wrapped []byte
+	err := s.db.QueryRow(`SELECT wrapped_key FROM channel_key_backups WHERE channel_id = ? AND user_id = ?`,
+		channelID, userID).Scan(&wrapped)
+	if err == sql.ErrNoRows {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return wrapped, nil
+}
+
 // PendingKeyTargets возвращает устройства участников канала,
 // для которых ещё не сохранён обёрнутый ключ канала.
 func (s *Store) PendingKeyTargets(channelID int64) ([]models.Device, error) {
