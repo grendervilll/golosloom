@@ -61,6 +61,12 @@ QPushButton#rowBtn:checked { background: #404249; color: #ffffff; }
 #modeLabel { color: #949ba4; font-size: 12px; }
 #msgAtts QPushButton { border-radius: 6px; padding: 4px 8px; }
 
+QPushButton#downBtn {
+  background: #2b2d31; border: 1px solid #383a40; border-radius: 20px;
+  font-size: 18px; color: #dbdee1; padding: 0;
+}
+QPushButton#downBtn:hover { background: #383a40; }
+
 #msgBubble[pending="true"] { opacity: 0.55; }
 
 QLineEdit, QTextEdit {
@@ -152,6 +158,12 @@ QPushButton#rowBtn:checked { background: #e6f3fb; color: #172121; }
 #modeRow { background: #f7f8fa; border-top: 1px solid #e9e9e9; }
 #modeLabel { color: #707579; font-size: 12px; }
 #msgAtts QPushButton { border-radius: 6px; padding: 4px 8px; }
+
+QPushButton#downBtn {
+  background: #ffffff; border: 1px solid #e9e9e9; border-radius: 20px;
+  font-size: 18px; color: #172121; padding: 0;
+}
+QPushButton#downBtn:hover { background: #f1f5f9; }
 
 #msgBubble[pending="true"] { opacity: 0.55; }
 

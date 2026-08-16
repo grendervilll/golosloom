@@ -13,7 +13,8 @@ class AppState;
 struct Message;
 
 // Панель чата: шапка (название + звонок), лента сообщений с разделителями
-// дат, поле ввода с ответом/редактированием и кнопкой прикрепления.
+// дат, кнопка «вниз» (спуск к последним), поле ввода с ответом/редактированием
+// и кнопкой прикрепления.
 class ChatPanel : public QWidget {
   Q_OBJECT
  public:
@@ -34,8 +35,7 @@ class ChatPanel : public QWidget {
   void onMessageAdded(qint64 channelId, const Message& msg);
   void rebuildMessages();
   void scrollToBottom();
-  void preserveScrollPos();
-  void restoreScrollPos();
+  void updateDownBtn();
   void maybeLoadOlder();
   void sendCurrent();
   void startReply(qint64 messageId);
@@ -44,6 +44,9 @@ class ChatPanel : public QWidget {
   void attachFile();
   void downloadAttachment(qint64 fileId, const QString& filename);
   QWidget* modeRow() { return modeRow_; }
+
+ protected:
+  void resizeEvent(QResizeEvent* event) override;
 
   AppState* state_;
   qint64 currentId_ = 0;
@@ -58,6 +61,7 @@ class ChatPanel : public QWidget {
   QPushButton* callBtn_ = nullptr;
   QPushButton* membersBtn_ = nullptr;
   QPushButton* attachBtn_ = nullptr;
+  QPushButton* downBtn_ = nullptr;  // стрелка «вниз»
   QLabel* typingLabel_ = nullptr;
   QTimer typingHideTimer_;
   QString typingNick_;

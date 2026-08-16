@@ -5,6 +5,7 @@
 #include <QLabel>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QResizeEvent>
 #include <QScrollBar>
 #include <QVBoxLayout>
 
@@ -17,7 +18,16 @@ namespace {
 
 // «Сегодня» / «Вчера» / дата (как разделители дат в вебе).
 QString dateLabel(const QString& iso) {
-  const QDateTime dt = QDateTime::fromString(iso, Qt::ISODate);
+  if (iso.isEmpty()) return QString();
+  // Сервер шлёт RFC3339Nano: 2026-08-16T11:09:58.123456789Z.
+  // Qt::ISODate наносекунды не понимает — обрезаем до миллисекунд.
+  QDateTime dt = QDateTime::fromString(iso, Qt::ISODate);
+  if (!dt.isValid()) {
+    const int dot = iso.indexOf('.');
+    if (dot > 0) {
+      dt = QDateTime::fromString(iso.left(dot), Qt::ISODate);
+    }
+  }
   if (!dt.isValid()) return QString();
   const QDate d = dt.toLocalTime().date();
   const QDate today = QDate::currentDate();
@@ -70,9 +80,20 @@ ChatPanel::ChatPanel(AppState* state, QWidget* parent) : QWidget(parent), state_
   scroll_->setWidget(container_);
   lay->addWidget(scroll_, 1);
   // Подгрузка старых сообщений при прокрутке вверх.
-  connect(scroll_->verticalScrollBar(), &QScrollBar::valueChanged, this, [this](int value) {
-    Q_UNUSED(value);
+  connect(scroll_->verticalScrollBar(), &QScrollBar::valueChanged, this, [this](int) {
     maybeLoadOlder();
+    updateDownBtn();
+  });
+
+  // Кнопка «вниз»: появляется при прокрутке вверх, спускает к последним.
+  downBtn_ = new QPushButton("↓", this);
+  downBtn_->setObjectName("downBtn");
+  downBtn_->setFixedSize(40, 40);
+  downBtn_->setCursor(Qt::PointingHandCursor);
+  downBtn_->setVisible(false);
+  connect(downBtn_, &QPushButton::clicked, this, [this]() {
+    scrollToBottom();
+    updateDownBtn();
   });
 
   // Панель режима (ответ/редактирование).
@@ -130,6 +151,23 @@ ChatPanel::ChatPanel(AppState* state, QWidget* parent) : QWidget(parent), state_
   connect(input_, &QTextEdit::textChanged, this, [this]() {
     if (currentId_) state_->sendTyping(currentId_);
   });
+}
+
+void ChatPanel::resizeEvent(QResizeEvent* event) {
+  QWidget::resizeEvent(event);
+  updateDownBtn();
+}
+
+void ChatPanel::updateDownBtn() {
+  if (!downBtn_) return;
+  QScrollBar* bar = scroll_->verticalScrollBar();
+  const bool nearBottom = bar->maximum() <= 0 || bar->value() >= bar->maximum() - 60;
+  downBtn_->setVisible(!nearBottom);
+  if (downBtn_->isVisible()) {
+    // Правый нижний угол области скролла (над полем ввода).
+    downBtn_->move(scroll_->width() - 40 - 16, scroll_->height() - 40 - 16);
+    downBtn_->raise();
+  }
 }
 
 void ChatPanel::openChannel(qint64 channelId) {
