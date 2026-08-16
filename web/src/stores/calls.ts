@@ -84,7 +84,7 @@ export const useCallStore = defineStore('calls', {
       })
       sounds.playDialTone()
       try {
-        await this.connectRoom(call.id, res.token, targetIds)
+        await this.connectRoom(call.id, res.token)
       } catch (e) {
         // Не удалось подключиться к LiveKit — отменяем звонок на сервере,
         // иначе он останется «активным» и заблокирует новый вызов.
@@ -208,7 +208,6 @@ export const useCallStore = defineStore('calls', {
         // могут останавливать медиа — отключаем, получаем полный поток всегда.
         adaptiveStream: false,
         dynacast: false,
-        rtcConfig,
         // Микрофон: максимум качества (48 кГц — предел opus), моно,
         // эхо-подавление и автоусиление всегда включены. Шумоподавление —
         // подсказка браузеру (уровней у него нет): off — выключено,
@@ -303,7 +302,7 @@ export const useCallStore = defineStore('calls', {
           /* ignore */
         }
       })
-      await room.connect(settings.serverConfig!.livekit_url, token)
+      await room.connect(settings.serverConfig!.livekit_url, token, { rtcConfig })
       this.connectedAt = Date.now()
       // Сканируем уже подписанные аудио-треки (на случай пропущенных событий).
       const scanAudio = () => {

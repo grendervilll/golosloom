@@ -132,7 +132,7 @@ class SoundManager {
   // "Пнули": короткий средний по громкости звук.
   punched(): void {
     this.beep(180, 0.18, 0.08, 'square')
-    this.beep(120, 0.25, 0.08, 'square', 0.12)
+    window.setTimeout(() => this.beep(120, 0.25, 0.08, 'square'), 120)
   }
 
   // Микрофон выключен, а пользователь пытается говорить: тройной сигнал.
@@ -145,7 +145,7 @@ class SoundManager {
   // Предупреждение о кике/бане.
   warning(): void {
     this.beep(600, 0.2, 0.06)
-    this.beep(400, 0.3, 0.06, 'sine', 0.25)
+    window.setTimeout(() => this.beep(400, 0.3, 0.06, 'sine'), 250)
   }
 
   setMuted(muted: boolean): void {

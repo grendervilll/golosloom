@@ -7,7 +7,17 @@ import { useChatStore } from './chat'
 import { useCallStore } from './calls'
 import type { Channel, ChannelMember, Invite, Role } from '../api/types'
 import { getKeyStorage } from '../crypto/storage'
-import { generateChannelKey, wrapChannelKey, unwrapChannelKey, generateDeviceKeys, bytesToB64, b64ToBytes } from '../crypto/crypto'
+import {
+  generateChannelKey,
+  wrapChannelKey,
+  unwrapChannelKey,
+  generateDeviceKeys,
+  bytesToB64,
+  b64ToBytes,
+  deriveKek,
+  wrapWithKek,
+  unwrapWithKek,
+} from '../crypto/crypto'
 
 export interface KeyTarget {
   user_id: number
@@ -161,6 +171,40 @@ export const useChannelsStore = defineStore('channels', {
       const wrapped = await wrapChannelKey(key, keys.publicKey)
       await settings.api.uploadWrappedKey(channelId, Number(useAuthStore().user!.id), keys.deviceId, wrapped)
       await storage.saveChannelKey(channelId, key)
+      await this.uploadBackup(channelId, key)
+    },
+    // Ключ из пароля (KEK): из хранилища или новый (создаётся из пароля).
+    async getKek(): Promise<Uint8Array | null> {
+      try {
+        const storage = await getKeyStorage()
+        const kek = await storage.loadKek()
+        if (kek) return kek
+        const auth = useAuthStore()
+        if (auth.password && auth.user) {
+          const k = await deriveKek(auth.password, Number(auth.user.id))
+          try {
+            await storage.saveKek(k)
+          } catch {
+            /* ignore */
+          }
+          return k
+        }
+      } catch {
+        /* ignore */
+      }
+      return null
+    },
+    // Парольный бэкап ключа канала (зашифрован ключом из пароля).
+    // Новое устройство получит ключ без онлайн-держателя — достаточно пароля.
+    async uploadBackup(channelId: number, key: Uint8Array) {
+      try {
+        const kek = await this.getKek()
+        if (!kek) return
+        const wrapped = await wrapWithKek(kek, key)
+        await useSettingsStore().api.uploadKeyBackup(channelId, wrapped)
+      } catch {
+        /* не критично: ключ раздастся через обёртки */
+      }
     },
     // Синхронизация ключей: получаем свой ключ, раздаём ключ новым устройствам.
     // ВАЖНО: сервер хранит ключ канала только в обёрнутом виде и не может сам
@@ -176,11 +220,44 @@ export const useChannelsStore = defineStore('channels', {
         const ch = this.channels.find((c) => c.id === channelId)
         const isMember = ch ? ch.is_member : this.members.some((m) => m.user_id === auth.user?.id)
         if (auth.user && isMember) {
+          // 1) Парольный бэкап: ключ канала, зашифрованный ключом из пароля.
+          //    Доступен на любом устройстве с паролем — онлайн-держатель
+          //    ключа не нужен (новое устройство/переустановка и т.п.).
+          const kek = await this.getKek()
+          if (kek) {
+            try {
+              const backup = await settings.api.getKeyBackup(channelId)
+              if (backup?.wrapped_key) {
+                const bkey = await unwrapWithKek(kek, b64ToBytes(backup.wrapped_key))
+                const hadKey = await storage.loadChannelKey(channelId)
+                await storage.saveChannelKey(channelId, bkey)
+                // Своя обёртка для сервера: устройство становится держателем
+                // (иначе ниже сработает сброс «устаревшего» локального ключа).
+                try {
+                  const wrapped = await wrapChannelKey(bkey, keys.publicKey)
+                  await settings.api.uploadWrappedKey(channelId, auth.user!.id, keys.deviceId, wrapped)
+                } catch {
+                  /* ignore */
+                }
+                if (!hadKey) {
+                  const chat = useChatStore()
+                  try {
+                    await chat.loadHistory(channelId)
+                  } catch {
+                    /* ignore */
+                  }
+                }
+              }
+            } catch {
+              /* бэкапа нет или пароль не подходит — обычный поток ниже */
+            }
+          }
           const res = await settings.api.getMyWrappedKey(channelId, keys.deviceId)
           if (res.wrapped_key) {
             const key = await unwrapChannelKey(b64ToBytes(res.wrapped_key), keys.privateKey)
             const hadKey = await storage.loadChannelKey(channelId)
             await storage.saveChannelKey(channelId, key)
+            await this.uploadBackup(channelId, key)
             if (!hadKey) {
               // Ключ только что получен — перечитываем историю, чтобы
               // расшифровать сообщения канала.

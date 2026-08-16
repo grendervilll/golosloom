@@ -6,3 +6,12 @@ declare module '*.vue' {
   const component: DefineComponent<{}, {}, any>
   export default component
 }
+
+// Tauri (десктоп): глобальный __TAURI__ для Keychain-хранилища.
+interface Window {
+  __TAURI__?: {
+    core?: {
+      invoke(command: string, args?: Record<string, unknown>): Promise<unknown>
+    }
+  }
+}

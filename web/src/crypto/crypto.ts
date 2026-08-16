@@ -7,6 +7,12 @@ import { sha256 } from '@noble/hashes/sha2'
 const CHANNEL_KEY_LEN = 32
 const IV_LEN = 12
 
+// TS 5.7+ требует BufferSource (ArrayBufferView<ArrayBuffer>) в WebCrypto.
+// Наши Uint8Array всегда создаются поверх ArrayBuffer — каст безопасен.
+function buf(bytes: Uint8Array): Uint8Array<ArrayBuffer> {
+  return bytes as unknown as Uint8Array<ArrayBuffer>
+}
+
 export interface DeviceKeys {
   deviceId: string
   privateKey: Uint8Array
@@ -30,7 +36,7 @@ export function generateChannelKey(): Uint8Array {
 
 async function deriveAesKey(sharedSecret: Uint8Array): Promise<CryptoKey> {
   const digest = sha256(sharedSecret)
-  return crypto.subtle.importKey('raw', digest, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt'])
+  return crypto.subtle.importKey('raw', buf(digest), { name: 'AES-GCM' }, false, ['encrypt', 'decrypt'])
 }
 
 // Обёртка ключа канала для устройства с публичным ключом peerPublicKey.
@@ -44,7 +50,7 @@ export async function wrapChannelKey(
   const shared = x25519.getSharedSecret(ephemeralPrivate, peerPublicKey)
   const aesKey = await deriveAesKey(shared)
   const iv = crypto.getRandomValues(new Uint8Array(IV_LEN))
-  const ciphertext = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, aesKey, channelKey))
+  const ciphertext = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, aesKey, buf(channelKey)))
   const out = new Uint8Array(ephemeralPublic.length + iv.length + ciphertext.length)
   out.set(ephemeralPublic, 0)
   out.set(iv, ephemeralPublic.length)
@@ -84,12 +90,47 @@ export async function decryptMessage(
   iv: Uint8Array,
 ): Promise<string> {
   const aesKey = await importChannelKey(channelKey)
-  const data = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, aesKey, ciphertext)
+  const data = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: buf(iv) }, aesKey, buf(ciphertext))
   return new TextDecoder().decode(data)
 }
 
 async function importChannelKey(raw: Uint8Array): Promise<CryptoKey> {
-  return crypto.subtle.importKey('raw', raw, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt'])
+  return crypto.subtle.importKey('raw', buf(raw), { name: 'AES-GCM' }, false, ['encrypt', 'decrypt'])
+}
+
+// Ключ из пароля пользователя (KEK): расшифровывает парольные бэкапы
+// ключей каналов на любом устройстве — достаточно пароля, онлайн-держатель
+// ключа не нужен. Соль стабильна (от user_id), поэтому KEK воспроизводим
+// на новом устройстве без данных с сервера.
+export async function deriveKek(password: string, userId: number): Promise<Uint8Array> {
+  const salt = new TextEncoder().encode('golosloom-kek-v1:' + userId)
+  const material = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, [
+    'deriveBits',
+  ])
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt, iterations: 200000, hash: 'SHA-256' },
+    material,
+    256,
+  )
+  return new Uint8Array(bits)
+}
+
+// Шифрование ключа канала парольным KEK (AES-GCM, как в wrapChannelKey).
+export async function wrapWithKek(kek: Uint8Array, channelKey: Uint8Array): Promise<Uint8Array> {
+  const aes = await crypto.subtle.importKey('raw', buf(kek), { name: 'AES-GCM' }, false, ['encrypt'])
+  const iv = crypto.getRandomValues(new Uint8Array(12))
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, aes, buf(channelKey)))
+  const out = new Uint8Array(12 + ct.length)
+  out.set(iv, 0)
+  out.set(ct, 12)
+  return out
+}
+
+export async function unwrapWithKek(kek: Uint8Array, wrapped: Uint8Array): Promise<Uint8Array> {
+  const aes = await crypto.subtle.importKey('raw', buf(kek), { name: 'AES-GCM' }, false, ['decrypt'])
+  const iv = wrapped.slice(0, 12)
+  const ct = wrapped.slice(12)
+  return new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: buf(iv) }, aes, buf(ct)))
 }
 
 export function bytesToB64(bytes: Uint8Array): string {

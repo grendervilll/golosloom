@@ -1,4 +1,6 @@
-// Глобальная подготовка тестов: localStorage для jsdom.
+// Глобальная подготовка тестов: localStorage и WebCrypto для jsdom.
+import { webcrypto } from 'node:crypto'
+
 class MemoryStorage {
   private data = new Map<string, string>()
   getItem(k: string): string | null {
@@ -19,5 +21,5 @@ if (typeof globalThis.localStorage === 'undefined') {
   Object.defineProperty(globalThis, 'localStorage', { value: new MemoryStorage() })
 }
 if (typeof globalThis.crypto === 'undefined') {
-  Object.defineProperty(globalThis, 'crypto', { value: require('crypto').webcrypto })
+  Object.defineProperty(globalThis, 'crypto', { value: webcrypto })
 }

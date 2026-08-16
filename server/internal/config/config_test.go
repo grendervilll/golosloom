@@ -13,7 +13,7 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.JWTSecret == "" {
 		t.Fatal("секрет не должен быть пустым")
 	}
-	if cfg.JWTTTL != 30*24*time.Hour {
+	if cfg.JWTTTL != 24*time.Hour {
 		t.Fatalf("ttl по умолчанию: %v", cfg.JWTTTL)
 	}
 	if cfg.MaxMessageLen != 2000 {
@@ -84,7 +84,7 @@ func TestInvalidEnvValuesFallBack(t *testing.T) {
 	if cfg.MessageRatePerSec != 10 {
 		t.Fatalf("невалидное число должно давать дефолт: %d", cfg.MessageRatePerSec)
 	}
-	if cfg.JWTTTL != 30*24*time.Hour {
+	if cfg.JWTTTL != 24*time.Hour {
 		t.Fatalf("невалидная длительность должна давать дефолт: %v", cfg.JWTTTL)
 	}
 }

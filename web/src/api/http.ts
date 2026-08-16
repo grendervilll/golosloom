@@ -2,6 +2,8 @@
 // Базовый адрес сервера хранится в настройках (вводится при первом запуске
 // в Tauri; в вебе подставляется автоматически из адресной строки).
 
+import type { Attachment } from './types'
+
 export interface HttpError {
   status: number
   message: string
@@ -81,6 +83,9 @@ export class ApiClient {
   }
   patch(path: string, body?: unknown) {
     return this.request('PATCH', path, body ?? {})
+  }
+  put(path: string, body?: unknown) {
+    return this.request('PUT', path, body ?? {})
   }
   delete(path: string) {
     return this.request('DELETE', path)
@@ -247,6 +252,14 @@ export class ApiClient {
   }
   pendingKeyTargets(channelId: number) {
     return this.get(`/api/channels/${channelId}/keys/pending`)
+  }
+  getKeyBackup(channelId: number) {
+    return this.get(`/api/channels/${channelId}/keys/backup`)
+  }
+  uploadKeyBackup(channelId: number, wrappedKey: Uint8Array) {
+    return this.put(`/api/channels/${channelId}/keys/backup`, {
+      wrapped_key: Array.from(wrappedKey),
+    })
   }
 
   // --- GIF (прокси к Giphy на сервере) ---

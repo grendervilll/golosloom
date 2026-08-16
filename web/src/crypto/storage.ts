@@ -7,12 +7,20 @@ export interface KeyStorage {
   init(): Promise<void>
   saveChannelKey(channelId: number, keyBytes: Uint8Array): Promise<void>
   loadChannelKey(channelId: number): Promise<Uint8Array | null>
+  // KEK — ключ из пароля (для парольных бэкапов ключей каналов).
+  saveKek(kek: Uint8Array): Promise<void>
+  loadKek(): Promise<Uint8Array | null>
 }
 
 const DB_NAME = 'golosloom-keys'
 const STORE = 'keys'
 const MASTER = 'master'
 const PREFIX = 'ch:'
+
+// TS 5.7+: WebCrypto требует BufferSource (ArrayBufferView<ArrayBuffer>).
+function buf(bytes: Uint8Array): Uint8Array<ArrayBuffer> {
+  return bytes as unknown as Uint8Array<ArrayBuffer>
+}
 
 export function isTauri(): boolean {
   return typeof window !== 'undefined' && !!(window as any).__TAURI_INTERNALS__
@@ -36,7 +44,7 @@ class IndexedDBStorage implements KeyStorage {
     })
   }
 
-  private async getMaster(): Promise<CryptoKey | null> {
+  private async getMaster(): Promise<CryptoKey> {
     if (this.master) return this.master
     const raw = await this.get(STORE, MASTER)
     if (raw) {
@@ -56,7 +64,7 @@ class IndexedDBStorage implements KeyStorage {
   async saveChannelKey(channelId: number, keyBytes: Uint8Array): Promise<void> {
     const master = await this.getMaster()
     const iv = crypto.getRandomValues(new Uint8Array(12))
-    const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, master, keyBytes)
+    const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, master, buf(keyBytes))
     const blob = new Uint8Array(iv.length + ciphertext.byteLength)
     blob.set(iv, 0)
     blob.set(new Uint8Array(ciphertext), iv.length)
@@ -70,7 +78,7 @@ class IndexedDBStorage implements KeyStorage {
     const data = blob as Uint8Array
     const iv = data.slice(0, 12)
     const ciphertext = data.slice(12)
-    const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, master, ciphertext)
+    const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, master, buf(ciphertext))
     return new Uint8Array(plain)
   }
 
@@ -91,6 +99,17 @@ class IndexedDBStorage implements KeyStorage {
 
   async rawSet(key: string, value: Uint8Array): Promise<void> {
     await this.put(STORE, key, value)
+  }
+
+  // KEK хранится открытым в IndexedDB: без него не расшифровать бэкапы
+  // ключей каналов, а хранить его мастер-ключом бессмысленно (мастер-ключ
+  // и так локальный). Пароль у пользователя — главный фактор защиты.
+  async saveKek(kek: Uint8Array): Promise<void> {
+    await this.put(STORE, 'kek', kek)
+  }
+
+  async loadKek(): Promise<Uint8Array | null> {
+    return ((await this.get(STORE, 'kek')) as Uint8Array | null) ?? null
   }
 
   private put(store: string, key: IDBValidKey, value: unknown): Promise<void> {
@@ -133,6 +152,14 @@ class TauriKeychainStorage implements KeyStorage {
     return unwrapWithMaster(wrapped, this.masterKey!)
   }
 
+  async saveKek(kek: Uint8Array): Promise<void> {
+    await this.safeSet('kek', kek)
+  }
+
+  async loadKek(): Promise<Uint8Array | null> {
+    return this.safeGet('kek')
+  }
+
   private async ensureIdb() {
     if (!this.idb) {
       this.idb = new IndexedDBStorage()
@@ -143,8 +170,10 @@ class TauriKeychainStorage implements KeyStorage {
   // Чтение: Keychain, при ошибке — IndexedDB.
   private async safeGet(key: string): Promise<Uint8Array | null> {
     try {
-      const b64: string | null = await window.__TAURI__.core.invoke('secure_get', { key })
-      if (b64) return bytesFromB64(b64)
+      if (window.__TAURI__?.core?.invoke) {
+        const b64 = (await window.__TAURI__.core.invoke('secure_get', { key })) as string | null
+        if (b64) return bytesFromB64(b64)
+      }
     } catch {
       /* Keychain недоступна — фолбэк ниже */
     }
@@ -154,8 +183,10 @@ class TauriKeychainStorage implements KeyStorage {
   // Запись: Keychain, при ошибке — IndexedDB.
   private async safeSet(key: string, value: Uint8Array): Promise<void> {
     try {
-      await window.__TAURI__.core.invoke('secure_set', { key, value: bytesToB64(value) })
-      return
+      if (window.__TAURI__?.core?.invoke) {
+        await window.__TAURI__.core.invoke('secure_set', { key, value: bytesToB64(value) })
+        return
+      }
     } catch {
       /* Keychain недоступна — фолбэк ниже */
     }
@@ -165,8 +196,8 @@ class TauriKeychainStorage implements KeyStorage {
 
 async function wrapWithMaster(key: Uint8Array, master: Uint8Array): Promise<Uint8Array> {
   const iv = crypto.getRandomValues(new Uint8Array(12))
-  const imported = await crypto.subtle.importKey('raw', master, { name: 'AES-GCM' }, false, ['encrypt'])
-  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, imported, key))
+  const imported = await crypto.subtle.importKey('raw', buf(master), { name: 'AES-GCM' }, false, ['encrypt'])
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, imported, buf(key)))
   const out = new Uint8Array(12 + ct.length)
   out.set(iv, 0)
   out.set(ct, 12)
@@ -176,8 +207,8 @@ async function wrapWithMaster(key: Uint8Array, master: Uint8Array): Promise<Uint
 async function unwrapWithMaster(wrapped: Uint8Array, master: Uint8Array): Promise<Uint8Array> {
   const iv = wrapped.slice(0, 12)
   const ct = wrapped.slice(12)
-  const imported = await crypto.subtle.importKey('raw', master, { name: 'AES-GCM' }, false, ['decrypt'])
-  return new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, imported, ct))
+  const imported = await crypto.subtle.importKey('raw', buf(master), { name: 'AES-GCM' }, false, ['decrypt'])
+  return new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, imported, buf(ct)))
 }
 
 function bytesToB64(bytes: Uint8Array): string {

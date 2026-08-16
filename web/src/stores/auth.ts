@@ -10,6 +10,10 @@ export const useAuthStore = defineStore('auth', {
   state: () => ({
     user: null as User | null,
     token: localStorage.getItem(TOKEN_KEY) || '',
+    // Пароль запоминаем только в памяти (не localStorage): нужен для KEK
+    // (парольные бэкапы ключей каналов). При перезагрузке страницы пароль
+    // исчезает — KEK берётся из хранилища.
+    password: '' as string,
     ws: new WsClient(),
     connected: false,
     users: [] as PublicUser[],
@@ -25,6 +29,7 @@ export const useAuthStore = defineStore('auth', {
         throw new Error('Некорректный ответ сервера — проверьте адрес сервера')
       }
       this.token = res.token
+      this.password = password
       localStorage.setItem(TOKEN_KEY, this.token)
       settings.api.setToken(this.token)
       await this.fetchMe()
@@ -37,6 +42,7 @@ export const useAuthStore = defineStore('auth', {
         throw new Error('Некорректный ответ сервера — проверьте адрес сервера')
       }
       this.token = res.token
+      this.password = password
       localStorage.setItem(TOKEN_KEY, this.token)
       settings.api.setToken(this.token)
       await this.fetchMe()
@@ -59,6 +65,7 @@ export const useAuthStore = defineStore('auth', {
     logout() {
       this.ws.disconnect()
       this.token = ''
+      this.password = ''
       this.user = null
       localStorage.removeItem(TOKEN_KEY)
     },
