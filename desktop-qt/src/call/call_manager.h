@@ -41,6 +41,7 @@ class CallManager : public QObject {
   void callStateChanged();  // активный звонок начался/закончился
   void incomingCall(qint64 callId, qint64 channelId, const QString& initiatorNick);
   void callEnded(qint64 callId);
+  void callError(const QString& message);
 
  private:
   void joinRoom(qint64 callId, const QString& token);

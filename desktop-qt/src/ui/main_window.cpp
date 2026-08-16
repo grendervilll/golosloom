@@ -291,7 +291,10 @@ MainWindow::MainWindow(AppState* state, QWidget* parent) : QMainWindow(parent), 
         if (idx < 0) return;
         targets = {targets[idx]};
       }
-      if (ok) calls_->startCall(channelId, targets);
+      if (ok) {
+        toasts_->showToast("Звонок", "Соединение…");
+        calls_->startCall(channelId, targets);
+      }
     });
   });
 
@@ -363,6 +366,9 @@ void MainWindow::initCallControls() {
     toasts_->showToast(nick, "начал(а) звонок");
   });
   connect(calls_, &CallManager::callEnded, this, [this](qint64) { callOverlay_->hideIncoming(); });
+  connect(calls_, &CallManager::callError, this, [this](const QString& err) {
+    QMessageBox::warning(this, "Не удалось начать звонок", err);
+  });
 }
 
 void MainWindow::onWsEvent(const QString& type, const QJsonObject& data) {

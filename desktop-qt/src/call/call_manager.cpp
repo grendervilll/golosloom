@@ -83,6 +83,7 @@ void CallManager::startCall(qint64 channelId, const QVector<qint64>& targetIds) 
                       [this](const QJsonObject& res, const QString& err) {
     if (!err.isEmpty()) {
       qWarning() << "createCall error:" << err;
+      emit callError(err);
       return;
     }
     ActiveCall c;

@@ -776,6 +776,7 @@ void AppState::syncKeys(qint64 channelId) {
   const bool isMember = ch ? ch->isMember : false;
   if (!isMember) return;
 
+
   // Последовательно (как в вебе): парольный бэкап → обёртка с сервера →
   // stale-проверка → раздача новым устройствам.
   std::function<void(std::function<void()>)> stepBackup = [this, channelId](std::function<void()> next) {
@@ -794,11 +795,15 @@ void AppState::syncKeys(qint64 channelId) {
       if (!wrapped.isEmpty()) {
         const QByteArray bkey = unwrapWithKek(kek, wrapped);
         if (!bkey.isEmpty()) {
+          const bool had = !storage_->loadChannelKey(channelId).isEmpty();
           storage_->saveChannelKey(channelId, bkey);
           // Своя обёртка — чтобы сервер знал, что устройство держит ключ.
           api_.uploadWrappedKey(channelId, user_.id, device_.deviceId,
                                 wrapChannelKey(bkey, device_.publicKey),
-                                [this, channelId, next](const QJsonObject&, const QString&) {
+                                [this, channelId, had, next](const QJsonObject&, const QString&) {
+            // Ключ получен впервые — перечитываем историю (сообщения могли
+            // быть загружены зашифрованными, до получения ключа).
+            if (!had && currentId_ == channelId) loadHistory(channelId);
             next();
           });
           return;
@@ -815,11 +820,12 @@ void AppState::syncKeys(qint64 channelId) {
         if (!key.isEmpty()) {
           const bool had = !storage_->loadChannelKey(channelId).isEmpty();
           storage_->saveChannelKey(channelId, key);
-          if (!had) uploadBackup(channelId, key);
-          // История загружается при открытии канала (openChannel).
-          if (currentId_ == channelId && messages_.value(channelId).isEmpty()) {
-            loadHistory(channelId);
-          }
+          // Бэкап загружаем всегда (не только при первом получении): если
+          // канал создан до фичи бэкапов, держатель с ключом должен
+          // заполнить бэкап, иначе новое устройство не восстановит ключ.
+          uploadBackup(channelId, key);
+          // Ключ получен впервые (был зашифрованный буфер) — перечитываем.
+          if (!had && currentId_ == channelId) loadHistory(channelId);
         }
       }
       next();

@@ -53,7 +53,24 @@ CFMutableDictionaryRef baseQuery(const QString& key) {
 }  // namespace
 
 KeyStorage::KeyStorage(bool useKeychain, const QString& dataDir)
-    : useKeychain_(useKeychain), dataDir_(dataDir) {}
+    : useKeychain_(useKeychain), dataDir_(dataDir) {
+  // Проверяем доступность Keychain: в неподписанном приложении macOS
+  // может возвращать errSecNotAvailable (-128) — тогда работаем только
+  // с файлом, иначе вход/ключи теряются при каждом запуске.
+  if (useKeychain_) {
+    CFMutableDictionaryRef q = baseQuery("__probe__");
+    CFTypeRef result = nullptr;
+    const OSStatus st = SecItemCopyMatching(q, &result);
+    if (result) CFRelease(result);
+    CFRelease(q);
+    // errSecItemNotFound (-25300) — нормально (записи нет), Keychain доступна.
+    // Прочие коды — проблема доступа: переходим на файл.
+    if (st != errSecSuccess && st != errSecItemNotFound) {
+      fprintf(stderr, "DIAG Keychain недоступна (%d) — использую файл\n", (int)st);
+      useKeychain_ = false;
+    }
+  }
+}
 
 bool KeyStorage::keychainSet(const QString& key, const QByteArray& value) {
   if (!useKeychain_) return false;
@@ -71,6 +88,8 @@ bool KeyStorage::keychainSet(const QString& key, const QByteArray& value) {
     CFDictionaryAddValue(q, kSecValueData, data);
     st = SecItemAdd(q, nullptr);
   }
+  if (st != errSecSuccess) {
+  }
   CFRelease(attrs);
   CFRelease(q);
   CFRelease(data);
@@ -84,7 +103,9 @@ QByteArray KeyStorage::keychainGet(const QString& key) {
   CFTypeRef result = nullptr;
   OSStatus st = SecItemCopyMatching(q, &result);
   CFRelease(q);
-  if (st != errSecSuccess || !result) return {};
+  if (st != errSecSuccess || !result) {
+    return {};
+  }
   QByteArray out = QByteArray::fromCFData(static_cast<CFDataRef>(result));
   CFRelease(result);
   return unpackValue(out);
