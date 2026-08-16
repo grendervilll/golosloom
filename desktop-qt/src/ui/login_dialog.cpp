@@ -3,6 +3,7 @@
 #include <QFormLayout>
 #include <QJsonObject>
 #include <QLabel>
+#include <QPixmap>
 #include <QPushButton>
 #include <QSettings>
 #include <QVBoxLayout>
@@ -14,12 +15,20 @@ namespace gl {
 LoginDialog::LoginDialog(AppState* state, QWidget* parent) : QDialog(parent), state_(state) {
   setWindowTitle("Golosloom — вход");
   setFixedWidth(380);
+  setObjectName("authDialog");
 
   auto* card = new QWidget(this);
   card->setObjectName("loginCard");
   auto* lay = new QVBoxLayout(card);
   lay->setContentsMargins(24, 28, 24, 28);
   lay->setSpacing(10);
+
+  // Логотип (как в вебе — 96px сверху карточки).
+  auto* logo = new QLabel(card);
+  logo->setPixmap(QPixmap(":/app-icon.png").scaled(96, 96, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+  logo->setAlignment(Qt::AlignCenter);
+  logo->setStyleSheet("border-radius: 24px;");
+  lay->addWidget(logo);
 
   auto* title = new QLabel("Golosloom", card);
   title->setObjectName("loginTitle");

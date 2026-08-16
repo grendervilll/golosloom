@@ -97,7 +97,9 @@ QLineEdit#searchField {
 }
 
 #msgBubble { background: #2b2d31; border: 1px solid #383a40; border-radius: 14px; border-top-left-radius: 4px; }
+#msgBubble:hover { background: #313338; }
 #msgBubble.mine { background: #2aabee; border-color: #2aabee; border-radius: 14px; border-top-right-radius: 4px; }
+#msgBubble.mine:hover { background: #1d97d4; }
 #msgBubble.mine .QLabel { color: #ffffff; }
 #msgNick { color: #5ab8ff; font-weight: 600; font-size: 12px; }
 #msgTime { color: #949ba4; font-size: 11px; }
@@ -106,8 +108,12 @@ QLineEdit#searchField {
 #msgAtts QPushButton { color: #5ab8ff; }
 #msgBubble.mine #msgAtts QPushButton { color: #ffffff; }
 
-#loginCard { background: #2b2d31; border: 1px solid #26282c; border-radius: 16px; }
-#loginTitle { font-size: 20px; font-weight: 800; }
+QDialog#authDialog {
+  background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+      stop:0 #2b2d31, stop:1 #1e1f22);
+}
+#loginCard { background: #2b2d31; border: 1px solid #383a40; border-radius: 12px; }
+#loginTitle { font-size: 24px; font-weight: 800; }
 #hintLabel { color: #949ba4; font-size: 12px; }
 #errorLabel { color: #da373c; font-size: 12px; }
 
@@ -219,7 +225,9 @@ QLineEdit#searchField {
 }
 
 #msgBubble { background: #ffffff; border: 1px solid #e9e9e9; border-radius: 14px; border-top-left-radius: 4px; }
+#msgBubble:hover { background: #f7f8fa; }
 #msgBubble.mine { background: #2aabee; border-color: #2aabee; border-radius: 14px; border-top-right-radius: 4px; }
+#msgBubble.mine:hover { background: #1d97d4; }
 #msgBubble.mine .QLabel { color: #ffffff; }
 #msgNick { color: #1d97d4; font-weight: 600; font-size: 12px; }
 #msgTime { color: #707579; font-size: 11px; }
@@ -228,8 +236,12 @@ QLineEdit#searchField {
 #msgAtts QPushButton { color: #1d97d4; }
 #msgBubble.mine #msgAtts QPushButton { color: #ffffff; }
 
-#loginCard { background: #ffffff; border: 1px solid #e9e9e9; border-radius: 16px; }
-#loginTitle { font-size: 20px; font-weight: 800; }
+QDialog#authDialog {
+  background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+      stop:0 #e9e9e9, stop:1 #d7dde3);
+}
+#loginCard { background: #ffffff; border: 1px solid #e9e9e9; border-radius: 12px; }
+#loginTitle { font-size: 24px; font-weight: 800; }
 #hintLabel { color: #707579; font-size: 12px; }
 #errorLabel { color: #da373c; font-size: 12px; }
 
