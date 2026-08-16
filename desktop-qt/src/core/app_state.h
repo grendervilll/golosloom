@@ -40,6 +40,15 @@ class AppState : public QObject {
   void openChannel(qint64 channelId);
   // Счётчик непрочитанных сообщений канала (сбрасывается при открытии).
   int unreadCount(qint64 channelId) const { return unread_.value(channelId, 0); }
+  // Последнее сообщение канала (для превью в списке чатов).
+  const Message* lastMessage(qint64 channelId) const {
+    const auto it = messages_.constFind(channelId);
+    if (it == messages_.constEnd() || it.value().isEmpty()) return nullptr;
+    for (auto rit = it.value().crbegin(); rit != it.value().crend(); ++rit) {
+      if (!rit->deleted) return &(*rit);
+    }
+    return nullptr;
+  }
   // Пагинация истории: есть ли более старые сообщения / загрузить их.
   bool hasOlderMessages(qint64 channelId) const { return hasMore_.value(channelId, false); }
   void loadOlderMessages(qint64 channelId, std::function<void()> done = {});

@@ -1,5 +1,6 @@
 #pragma once
 #include <QLabel>
+#include <QLineEdit>
 #include <QListWidget>
 #include <QPushButton>
 #include <QWidget>
@@ -8,7 +9,8 @@ namespace gl {
 
 class AppState;
 
-// Список чатов в левой панели + кнопки «Создать канал», «Приглашения», «Выйти».
+// Список чатов в левой панели (как в вебе): аватар с инициалами,
+// название, время и превью последнего сообщения, бейдж непрочитанных.
 class ChannelList : public QWidget {
   Q_OBJECT
  public:
@@ -27,9 +29,11 @@ class ChannelList : public QWidget {
 
  private:
   void refreshBadge();
+  void applyFilter();
 
   AppState* state_;
   QListWidget* list_;
+  QLineEdit* filterEdit_ = nullptr;
   QPushButton* createBtn_ = nullptr;
   QPushButton* invitesBtn_ = nullptr;
   QPushButton* logoutBtn_ = nullptr;

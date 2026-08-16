@@ -51,6 +51,22 @@ QPushButton#rowBtn:checked { background: #404249; color: #ffffff; }
   background: #383a40; border-radius: 10px; padding: 2px 10px;
   color: #b0b7bf; font-size: 12px; font-weight: 600;
 }
+
+QWidget#chatRow { border-radius: 10px; }
+QWidget#chatRow:hover { background: #383a40; }
+QWidget#chatRow[active="true"] { background: #2aabee; }
+QWidget#chatRow[active="true"] QLabel { color: #ffffff; }
+#chatName { font-size: 15px; font-weight: 600; color: #dbdee1; }
+#chatTime { font-size: 12px; color: #949ba4; }
+#chatPreview { font-size: 13px; color: #949ba4; }
+QWidget#chatRow[active="true"] #chatPreview,
+QWidget#chatRow[active="true"] #chatTime { color: rgba(255, 255, 255, 0.85); }
+#unreadBadge {
+  background: #2aabee; color: white; border-radius: 10px;
+  min-width: 20px; padding: 1px 6px; font-size: 11px; font-weight: 600;
+  qproperty-alignment: AlignCenter;
+}
+QWidget#chatRow[active="true"] #unreadBadge { background: #ffffff; color: #2aabee; }
 #typingLabel { color: #2aabee; font-size: 12px; }
 #invitesBadge {
   background: #f0b232; color: #172121; border-radius: 9px;
@@ -75,12 +91,20 @@ QLineEdit, QTextEdit {
 }
 QLineEdit:focus, QTextEdit:focus { border-color: #2aabee; }
 
-#msgBubble { background: #2b2d31; border-radius: 14px; }
-#msgBubble.mine { background: #1d6da8; }
-#msgBubble .QLabel { color: #dbdee1; }
-#msgNick { color: #2aabee; font-weight: 600; font-size: 12px; }
+QLineEdit#searchField {
+  background: #313338; border: none; border-radius: 18px;
+  padding: 6px 14px; font-size: 14px;
+}
+
+#msgBubble { background: #2b2d31; border: 1px solid #383a40; border-radius: 14px; border-top-left-radius: 4px; }
+#msgBubble.mine { background: #2aabee; border-color: #2aabee; border-radius: 14px; border-top-right-radius: 4px; }
+#msgBubble.mine .QLabel { color: #ffffff; }
+#msgNick { color: #5ab8ff; font-weight: 600; font-size: 12px; }
 #msgTime { color: #949ba4; font-size: 11px; }
+#msgBubble.mine #msgTime { color: rgba(255, 255, 255, 0.8); }
 #encLabel { color: #949ba4; font-style: italic; }
+#msgAtts QPushButton { color: #5ab8ff; }
+#msgBubble.mine #msgAtts QPushButton { color: #ffffff; }
 
 #loginCard { background: #2b2d31; border: 1px solid #26282c; border-radius: 16px; }
 #loginTitle { font-size: 20px; font-weight: 800; }
@@ -149,6 +173,22 @@ QPushButton#rowBtn:checked { background: #e6f3fb; color: #172121; }
   background: #f1f5f9; border-radius: 10px; padding: 2px 10px;
   color: #707579; font-size: 12px; font-weight: 600;
 }
+
+QWidget#chatRow { border-radius: 10px; }
+QWidget#chatRow:hover { background: #f1f5f9; }
+QWidget#chatRow[active="true"] { background: #2aabee; }
+QWidget#chatRow[active="true"] QLabel { color: #ffffff; }
+#chatName { font-size: 15px; font-weight: 600; color: #172121; }
+#chatTime { font-size: 12px; color: #999999; }
+#chatPreview { font-size: 13px; color: #707579; }
+QWidget#chatRow[active="true"] #chatPreview,
+QWidget#chatRow[active="true"] #chatTime { color: rgba(255, 255, 255, 0.85); }
+#unreadBadge {
+  background: #2aabee; color: white; border-radius: 10px;
+  min-width: 20px; padding: 1px 6px; font-size: 11px; font-weight: 600;
+  qproperty-alignment: AlignCenter;
+}
+QWidget#chatRow[active="true"] #unreadBadge { background: #ffffff; color: #2aabee; }
 #typingLabel { color: #2aabee; font-size: 12px; }
 #invitesBadge {
   background: #f0b232; color: #172121; border-radius: 9px;
@@ -173,12 +213,20 @@ QLineEdit, QTextEdit {
 }
 QLineEdit:focus, QTextEdit:focus { border-color: #2aabee; }
 
-#msgBubble { background: #ffffff; border: 1px solid #e9e9e9; border-radius: 14px; }
-#msgBubble.mine { background: #eef8ff; border-color: #d6effd; }
-#msgBubble .QLabel { color: #172121; }
-#msgNick { color: #2aabee; font-weight: 600; font-size: 12px; }
+QLineEdit#searchField {
+  background: #f1f5f9; border: none; border-radius: 18px;
+  padding: 6px 14px; font-size: 14px;
+}
+
+#msgBubble { background: #ffffff; border: 1px solid #e9e9e9; border-radius: 14px; border-top-left-radius: 4px; }
+#msgBubble.mine { background: #2aabee; border-color: #2aabee; border-radius: 14px; border-top-right-radius: 4px; }
+#msgBubble.mine .QLabel { color: #ffffff; }
+#msgNick { color: #1d97d4; font-weight: 600; font-size: 12px; }
 #msgTime { color: #707579; font-size: 11px; }
+#msgBubble.mine #msgTime { color: rgba(255, 255, 255, 0.8); }
 #encLabel { color: #707579; font-style: italic; }
+#msgAtts QPushButton { color: #1d97d4; }
+#msgBubble.mine #msgAtts QPushButton { color: #ffffff; }
 
 #loginCard { background: #ffffff; border: 1px solid #e9e9e9; border-radius: 16px; }
 #loginTitle { font-size: 20px; font-weight: 800; }
