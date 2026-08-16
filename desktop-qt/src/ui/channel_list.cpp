@@ -95,6 +95,16 @@ ChannelList::ChannelList(AppState* state, QWidget* parent) : QWidget(parent), st
   logoutBtn_->setObjectName("rowBtn");
   lay->addWidget(logoutBtn_);
 
+  // Кнопка переключения темы (светлая/тёмная, как в бургере веба).
+  auto* themeRow = new QWidget(this);
+  auto* thl = new QHBoxLayout(themeRow);
+  thl->setContentsMargins(0, 0, 0, 0);
+  themeBtn_ = new QPushButton("🌙 Тёмная тема", themeRow);
+  themeBtn_->setObjectName("rowBtn");
+  themeBtn_->setToolTip("Переключить тему");
+  thl->addWidget(themeBtn_);
+  lay->addWidget(themeRow);
+
   connect(list_, &QListWidget::itemClicked, this, [this](QListWidgetItem* item) {
     const qint64 id = item->data(Qt::UserRole).toLongLong();
     emit channelActivated(id);
@@ -102,6 +112,7 @@ ChannelList::ChannelList(AppState* state, QWidget* parent) : QWidget(parent), st
   connect(createBtn_, &QPushButton::clicked, this, &ChannelList::createChannelRequested);
   connect(invitesBtn_, &QPushButton::clicked, this, &ChannelList::invitesRequested);
   connect(logoutBtn_, &QPushButton::clicked, this, &ChannelList::logoutRequested);
+  connect(themeBtn_, &QPushButton::clicked, this, &ChannelList::themeToggleRequested);
   connect(state_, &AppState::invitesChanged, this, &ChannelList::refreshBadge);
 }
 

@@ -21,6 +21,7 @@
 #include "ui/channel_list.h"
 #include "ui/chat_panel.h"
 #include "ui/login_dialog.h"
+#include "ui/theme.h"
 #include "ui/toast.h"
 
 namespace gl {
@@ -234,6 +235,12 @@ MainWindow::MainWindow(AppState* state, QWidget* parent) : QMainWindow(parent), 
   connect(channelList_, &ChannelList::invitesRequested, this, [this]() {
     InvitesDialog dlg(state_, this);
     dlg.exec();
+  });
+  connect(channelList_, &ChannelList::themeToggleRequested, this, [this]() {
+    const bool dark = !gl::savedThemeDark();
+    gl::saveThemeDark(dark);
+    qApp->setStyleSheet(gl::themeQss(dark));
+    channelList_->refresh();
   });
   connect(channelList_, &ChannelList::logoutRequested, this, [this]() {
     if (QMessageBox::question(this, "Выйти", "Выйти из аккаунта?") == QMessageBox::Yes) {

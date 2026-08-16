@@ -1,12 +1,27 @@
 #include "ui/theme.h"
 
 #include <QApplication>
+#include <QSettings>
 #include <QStyleHints>
 
 namespace gl {
 
 bool systemPrefersDark() {
   return QApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark;
+}
+
+// Тема пользователя: явный выбор из QSettings, иначе — системная.
+bool savedThemeDark() {
+  QSettings settings;
+  if (settings.contains("theme")) {
+    return settings.value("theme").toString() == "dark";
+  }
+  return systemPrefersDark();
+}
+
+void saveThemeDark(bool dark) {
+  QSettings settings;
+  settings.setValue("theme", dark ? "dark" : "light");
 }
 
 QString themeQss(bool dark) {

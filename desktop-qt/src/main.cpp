@@ -17,7 +17,7 @@ int main(int argc, char* argv[]) {
   QApplication::setApplicationName("Golosloom");
   QApplication::setOrganizationName("golosloom");
   app.setWindowIcon(QIcon(":/app-icon.png"));
-  app.setStyleSheet(gl::themeQss(gl::systemPrefersDark()));
+  app.setStyleSheet(gl::themeQss(gl::savedThemeDark()));
 
   gl::AppState state;
 

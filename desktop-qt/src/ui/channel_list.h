@@ -26,6 +26,7 @@ class ChannelList : public QWidget {
   void createChannelRequested();
   void invitesRequested();
   void logoutRequested();
+  void themeToggleRequested();
 
  private:
   void refreshBadge();
@@ -37,6 +38,7 @@ class ChannelList : public QWidget {
   QPushButton* createBtn_ = nullptr;
   QPushButton* invitesBtn_ = nullptr;
   QPushButton* logoutBtn_ = nullptr;
+  QPushButton* themeBtn_ = nullptr;
   QLabel* invitesBadge_ = nullptr;
 };
 
