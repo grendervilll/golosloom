@@ -17,6 +17,8 @@ desktop/app/
 
 # Electron
 desktop/electron/dist/
+desktop/electron/*.js
+desktop/electron/*.js.map
 
 # Environment
 .env
