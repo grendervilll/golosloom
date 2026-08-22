@@ -119,9 +119,11 @@ export const useChannelsStore = defineStore('channels', {
       await this.loadBanned(channelId)
       console.log(`[channels] openChannel ${channelId}: loading history...`)
       await chat.loadHistory(channelId)
-      console.log(`[channels] openChannel ${channelId}: history loaded, messages count:`, chat.messages.get(channelId)?.length)
+      // Немедленно синхронизируем ключи (распределяем новым устройствам)
       await this.syncKeys(channelId)
       this.startKeyPoll()
+      // Повторяем через 1 сек для быстрого распределения ключей новым участникам
+      setTimeout(() => { if (this.currentId === channelId) void this.syncKeys(channelId) }, 1000)
       try {
         await useCallStore().refresh(channelId)
       } catch { /* ignore */ }
@@ -198,7 +200,7 @@ export const useChannelsStore = defineStore('channels', {
       if (this.keyPollTimer) return
       this.keyPollTimer = window.setInterval(() => {
         if (this.currentId) void this.syncKeys(this.currentId)
-      }, 7000)
+      }, 2000)
     },
     async handleKeyNeeded(data: { channel_id: number; user_id: number; device_id: string; public_key: string }) {
       if (data.channel_id !== this.currentId) return
