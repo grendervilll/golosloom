@@ -156,7 +156,8 @@ Ping/pong: сервер шлёт WS-ping каждые 30с, read deadline 90с.
    `generateChannelKey()` + wrap для себя + `POST keys/wrap`.
 
 Хранилище клиента: веб — IndexedDB под мастер-ключом WebCrypto
-(non-extractable); Tauri — системная Keychain; мобильный — flutter_secure_storage.
+(non-extractable); Electron — safeStorage (macOS Keychain / Windows DPAPI / Linux libsecret);
+мобильный — flutter_secure_storage.
 
 ## 6. Звонки (LiveKit)
 

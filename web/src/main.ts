@@ -14,7 +14,7 @@ window.addEventListener('pointerdown', unlockAudio)
 window.addEventListener('touchstart', unlockAudio)
 window.addEventListener('keydown', unlockAudio)
 
-// PWA: service worker только для http(s) (в Tauri вебвью не нужен).
+// PWA: service worker только для http(s) (в Electron не нужен).
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').catch(() => undefined)

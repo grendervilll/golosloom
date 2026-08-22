@@ -205,7 +205,7 @@ VAPID_PUBLIC_KEY=$VAPID_PUBLIC_KEY
 VAPID_PRIVATE_KEY=$VAPID_PRIVATE_KEY
 VAPID_SUBJECT=mailto:admin@$DOMAIN
 TURN_URLS=turn:$DOMAIN:3478?transport=udp,turn:$DOMAIN:3478?transport=tcp
-ALLOW_ORIGINS=https://$DOMAIN,tauri://localhost,http://tauri.localhost,http://localhost:5173
+ALLOW_ORIGINS=https://$DOMAIN,http://localhost:5173
 DATA_DIR=$DATA_DIR
 LIVEKIT_CONFIG=$LIVEKIT_CONFIG
 FCM_SERVICE_ACCOUNT_FILE=/fcm-service-account.json

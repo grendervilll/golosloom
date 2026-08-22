@@ -119,28 +119,20 @@ function chooseScreen(id: string) {
 }
 
 // Полноэкранный режим демонстрации экрана.
-// В Tauri браузерный Fullscreen API не работает (WKWebView/WebView2) —
-// разворачиваем само окно приложения через Tauri API и включаем режим
-// "только сцена" (остальной интерфейс скрывается).
+// В Electron браузерный Fullscreen API не работает в BrowserWindow —
+// используем стандартный Fullscreen API + режим "только сцена"
+// (остальной интерфейс скрывается).
 let fsUnlisten: (() => void) | null = null
 
 function setFsMode(fs: boolean) {
   document.documentElement.classList.toggle('golosloom-fs', fs)
 }
 
-function tauriWindow(): any {
-  return (window as any).__TAURI__?.window?.getCurrentWindow?.() || null
+function isElectronApp(): boolean {
+  return typeof window !== 'undefined' && !!(window as any).__ELECTRON__?.secureStorage
 }
 
 function toggleFullscreen() {
-  const win = tauriWindow()
-  if (win) {
-    void win
-      .isFullscreen()
-      .then((fs: boolean) => win.setFullscreen(!fs))
-      .catch(() => {})
-    return
-  }
   const el = document.querySelector('.screen-main')
   if (document.fullscreenElement) {
     void document.exitFullscreen()
@@ -155,23 +147,10 @@ watch(() => calls.connectedCallId, startWatching, { immediate: true })
 watch(() => calls.screenOn, () => setTimeout(updateTiles, 300))
 
 onMounted(() => {
-  // Следим за состоянием окна Tauri (выход из полноэкранного режима
-  // системными кнопками) и выключаем режим "только сцена".
-  const win = tauriWindow()
-  if (win) {
-    void win
-      .isFullscreen()
-      .then(setFsMode)
-      .catch(() => {})
-    win.onResized?.(() => {
-      void win
-        .isFullscreen()
-        .then(setFsMode)
-        .catch(() => {})
-    }).then((un: () => void) => {
-      fsUnlisten = un
-    })
-  }
+  // Следим за полноэкранным режимом и выключаем "только сцена" при выходе.
+  const onFsChange = () => setFsMode(!!document.fullscreenElement)
+  document.addEventListener('fullscreenchange', onFsChange)
+  fsUnlisten = () => document.removeEventListener('fullscreenchange', onFsChange)
 })
 
 onBeforeUnmount(() => {

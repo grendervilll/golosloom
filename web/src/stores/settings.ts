@@ -1,4 +1,4 @@
-// Настройки клиента: адрес сервера (вводится при первом запуске в Tauri),
+// Настройки клиента: адрес сервера (вводится при первом запуске в Electron),
 // громкость, шумоподавление и прочие предпочтения.
 import { defineStore } from 'pinia'
 import { ApiClient } from '../api/http'
@@ -46,9 +46,9 @@ function defaultSettings(): ClientSettings {
 }
 
 function defaultServerUrl(): string {
-  // В Tauri origin вебвью — tauri://localhost, это не адрес сервера:
+  // В Electron (десктоп) origin — file://, это не адрес сервера:
   // оставляем пустым, чтобы при первом запуске показать окно настройки.
-  if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
+  if (typeof window !== 'undefined' && (window as any).__ELECTRON__?.secureStorage) {
     return ''
   }
   if (typeof window !== 'undefined' && window.location && window.location.origin !== 'null') {

@@ -1,4 +1,4 @@
-// Первичная настройка адреса сервера (для Tauri-приложения при первом запуске).
+// Первичная настройка адреса сервера (для Electron-приложения при первом запуске).
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useSettingsStore } from '../stores/settings'

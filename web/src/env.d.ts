@@ -7,11 +7,13 @@ declare module '*.vue' {
   export default component
 }
 
-// Tauri (десктоп): глобальный __TAURI__ для Keychain-хранилища.
+// Electron (десктоп): безопасное хранилище ключей через safeStorage.
 interface Window {
-  __TAURI__?: {
-    core?: {
-      invoke(command: string, args?: Record<string, unknown>): Promise<unknown>
+  __ELECTRON__?: {
+    secureStorage: {
+      get(key: string): Promise<string | null>
+      set(key: string, value: string): Promise<void>
+      delete(key: string): Promise<void>
     }
   }
 }

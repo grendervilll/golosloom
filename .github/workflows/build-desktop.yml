@@ -6,7 +6,6 @@ on:
     tags:
       - 'v*'
 
-# Публикация релиза требует права на запись в содержимое репозитория.
 permissions:
   contents: write
 
@@ -18,91 +17,42 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-darwin
       - run: npm ci
         working-directory: web
       - run: npm ci
         working-directory: desktop
-      # Раннер Intel, поэтому собираем для Apple Silicon явно.
-      - run: npm run tauri build -- --target aarch64-apple-darwin --bundles app,dmg
+      - run: npm run build:web
+        working-directory: desktop
+      - run: npm run build -- --mac
         working-directory: desktop
       - uses: actions/upload-artifact@v5
         with:
-          name: golosloom-macos-aarch64
-          path: |
-            desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
-            desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app
+          name: golosloom-macos
+          path: desktop/dist/*.dmg
           if-no-files-found: error
 
   build-windows:
-    strategy:
-      matrix:
-        arch: [x86_64, aarch64]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.arch == 'aarch64' && 'aarch64-pc-windows-msvc' || 'x86_64-pc-windows-msvc' }}
       - run: npm ci
         working-directory: web
       - run: npm ci
         working-directory: desktop
-      - name: Build for ${{ matrix.arch }}
-        run: npm run tauri build -- --target ${{ matrix.arch == 'aarch64' && 'aarch64-pc-windows-msvc' || 'x86_64-pc-windows-msvc' }} --bundles nsis,msi
+      - run: npm run build:web
+        working-directory: desktop
+      - run: npm run build -- --win
         working-directory: desktop
       - uses: actions/upload-artifact@v5
         with:
-          name: golosloom-windows-${{ matrix.arch }}
-          path: |
-            desktop/src-tauri/target/${{ matrix.arch == 'aarch64' && 'aarch64-pc-windows-msvc' || 'x86_64-pc-windows-msvc' }}/release/bundle/nsis/*.exe
-            desktop/src-tauri/target/${{ matrix.arch == 'aarch64' && 'aarch64-pc-windows-msvc' || 'x86_64-pc-windows-msvc' }}/release/bundle/msi/*.msi
+          name: golosloom-windows
+          path: desktop/dist/*.exe
           if-no-files-found: error
 
   build-linux:
-    strategy:
-      matrix:
-        include:
-          - arch: x86_64
-            runner: ubuntu-22.04
-          - arch: aarch64
-            runner: ubuntu-24.04-arm
-    runs-on: ${{ matrix.runner }}
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Install Linux dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev patchelf libgtk-3-dev
-          # Индикатор-библиотека для трея: в 24.04 переименована
-          sudo apt-get install -y libayatana-appindicator3-dev || sudo apt-get install -y libappindicator3-dev
-      - run: npm ci
-        working-directory: web
-      - run: npm ci
-        working-directory: desktop
-      - name: Build for ${{ matrix.arch }}
-        run: npm run tauri build
-        working-directory: desktop
-      - uses: actions/upload-artifact@v5
-        with:
-          name: golosloom-linux-${{ matrix.arch }}
-          path: desktop/src-tauri/target/release/bundle/**
-          if-no-files-found: error
-
-  # Публикация релиза и метаданных обновления: скачивает все сборки,
-  # подписывает установщики и формирует latest.json для автообновления.
-  release:
-    if: startsWith(github.ref, 'refs/tags/')
-    needs: [build-macos, build-windows, build-linux]
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v5
@@ -110,77 +60,30 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
+        working-directory: web
+      - run: npm ci
         working-directory: desktop
+      - run: npm run build:web
+        working-directory: desktop
+      - run: npm run build -- --linux
+        working-directory: desktop
+      - uses: actions/upload-artifact@v5
+        with:
+          name: golosloom-linux
+          path: desktop/dist/*.AppImage
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build-macos, build-windows, build-linux]
+    runs-on: ubuntu-22.04
+    steps:
       - uses: actions/download-artifact@v5
         with:
           path: artifacts
-          merge-multiple: false
-      - name: Build latest.json script
-        run: |
-          cat > /tmp/make_latest.py <<'PYEOF'
-          import base64, datetime, glob, json, os, urllib.parse
-
-          tag = os.environ['GITHUB_REF_NAME']
-          base = f'https://github.com/grendervilll/golosloom/releases/download/{tag}'
-
-          def entry(pattern):
-              # recursive=True + '**': установщики лежат с сохранением
-              # каталогов артефактов (dmg/, nsis/, appimage/) — на любой глубине
-              paths = glob.glob('artifacts/' + pattern, recursive=True)
-              if not paths:
-                  return None
-              path = sorted(paths)[0]
-              sig = open(path + '.sig').read().strip()
-              return {'signature': sig, 'url': base + '/' + urllib.parse.quote(os.path.basename(path))}
-
-          platforms = {}
-          for name, pattern in [
-              ('darwin-aarch64', '**/*.dmg'),
-              ('windows-x86_64', '**/*x64-setup.exe'),
-              ('windows-aarch64', '**/*arm64-setup.exe'),
-              ('linux-x86_64', '**/*amd64.AppImage'),
-              ('linux-aarch64', '**/*aarch64.AppImage'),
-          ]:
-              e = entry(pattern)
-              if e:
-                  platforms[name] = e
-
-          latest = {
-              'version': tag.lstrip('v'),
-              'notes': '',
-              'pub_date': datetime.datetime.now(datetime.timezone.utc).isoformat(),
-              'platforms': platforms,
-          }
-          with open('artifacts/latest.json', 'w') as f:
-              json.dump(latest, f, indent=2)
-          print('latest.json:', json.dumps(latest, indent=2))
-          PYEOF
-      - name: Sign installers and build latest.json
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-        run: |
-          set -e
-          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
-            echo "::error::Секрет TAURI_SIGNING_PRIVATE_KEY не задан. Добавьте его в Settings → Secrets (ключ от 'npx tauri signer generate')"
-            exit 1
-          fi
-          export TAURI_SIGNING_PRIVATE_KEY
-          # Ключ без пароля: явный "-p ''", иначе signer пытается спросить
-          # пароль и падает в CI (нет терминала). CLI живёт в desktop/node_modules,
-          # поэтому npx запускаем из каталога desktop (пути к файлам — абсолютные).
-          for f in $(find "$GITHUB_WORKSPACE/artifacts" -type f \( -name '*.dmg' -o -name '*.exe' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.msi' -o -name 'golosloom' \) ! -name '*.sig'); do
-            (cd "$GITHUB_WORKSPACE/desktop" && npx tauri signer sign -p "" "$f")
-          done
-          python3 /tmp/make_latest.py
-          # Плющим всё в одну плоскую папку — публикация простым глобом
-          # (вложенные nsis/appimage-каталоги глобами не ловились).
-          mkdir -p "$GITHUB_WORKSPACE/release-files"
-          find "$GITHUB_WORKSPACE/artifacts" -type f \( -name '*.dmg' -o -name '*.exe' -o -name '*.msi' -o -name '*.deb' -o -name '*.AppImage' -o -name '*.sig' -o -name 'golosloom' \) -exec cp {} "$GITHUB_WORKSPACE/release-files/" \;
-          cp "$GITHUB_WORKSPACE/artifacts/latest.json" "$GITHUB_WORKSPACE/release-files/"
-          echo "=== файлы к публикации:"
-          ls -la "$GITHUB_WORKSPACE/release-files/"
+          merge-multiple: true
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          files: release-files/**
-          fail_on_unmatched_files: false
+          files: artifacts/*
+          fail_on_matched_files: false

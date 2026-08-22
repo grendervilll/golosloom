@@ -2,12 +2,62 @@
   "name": "golosloom-desktop",
   "private": true,
   "version": "2.1.2",
+  "description": "Golosloom — голосовой сервер с чатом, звонками и демонстрацией экрана",
+  "main": "electron/main.js",
   "scripts": {
-    "tauri": "tauri",
-    "dev": "tauri dev",
-    "build": "tauri build"
+    "prebuild": "node scripts/copy-web-src.js",
+    "dev": "concurrently \"npm run dev:web\" \"npm run dev:electron\"",
+    "dev:web": "cd ../web && npm run dev",
+    "dev:electron": "wait-on http://localhost:5173 && electron .",
+    "build": "npm run prebuild && electron-builder",
+    "build:web": "cd ../web && npm run build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "electron-store": "^8.2.0"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2"
+    "concurrently": "^9.1.0",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8",
+    "typescript": "^5.7.2",
+    "wait-on": "^8.0.3"
+  },
+  "build": {
+    "appId": "com.golosloom.desktop",
+    "productName": "Golosloom",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron/**/*",
+      "dist/**/*",
+      "!node_modules"
+    ],
+    "mac": {
+      "category": "public.app-category.social-networking",
+      "icon": "resources/icon.icns",
+      "minimumSystemVersion": "11.0",
+      "target": ["dmg", "zip"]
+    },
+    "win": {
+      "icon": "resources/icon.ico",
+      "target": ["nsis", "portable"]
+    },
+    "linux": {
+      "icon": "resources",
+      "category": "Network;Chat;AudioVideo",
+      "target": ["AppImage", "deb"],
+      "desktop": {
+        "Name": "Golosloom",
+        "Comment": "Голосовой сервер с чатом и звонками"
+      }
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "resources/icon.ico",
+      "uninstallerIcon": "resources/icon.ico"
+    }
   }
 }

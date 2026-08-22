@@ -1,8 +1,7 @@
-// Проверка обновлений в Tauri: при запуске спрашиваем пользователя,
-// скачать ли новую версию (скачивается под текущую ОС/архитектуру
-// из GitHub Releases через плагин updater).
+// Проверка обновлений: в Electron обновление инициируется из main process
+// через electron-updater. Этот компонент просто показывает диалог обновления.
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { Button } from './ui/button'
 import {
   Dialog,
@@ -18,54 +17,44 @@ const newVersion = ref('')
 const progress = ref('')
 const error = ref('')
 
-function isTauri(): boolean {
-  return typeof window !== 'undefined' && !!(window as any).__TAURI_INTERNALS__
+function isElectron(): boolean {
+  return typeof window !== 'undefined' && !!(window as any).__ELECTRON__?.secureStorage
 }
 
-async function checkForUpdates() {
-  if (!isTauri()) return
-  try {
-    const w = (window as any).__TAURI__
-    if (!w?.updater?.check) return
-    const update = await w.updater.check()
-    if (update && update.available) {
-      newVersion.value = update.version || ''
-      visible.value = true
-    }
-  } catch {
-    /* сервер недоступен или нет обновлений — молчим */
-  }
+function onUpdateAvailable(_event: Event, version: string) {
+  newVersion.value = version || ''
+  visible.value = true
 }
 
-async function installNow() {
+function onUpdateProgress(_event: Event, pct: number) {
+  progress.value = `Скачано ${pct}%`
+}
+
+function onUpdateError(_event: Event, msg: string) {
+  error.value = String(msg).slice(0, 200)
+}
+
+onMounted(() => {
+  if (!isElectron()) return
+  // Слушаем IPC-события от main process (electron-updater).
+  // Пока IPC не настроен — просто скрываем компонент.
+})
+
+onUnmounted(() => {
+  // отписка от IPC если была
+})
+
+function installNow() {
   busy.value = true
   error.value = ''
-  try {
-    const w = (window as any).__TAURI__
-    await w.updater.downloadAndInstall((event: any) => {
-      if (event?.event === 'DownloadProgress' && event.data?.total) {
-        const pct = Math.round((event.data.transferred / event.data.total) * 100)
-        progress.value = `Скачано ${pct}%`
-      }
-    })
-    // Перезапуск для применения обновления.
-    try {
-      await w.process.relaunch()
-    } catch {
-      /* после установки пользователь перезапустит приложение сам */
-    }
-  } catch (e: any) {
-    error.value = String(e?.message || e).slice(0, 200)
-  } finally {
-    busy.value = false
-  }
+  // В Electron main process сам скачивает и устанавливает.
+  // Renderer лишь показывает статус. Перезапуск — из main process.
+  busy.value = false
 }
 
 function later() {
   visible.value = false
 }
-
-onMounted(checkForUpdates)
 </script>
 
 <template>

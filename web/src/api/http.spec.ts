@@ -1,4 +1,4 @@
-// Тесты HTTP-клиента: корректные ответы, пустые/не-JSON ответы (Tauri),
+// Тесты HTTP-клиента: корректные ответы, пустые/не-JSON ответы (Electron),
 // ошибки сервера, сетевые сбои.
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ApiClient } from './http'

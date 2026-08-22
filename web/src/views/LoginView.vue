@@ -1,4 +1,4 @@
-// Вход в систему (с настройкой адреса сервера — для Tauri при первом запуске).
+// Вход в систему (с настройкой адреса сервера — для Electron при первом запуске).
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'

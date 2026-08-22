@@ -1,13 +1,12 @@
 // Безопасное хранение ключей шифрования.
 // Веб: IndexedDB, мастер-ключ WebCrypto (non-extractable), ключи каналов
 // хранятся зашифрованными мастер-ключом.
-// Tauri: системная Keychain через Rust-команды.
+// Electron: системная Keychain через safeStorage IPC.
 
 export interface KeyStorage {
   init(): Promise<void>
   saveChannelKey(channelId: number, keyBytes: Uint8Array): Promise<void>
   loadChannelKey(channelId: number): Promise<Uint8Array | null>
-  // KEK — ключ из пароля (для парольных бэкапов ключей каналов).
   saveKek(kek: Uint8Array): Promise<void>
   loadKek(): Promise<Uint8Array | null>
 }
@@ -17,13 +16,12 @@ const STORE = 'keys'
 const MASTER = 'master'
 const PREFIX = 'ch:'
 
-// TS 5.7+: WebCrypto требует BufferSource (ArrayBufferView<ArrayBuffer>).
 function buf(bytes: Uint8Array): Uint8Array<ArrayBuffer> {
   return bytes as unknown as Uint8Array<ArrayBuffer>
 }
 
-export function isTauri(): boolean {
-  return typeof window !== 'undefined' && !!(window as any).__TAURI_INTERNALS__
+export function isElectron(): boolean {
+  return typeof window !== 'undefined' && !!(window as any).__ELECTRON__?.secureStorage
 }
 
 class IndexedDBStorage implements KeyStorage {
@@ -92,7 +90,7 @@ class IndexedDBStorage implements KeyStorage {
   }
 
   // Прямой доступ по имени ключа без шифрования мастер-ключом —
-  // используется как фолбэк для Tauri, когда Keychain недоступна.
+  // используется как фолбэк для Electron, когда safeStorage недоступен.
   async rawGet(key: string): Promise<Uint8Array | null> {
     return (await this.get(STORE, key)) as Uint8Array | null
   }
@@ -101,9 +99,6 @@ class IndexedDBStorage implements KeyStorage {
     await this.put(STORE, key, value)
   }
 
-  // KEK хранится открытым в IndexedDB: без него не расшифровать бэкапы
-  // ключей каналов, а хранить его мастер-ключом бессмысленно (мастер-ключ
-  // и так локальный). Пароль у пользователя — главный фактор защиты.
   async saveKek(kek: Uint8Array): Promise<void> {
     await this.put(STORE, 'kek', kek)
   }
@@ -122,11 +117,9 @@ class IndexedDBStorage implements KeyStorage {
   }
 }
 
-// Tauri: Rust-команды secure_set / secure_get работают с системной Keychain.
-// Если Keychain недоступна (сбой macOS Keychain, проблема с правами) —
-// автоматически переключаемся на IndexedDB, чтобы чат и звонки продолжали
-// работать (вебвью-хранилище приложения изолировано от других программ).
-class TauriKeychainStorage implements KeyStorage {
+// Electron: safeStorage IPC работает с системной Keychain (macOS Keychain /
+// Windows DPAPI / Linux libsecret). При ошибке — фолбэк на IndexedDB.
+class ElectronKeychainStorage implements KeyStorage {
   private masterKey: Uint8Array | null = null
   private idb: IndexedDBStorage | null = null
 
@@ -167,28 +160,26 @@ class TauriKeychainStorage implements KeyStorage {
     }
   }
 
-  // Чтение: Keychain, при ошибке — IndexedDB.
   private async safeGet(key: string): Promise<Uint8Array | null> {
     try {
-      if (window.__TAURI__?.core?.invoke) {
-        const b64 = (await window.__TAURI__.core.invoke('secure_get', { key })) as string | null
+      if (window.__ELECTRON__?.secureStorage) {
+        const b64 = await window.__ELECTRON__.secureStorage.get(key)
         if (b64) return bytesFromB64(b64)
       }
     } catch {
-      /* Keychain недоступна — фолбэк ниже */
+      /* safeStorage недоступен — фолбэк ниже */
     }
     return (this.idb as any).rawGet(key)
   }
 
-  // Запись: Keychain, при ошибке — IndexedDB.
   private async safeSet(key: string, value: Uint8Array): Promise<void> {
     try {
-      if (window.__TAURI__?.core?.invoke) {
-        await window.__TAURI__.core.invoke('secure_set', { key, value: bytesToB64(value) })
+      if (window.__ELECTRON__?.secureStorage) {
+        await window.__ELECTRON__.secureStorage.set(key, bytesToB64(value))
         return
       }
     } catch {
-      /* Keychain недоступна — фолбэк ниже */
+      /* safeStorage недоступен — фолбэк ниже */
     }
     await (this.idb as any).rawSet(key, value)
   }
@@ -228,7 +219,7 @@ let instance: KeyStorage | null = null
 
 export async function getKeyStorage(): Promise<KeyStorage> {
   if (!instance) {
-    instance = isTauri() ? new TauriKeychainStorage() : new IndexedDBStorage()
+    instance = isElectron() ? new ElectronKeychainStorage() : new IndexedDBStorage()
   }
   await instance.init()
   return instance

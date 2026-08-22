@@ -11,7 +11,7 @@ coverage.html
 node_modules/
 web/dist/
 desktop/dist/
-desktop/src-tauri/target/
+desktop/src/
 *.local
 
 # Electron
@@ -24,6 +24,7 @@ desktop/electron/dist/
 
 # Internal docs
 techzadanie.md
+phases.md
 
 # OS
 .DS_Store
@@ -33,9 +34,6 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
-
-# Tauri / Rust
-desktop/src-tauri/gen/schemas/
 
 # Секреты Firebase/HMS — не в git
 google-services.json

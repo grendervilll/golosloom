@@ -35,7 +35,7 @@ async function copy() {
   try {
     await navigator.clipboard.writeText(text)
   } catch {
-    // Фолбэк для старых вебвью (Tauri).
+    // Фолбэк для окружений без Clipboard API.
     const ta = document.createElement('textarea')
     ta.value = text
     ta.style.position = 'fixed'
