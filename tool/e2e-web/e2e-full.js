@@ -30,12 +30,14 @@ function ok(n, c, x = '') { console.log((c ? 'PASS' : 'FAIL') + ' | ' + n + (x ?
   await p1.fill('input[placeholder="Название канала"]', 'E2E ' + ts)
   await p1.getByRole('button', { name: 'Создать' }).click()
   await p1.waitForTimeout(3000)
-  //频道ID через API
+  // Канал созданного пользователя — берём последний канал, где is_member=true
   channelId = await p1.evaluate(async () => {
     const t = localStorage.getItem('golosloom-token')
+    const me = await fetch('/api/me', { headers: { Authorization: 'Bearer ' + t } }).then(r => r.json())
     const chs = await fetch('/api/channels', { headers: { Authorization: 'Bearer ' + t } }).then(r => r.json())
-    const m = chs.filter(c => c.is_member)
-    return m.length > 0 ? m[m.length - 1].id : null
+    // Каналы, созданные мной
+    const mine = chs.filter(c => c.creator_id === me.id && c.is_member)
+    return mine.length > 0 ? mine[mine.length - 1].id : null
   })
   ok('2. Канал создан', !!channelId, `id=${channelId}`)
 

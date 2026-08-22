@@ -192,6 +192,7 @@ export const useChatStore = defineStore('chat', {
       const settings = useSettingsStore()
       const storage = await getKeyStorage()
       const key = await storage.loadChannelKey(channelId)
+      console.log(`[chat] send ch=${channelId}: key=${!!key}`)
       if (!key) return false
       const { ciphertext, iv } = await encryptMessage(key, text)
       const auth = useAuthStore()
