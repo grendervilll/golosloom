@@ -24,7 +24,7 @@ export class CentrifugeClient {
     if (!this.baseUrl || !this.connectionToken) return
     // Centrifuge JS connects via WebSocket to the Centrifugo endpoint.
     // The URL must be ws(s)://host/centrifugo for WebSocket transport.
-    const wsUrl = this.baseUrl.replace(/^http/, 'ws') + '/centrifugo/connection/websocket'
+    const wsUrl = this.baseUrl.replace(/^http/, 'ws') + '/connection/websocket'
     this.centrifuge = new Centrifuge(wsUrl, {
       token: this.connectionToken,
       getToken: () => Promise.resolve(this.connectionToken),
