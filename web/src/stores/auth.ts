@@ -61,7 +61,9 @@ export const useAuthStore = defineStore('auth', {
         try {
           const tokenRes = await settings.api.centrifugoToken()
           if (tokenRes?.token) {
-            this.centrifuge.connect(settings.serverConfig.centrifugo_url, tokenRes.token)
+            try {
+              this.centrifuge.connect(settings.serverConfig.centrifugo_url, tokenRes.token)
+            } catch { /* Centrifuge SDK error */ }
             this.connected = true
             return
           }
