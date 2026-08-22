@@ -11,7 +11,7 @@ function ok(n, c, x = '') { console.log((c ? 'PASS' : 'FAIL') + ' | ' + n + (x ?
   const nick1 = 'e2e_' + ts
 
   const p1 = await browser.newPage()
-  p1.on('console', m => { if (m.type() === 'error') console.log('[err]', m.text().slice(0, 80)) })
+  p1.on('console', m => console.log(`[p1:${m.type()}]`, m.text().slice(0, 120)))
 
   // 1. Регистрация
   await p1.goto(BASE, { waitUntil: 'load', timeout: 30000 })

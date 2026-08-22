@@ -279,12 +279,14 @@ export class ApiClient {
     iv: Uint8Array,
     attachmentIds: number[],
     replyToId = 0,
+    protocolVersion = 2,
   ) {
     return this.post(`/api/channels/${channelId}/messages`, {
       ciphertext: Array.from(ciphertext),
       iv: Array.from(iv),
       attachment_ids: attachmentIds,
       reply_to_id: replyToId || undefined,
+      protocol_version: protocolVersion,
     })
   }
   editMessage(channelId: number, messageId: number, ciphertext: Uint8Array, iv: Uint8Array) {
