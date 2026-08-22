@@ -150,9 +150,11 @@ export const useChannelsStore = defineStore('channels', {
       const existing = await storage.loadChannelKey(channelId)
       if (existing) return
       const key = generateChannelKey()
-      const wrapped = await wrapChannelKey(key, keys.publicKey)
-      await settings.api.uploadWrappedKey(channelId, Number(useAuthStore().user!.id), keys.deviceId, wrapped)
       await storage.saveChannelKey(channelId, key)
+      try {
+        const wrapped = await wrapChannelKey(key, keys.publicKey)
+        await settings.api.uploadWrappedKey(channelId, Number(useAuthStore().user!.id), keys.deviceId, wrapped)
+      } catch { /* ключ сохранён локально, загрузка повторится через syncKeys */ }
     },
     async syncKeys(channelId: number) {
       try {
