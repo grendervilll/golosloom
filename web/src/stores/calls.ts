@@ -9,6 +9,17 @@ import { sounds } from '../audio/sounds'
 import type { Call } from '../api/types'
 import { AudioPresets, Room, RoomEvent, Track } from 'livekit-client'
 
+// Stable device ID for LiveKit room identity (persisted in localStorage).
+const DEVICE_ID_KEY = 'golosloom-device-id'
+function getDeviceId(): string {
+  let id = localStorage.getItem(DEVICE_ID_KEY)
+  if (!id) {
+    id = 'web-' + crypto.randomUUID()
+    localStorage.setItem(DEVICE_ID_KEY, id)
+  }
+  return id
+}
+
 export interface ActiveCall extends Call {
   incoming: boolean // мне звонят
   ringing: boolean // я звоню
@@ -72,8 +83,7 @@ export const useCallStore = defineStore('calls', {
     async initiate(channelId: number, targetIds: number[]) {
       const settings = useSettingsStore()
       const auth = useAuthStore()
-      const channels = useChannelsStore()
-      const deviceId = channels.ensureDevice().deviceId
+      const deviceId = getDeviceId()
       const res = await settings.api.createCall(channelId, targetIds, deviceId)
       const call = res.call as Call
       this.calls.push({
@@ -94,8 +104,7 @@ export const useCallStore = defineStore('calls', {
     },
     async accept(call: Call) {
       const settings = useSettingsStore()
-      const channels = useChannelsStore()
-      const deviceId = channels.ensureDevice().deviceId
+      const deviceId = getDeviceId()
       // Звук звонка гасим сразу, ДО запроса к серверу: если accept упадёт
       // (сеть, "звонок завершён") — гудков уже не будет.
       this.stopIncoming(call.id)
@@ -128,8 +137,7 @@ export const useCallStore = defineStore('calls', {
     },
     async join(callId: number) {
       const settings = useSettingsStore()
-      const channels = useChannelsStore()
-      const deviceId = channels.ensureDevice().deviceId
+      const deviceId = getDeviceId()
       this.stopIncoming(callId)
       sounds.stopAll()
       const res = await settings.api.joinCall(callId, deviceId)

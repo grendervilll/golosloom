@@ -1,4 +1,4 @@
-// Каналы: список, создание, приглашения, участники, права, ключи каналов.
+// Каналы: список, создание, приглашения, участники, права.
 import { defineStore } from 'pinia'
 import { useSettingsStore } from './settings'
 import { toast } from 'vue-sonner'
@@ -6,24 +6,6 @@ import { useAuthStore } from './auth'
 import { useChatStore } from './chat'
 import { useCallStore } from './calls'
 import type { Channel, ChannelMember, Invite, Role } from '../api/types'
-import { getKeyStorage } from '../crypto/storage'
-import {
-  generateChannelKey,
-  wrapChannelKey,
-  unwrapChannelKey,
-  generateDeviceKeys,
-  bytesToB64,
-  b64ToBytes,
-  deriveKek,
-  wrapWithKek,
-  unwrapWithKek,
-} from '../crypto/crypto'
-
-export interface KeyTarget {
-  user_id: number
-  device_id: string
-  public_key: string
-}
 
 export const useChannelsStore = defineStore('channels', {
   state: () => ({
@@ -32,14 +14,6 @@ export const useChannelsStore = defineStore('channels', {
     members: [] as ChannelMember[],
     banned: [] as { user_id: number; nick: string; ban_reason: string }[],
     invites: [] as Invite[],
-    deviceKeys: null as ReturnType<typeof generateDeviceKeys> | null,
-    keyPollTimer: 0 as number,
-    // Запрос пароля для расшифровки (вход по токену без пароля: KEK нет,
-    // а каналы зашифрованы). Показывается один раз.
-    kekPromptVisible: false as boolean,
-    // Пароль введён, но не подошёл (бэкапы не расшифровались).
-    kekPromptError: '' as string,
-    _kekPromptShown: false as boolean,
   }),
   getters: {
     current(): Channel | undefined {
@@ -53,29 +27,17 @@ export const useChannelsStore = defineStore('channels', {
     },
   },
   actions: {
-    ensureDevice(): ReturnType<typeof generateDeviceKeys> {
-      if (!this.deviceKeys) {
-        this.deviceKeys = generateDeviceKeys()
-      }
-      return this.deviceKeys
-    },
     async init() {
       const settings = useSettingsStore()
       const auth = useAuthStore()
-      const keys = this.ensureDevice()
-      await settings.api.uploadKey(keys.deviceId, bytesToB64(keys.publicKey))
       await this.refresh()
       await this.refreshInvites()
       auth.refreshUsers()
-      // Ключи для всех каналов: раздаём их новым устройствам, забираем свой
-      // (первое устройство может быть выключено — таймер повторит позже).
-      this.startKeyPoll()
-      await this.syncAllKeys()
       if (this.currentId) {
         try {
           await this.openChannel(this.currentId)
         } catch {
-          // Канал откроется при клике на него; вход не должен падать.
+          /* канал откроется при клике */
         }
       }
     },
@@ -93,11 +55,8 @@ export const useChannelsStore = defineStore('channels', {
     async createChannel(name: string, isPrivate: boolean): Promise<Channel> {
       const settings = useSettingsStore()
       const ch = await settings.api.createChannel(name, isPrivate)
-      // Создатель уже участник канала — «вход» по приглашению не нужен
-      // (для приватного канала joinChannel вернул бы 403).
       await this.refresh()
       this.currentId = ch.id
-      await this.initChannelKey(ch.id)
       await this.openChannel(ch.id)
       return ch
     },
@@ -105,7 +64,6 @@ export const useChannelsStore = defineStore('channels', {
       const settings = useSettingsStore()
       const auth = useAuthStore()
       const ch = this.channels.find((c) => c.id === channelId)
-      // Отписываемся от предыдущего канала в Centrifugo.
       if (this.currentId && this.currentId !== channelId) {
         auth.centrifuge.unsubscribeChannel('channel:' + this.currentId)
       }
@@ -113,7 +71,6 @@ export const useChannelsStore = defineStore('channels', {
         await settings.api.joinChannel(channelId)
       }
       this.currentId = channelId
-      // Подписываемся на Centrifugo канал.
       try {
         const subRes = await settings.api.centrifugoSubscribe('channel:' + channelId)
         if (subRes?.token) {
@@ -123,20 +80,16 @@ export const useChannelsStore = defineStore('channels', {
       await this.refresh()
       await this.openChannel(channelId)
     },
-    // Открытие канала: вступление в публичный канал при необходимости,
-    // загрузка участников, истории, синхронизация ключей.
     async openChannel(channelId: number) {
       const settings = useSettingsStore()
       const auth = useAuthStore()
       const chat = useChatStore()
       this.currentId = channelId
       const ch = this.channels.find((c) => c.id === channelId)
-      // Публичный канал виден всем, но участником нужно стать явно.
       if (ch && !ch.is_member && !ch.private) {
         await settings.api.joinChannel(channelId)
         await this.refresh()
       }
-      // Подписка на Centrifugo канал (вызывается и при init()).
       try {
         const subRes = await settings.api.centrifugoSubscribe('channel:' + channelId)
         if (subRes?.token) {
@@ -146,16 +99,10 @@ export const useChannelsStore = defineStore('channels', {
       this.members = await settings.api.listMembers(channelId)
       await this.loadBanned(channelId)
       await chat.loadHistory(channelId)
-      await this.syncKeys(channelId)
-      this.startKeyPoll()
-      // Обновляем список звонков канала (кнопка «Войти в звонок» и пр.).
       try {
         await useCallStore().refresh(channelId)
-      } catch {
-        /* ignore */
-      }
+      } catch { /* ignore */ }
     },
-    // Забаненные участники канала (для разбана).
     async loadBanned(channelId: number) {
       const settings = useSettingsStore()
       try {
@@ -172,190 +119,6 @@ export const useChannelsStore = defineStore('channels', {
       chat.messages.delete(channelId)
       calls.endAllInChannel(channelId)
       await this.refresh()
-    },
-    // Создание ключа канала (создатель) или получение своего обёрнутого ключа.
-    async initChannelKey(channelId: number) {
-      const storage = await getKeyStorage()
-      const settings = useSettingsStore()
-      const keys = this.ensureDevice()
-      const existing = await storage.loadChannelKey(channelId)
-      if (existing) return
-      const key = generateChannelKey()
-      const wrapped = await wrapChannelKey(key, keys.publicKey)
-      await settings.api.uploadWrappedKey(channelId, Number(useAuthStore().user!.id), keys.deviceId, wrapped)
-      await storage.saveChannelKey(channelId, key)
-      await this.uploadBackup(channelId, key)
-    },
-    // Ключ из пароля (KEK): из хранилища или новый (создаётся из пароля).
-    async getKek(): Promise<Uint8Array | null> {
-      try {
-        const storage = await getKeyStorage()
-        const kek = await storage.loadKek()
-        if (kek) return kek
-        const auth = useAuthStore()
-        if (auth.password && auth.user) {
-          const k = await deriveKek(auth.password, Number(auth.user.id))
-          try {
-            await storage.saveKek(k)
-          } catch {
-            /* ignore */
-          }
-          return k
-        }
-        // Вход по токену без пароля и без сохранённого KEK: предлагаем
-        // ввести пароль — иначе парольные бэкапы ключей не расшифровать.
-        if (auth.user && !this._kekPromptShown) {
-          this._kekPromptShown = true
-          this.kekPromptVisible = true
-          this.kekPromptError = ''
-        }
-      } catch {
-        /* ignore */
-      }
-      return null
-    },
-    // Ввод пароля из окна «расшифровать переписку»: выводим KEK
-    // и сразу расшифровываем бэкапы всех каналов.
-    async submitKek(password: string): Promise<boolean> {
-      const auth = useAuthStore()
-      if (!auth.user) return false
-      try {
-        const storage = await getKeyStorage()
-        const k = await deriveKek(password, Number(auth.user.id))
-        await storage.saveKek(k)
-        auth.password = password
-        this.kekPromptVisible = false
-        this.kekPromptError = ''
-        // Проверка пароля: расшифровываем первый доступный бэкап.
-        const settings = useSettingsStore()
-        for (const ch of this.channels) {
-          if (!ch.is_member) continue
-          let backup: { wrapped_key?: string } | null = null
-          try {
-            backup = await settings.api.getKeyBackup(ch.id)
-          } catch {
-            continue
-          }
-          if (!backup?.wrapped_key) continue
-          try {
-            await unwrapWithKek(k, b64ToBytes(backup.wrapped_key))
-          } catch {
-            this.kekPromptError = 'Неверный пароль — сообщения не расшифрованы'
-            this.kekPromptVisible = true
-            return false
-          }
-        }
-        void this.syncAllKeys()
-        return true
-      } catch {
-        this.kekPromptError = 'Не удалось обработать пароль'
-        this.kekPromptVisible = true
-        return false
-      }
-    },
-    dismissKekPrompt() {
-      this.kekPromptVisible = false
-    },
-    // Парольный бэкап ключа канала (зашифрован ключом из пароля).
-    // Новое устройство получит ключ без онлайн-держателя — достаточно пароля.
-    async uploadBackup(channelId: number, key: Uint8Array) {
-      try {
-        const kek = await this.getKek()
-        if (!kek) return
-        const wrapped = await wrapWithKek(kek, key)
-        await useSettingsStore().api.uploadKeyBackup(channelId, wrapped)
-      } catch {
-        /* не критично: ключ раздастся через обёртки */
-      }
-    },
-    // Синхронизация ключей: получаем свой ключ, раздаём ключ новым устройствам.
-    // ВАЖНО: сервер хранит ключ канала только в обёрнутом виде и не может сам
-    // выдать его новому устройству — ключ для нового устройства оборачивает
-    // другой клиент, у которого есть ключ. Поэтому синхронизация повторяется:
-    // таймером (пока канал открыт), при старте и при регистрации устройства.
-    async syncKeys(channelId: number) {
-      try {
-        const storage = await getKeyStorage()
-        const settings = useSettingsStore()
-        const auth = useAuthStore()
-        const keys = this.ensureDevice()
-        const ch = this.channels.find((c) => c.id === channelId)
-        const isMember = ch ? ch.is_member : this.members.some((m) => m.user_id === auth.user?.id)
-        if (auth.user && isMember) {
-          // 1) Парольный бэкап: ключ канала, зашифрованный ключом из пароля.
-          //    Доступен на любом устройстве с паролем — онлайн-держатель
-          //    ключа не нужен (новое устройство/переустановка и т.п.).
-          const kek = await this.getKek()
-          if (kek) {
-            try {
-              const backup = await settings.api.getKeyBackup(channelId)
-              if (backup?.wrapped_key) {
-                const bkey = await unwrapWithKek(kek, b64ToBytes(backup.wrapped_key))
-                const hadKey = await storage.loadChannelKey(channelId)
-                await storage.saveChannelKey(channelId, bkey)
-                // Своя обёртка для сервера: устройство становится держателем
-                // (иначе ниже сработает сброс «устаревшего» локального ключа).
-                try {
-                  const wrapped = await wrapChannelKey(bkey, keys.publicKey)
-                  await settings.api.uploadWrappedKey(channelId, auth.user!.id, keys.deviceId, wrapped)
-                } catch {
-                  /* ignore */
-                }
-                if (!hadKey) {
-                  const chat = useChatStore()
-                  try {
-                    await chat.loadHistory(channelId)
-                  } catch {
-                    /* ignore */
-                  }
-                }
-              }
-            } catch {
-              /* бэкапа нет или пароль не подходит — обычный поток ниже */
-            }
-          }
-          const res = await settings.api.getMyWrappedKey(channelId, keys.deviceId)
-          if (res.wrapped_key) {
-            const key = await unwrapChannelKey(b64ToBytes(res.wrapped_key), keys.privateKey)
-            const hadKey = await storage.loadChannelKey(channelId)
-            await storage.saveChannelKey(channelId, key)
-            await this.uploadBackup(channelId, key)
-            if (!hadKey) {
-              // Ключ только что получен — перечитываем историю, чтобы
-              // расшифровать сообщения канала.
-              const chat = useChatStore()
-              try {
-                await chat.loadHistory(channelId)
-              } catch {
-                /* ignore */
-              }
-            }
-          }
-        }
-        const myKey = await storage.loadChannelKey(channelId)
-        if (!myKey) return
-        const targets: KeyTarget[] = await settings.api.pendingKeyTargets(channelId)
-        for (const target of targets) {
-          if (target.user_id === auth.user?.id && target.device_id === keys.deviceId) continue
-          const wrapped = await wrapChannelKey(myKey, b64ToBytes(target.public_key))
-          await settings.api.uploadWrappedKey(channelId, target.user_id, target.device_id, wrapped)
-        }
-      } catch {
-        // Не критично: синхронизация повторится таймером.
-      }
-    },
-    // Раздача/получение ключей для всех каналов (при старте и при появлении
-    // нового устройства у того же пользователя).
-    async syncAllKeys() {
-      for (const ch of this.channels) {
-        await this.syncKeys(ch.id)
-      }
-    },
-    startKeyPoll() {
-      if (this.keyPollTimer) return
-      this.keyPollTimer = window.setInterval(() => {
-        if (this.currentId) void this.syncKeys(this.currentId)
-      }, 7000)
     },
     async handleInviteEvent(invite: Invite) {
       const toastId = toast(`Приглашение в канал «${invite.channel_name}» от ${invite.invited_by_nick}`, {
@@ -380,18 +143,6 @@ export const useChannelsStore = defineStore('channels', {
       const settings = useSettingsStore()
       await settings.api.declineInvite(id)
       await this.refreshInvites()
-    },
-    async handleKeyNeeded(data: { channel_id: number; user_id: number; device_id: string; public_key: string }) {
-      if (data.channel_id !== this.currentId) return
-      const storage = await getKeyStorage()
-      const myKey = await storage.loadChannelKey(data.channel_id)
-      if (!myKey) return
-      const settings = useSettingsStore()
-      const wrapped = await wrapChannelKey(myKey, b64ToBytes(data.public_key))
-      await settings.api.uploadWrappedKey(data.channel_id, data.user_id, data.device_id, wrapped)
-    },
-    async handleKeyGranted(channelId: number) {
-      if (channelId === this.currentId) await this.syncKeys(channelId)
     },
     async setRole(channelId: number, userId: number, role: string) {
       const settings = useSettingsStore()

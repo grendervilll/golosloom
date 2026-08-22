@@ -1,4 +1,4 @@
-// Корневой компонент: авторизация, WS-события, модальные уведомления.
+// Корневой компонент: авторизация, Centrifugo-события, модальные уведомления.
 <script setup lang="ts">
 import { onMounted, onUnmounted, watch } from 'vue'
 import { useAuthStore } from './stores/auth'
@@ -64,7 +64,6 @@ function wireWs() {
       toast.info('Вызов не принят, звонок отклонён автоматически')
     }),
     c.on('punch', (d: any) => calls.handlePunch(d)),
-    c.on('device.registered', () => void channels.syncAllKeys()),
     c.on('kicked', (d: any) => {
       sounds.warning()
       toast.warning(`Вас кикнули из канала: ${d.reason || 'без причины'}`)
@@ -86,8 +85,6 @@ function wireWs() {
     c.on('role.changed', () => void channels.refresh()),
     c.on('member.banned', () => void channels.refresh()),
     c.on('member.unbanned', () => void channels.refresh()),
-    c.on('session.needed', (d: any) => void channels.handleKeyNeeded(d)),
-    c.on('key.granted', (d: any) => void channels.handleKeyGranted(d.channel_id)),
   )
 }
 
