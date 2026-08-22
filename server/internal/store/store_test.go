@@ -123,7 +123,7 @@ func TestMessagesEditHistoryAndDelete(t *testing.T) {
 	st := openTest(t)
 	u := mustUser(t, st, "u1")
 	ch, _ := st.CreateChannel("ch", false, u.ID)
-	m, err := st.CreateMessage(ch.ID, u.ID, []byte("ct1"), []byte("iv1"), 0)
+	m, err := st.CreateMessage(ch.ID, u.ID, []byte("ct1"), []byte("iv1"), 0, 1)
 	if err != nil {
 		t.Fatal(err)
 	}

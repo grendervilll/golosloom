@@ -13,6 +13,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"golosloom/server/internal/devices"
 	"golosloom/server/internal/models"
 )
 
@@ -316,6 +317,28 @@ func (s *Store) migrate() error {
 	_, _ = s.db.Exec(`ALTER TABLE files ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0`)
 	// Миграция: версия токенов пользователя (разлогин везде при смене пароля).
 	_, _ = s.db.Exec(`ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0`)
+	// Миграция Signal Protocol: новые таблицы (старая devices остаётся для совместимости).
+	// Новая таблица устройств Signal Protocol (храним только публичные ключи).
+	_, _ = s.db.Exec(`CREATE TABLE IF NOT EXISTS signal_devices (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		device_id TEXT NOT NULL,
+		identity_key BLOB NOT NULL,
+		signed_pre_key BLOB NOT NULL,
+		created_at TEXT NOT NULL,
+		UNIQUE(user_id, device_id)
+	)`)
+	// Пул одноразовых pre-ключа.
+	_, _ = s.db.Exec(`CREATE TABLE IF NOT EXISTS one_time_pre_keys (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		device_id TEXT NOT NULL,
+		pre_key BLOB NOT NULL,
+		created_at TEXT NOT NULL,
+		UNIQUE(user_id, device_id, pre_key)
+	)`)
+	// Протокол сообщений: 1 = старый AES-GCM, 2 = Signal Protocol.
+	_, _ = s.db.Exec(`ALTER TABLE messages ADD COLUMN protocol_version INTEGER NOT NULL DEFAULT 1`)
 	return nil
 }
 
@@ -895,13 +918,16 @@ func (s *Store) ChannelPermissions(channelID int64) (map[models.Role]map[models.
 
 // ---------- Messages ----------
 
-func (s *Store) CreateMessage(channelID, senderID int64, ciphertext, iv []byte, replyTo int64) (*models.Message, error) {
+func (s *Store) CreateMessage(channelID, senderID int64, ciphertext, iv []byte, replyTo int64, protocolVersion int) (*models.Message, error) {
 	var r any
 	if replyTo != 0 {
 		r = replyTo
 	}
-	res, err := s.db.Exec(`INSERT INTO messages (channel_id, sender_id, ciphertext, iv, created_at, reply_to)
-		VALUES (?, ?, ?, ?, ?, ?)`, channelID, senderID, ciphertext, iv, now(), r)
+	if protocolVersion == 0 {
+		protocolVersion = 1
+	}
+	res, err := s.db.Exec(`INSERT INTO messages (channel_id, sender_id, ciphertext, iv, created_at, reply_to, protocol_version)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`, channelID, senderID, ciphertext, iv, now(), r, protocolVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -910,7 +936,7 @@ func (s *Store) CreateMessage(channelID, senderID int64, ciphertext, iv []byte, 
 }
 
 func (s *Store) GetMessage(id int64) (*models.Message, error) {
-	row := s.db.QueryRow(`SELECT id, channel_id, sender_id, ciphertext, iv, history, deleted, deleted_by, deleted_at, created_at, edited_at, reply_to, attachment_deleted
+	row := s.db.QueryRow(`SELECT id, channel_id, sender_id, ciphertext, iv, protocol_version, history, deleted, deleted_by, deleted_at, created_at, edited_at, reply_to, attachment_deleted
 		FROM messages WHERE id = ?`, id)
 	m, err := scanMessage(row)
 	if err != nil {
@@ -935,7 +961,7 @@ func scanMessage(row *sql.Row) (*models.Message, error) {
 	var deletedAt, createdAt, editedAt sql.NullString
 	var replyTo sql.NullInt64
 	var attachmentDeleted int
-	err := row.Scan(&m.ID, &m.ChannelID, &m.SenderID, &m.Ciphertext, &m.IV, &history,
+	err := row.Scan(&m.ID, &m.ChannelID, &m.SenderID, &m.Ciphertext, &m.IV, &m.ProtocolVersion, &history,
 		&deleted, &deletedBy, &deletedAt, &createdAt, &editedAt, &replyTo, &attachmentDeleted)
 	if err == sql.ErrNoRows {
 		return nil, ErrNotFound
@@ -964,7 +990,7 @@ func scanMessage(row *sql.Row) (*models.Message, error) {
 
 func (s *Store) ListMessages(channelID, beforeID int64, limit int) ([]models.Message, error) {
 	rows, err := s.db.Query(`
-		SELECT id, channel_id, sender_id, ciphertext, iv, history, deleted, deleted_by, deleted_at, created_at, edited_at, reply_to, attachment_deleted
+		SELECT id, channel_id, sender_id, ciphertext, iv, protocol_version, history, deleted, deleted_by, deleted_at, created_at, edited_at, reply_to, attachment_deleted
 		FROM messages WHERE channel_id = ? AND (? = 0 OR id < ?)
 		ORDER BY id DESC LIMIT ?`, channelID, beforeID, beforeID, limit)
 	if err != nil {
@@ -980,7 +1006,7 @@ func (s *Store) ListMessages(channelID, beforeID int64, limit int) ([]models.Mes
 		var deletedAt, createdAt, editedAt sql.NullString
 		var replyTo sql.NullInt64
 		var attachmentDeleted int
-		if err := rows.Scan(&m.ID, &m.ChannelID, &m.SenderID, &m.Ciphertext, &m.IV, &history,
+		if err := rows.Scan(&m.ID, &m.ChannelID, &m.SenderID, &m.Ciphertext, &m.IV, &m.ProtocolVersion, &history,
 			&deleted, &deletedBy, &deletedAt, &createdAt, &editedAt, &replyTo, &attachmentDeleted); err != nil {
 			return nil, err
 		}
@@ -1953,4 +1979,157 @@ func (s *Store) ActiveCalls() ([]models.Call, error) {
 		out = append(out, c)
 	}
 	return out, rows.Err()
+}
+
+// ---------- Signal Protocol devices ----------
+
+// RegisterSignalDevice stores a device's public keys (identity + signed pre-key)
+// and uploads a batch of one-time pre-keys in a single transaction.
+func (s *Store) RegisterSignalDevice(userID int64, deviceID string, identityKey, signedPreKey []byte, preKeys [][]byte) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	_, err = tx.Exec(
+		`INSERT INTO signal_devices (user_id, device_id, identity_key, signed_pre_key, created_at)
+		 VALUES (?, ?, ?, ?, ?)
+		 ON CONFLICT(user_id, device_id) DO UPDATE SET
+			identity_key = excluded.identity_key,
+			signed_pre_key = excluded.signed_pre_key`,
+		userID, deviceID, identityKey, signedPreKey, now())
+	if err != nil {
+		return err
+	}
+	for _, pk := range preKeys {
+		if _, err := tx.Exec(
+			`INSERT INTO one_time_pre_keys (user_id, device_id, pre_key, created_at) VALUES (?, ?, ?, ?)`,
+			userID, deviceID, pk, now()); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// DeleteSignalDevice removes a Signal Protocol device and its one-time pre-keys.
+func (s *Store) DeleteSignalDevice(userID int64, deviceID string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	_, _ = tx.Exec(`DELETE FROM one_time_pre_keys WHERE user_id = ? AND device_id = ?`, userID, deviceID)
+	_, err = tx.Exec(`DELETE FROM signal_devices WHERE user_id = ? AND device_id = ?`, userID, deviceID)
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// ListUserSignalDevices returns all Signal Protocol devices for a user.
+func (s *Store) ListUserSignalDevices(userID int64) ([]devices.Device, error) {
+	rows, err := s.db.Query(
+		`SELECT id, user_id, device_id, identity_key, signed_pre_key, created_at
+		 FROM signal_devices WHERE user_id = ? ORDER BY id`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []devices.Device
+	for rows.Next() {
+		var d devices.Device
+		var createdAt string
+		if err := rows.Scan(&d.ID, &d.UserID, &d.DeviceID, &d.IdentityKey, &d.SignedPreKey, &createdAt); err != nil {
+			return nil, err
+		}
+		d.CreatedAt, _ = parseTime(createdAt)
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+// GetSignalDevice returns a single Signal Protocol device.
+func (s *Store) GetSignalDevice(userID int64, deviceID string) (*devices.Device, error) {
+	var d devices.Device
+	var createdAt string
+	err := s.db.QueryRow(
+		`SELECT id, user_id, device_id, identity_key, signed_pre_key, created_at
+		 FROM signal_devices WHERE user_id = ? AND device_id = ?`, userID, deviceID).
+		Scan(&d.ID, &d.UserID, &d.DeviceID, &d.IdentityKey, &d.SignedPreKey, &createdAt)
+	if err == sql.ErrNoRows {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	d.CreatedAt, _ = parseTime(createdAt)
+	return &d, nil
+}
+
+// ConsumeOneTimePreKey atomically selects and deletes one one-time pre-key
+// for the given device. Returns ErrNotFound if no keys are available.
+func (s *Store) ConsumeOneTimePreKey(userID int64, deviceID string) ([]byte, error) {
+	var preKey []byte
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	err = tx.QueryRow(
+		`SELECT pre_key FROM one_time_pre_keys
+		 WHERE user_id = ? AND device_id = ? ORDER BY id LIMIT 1`,
+		userID, deviceID).Scan(&preKey)
+	if err == sql.ErrNoRows {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	_, err = tx.Exec(
+		`DELETE FROM one_time_pre_keys WHERE user_id = ? AND device_id = ? AND pre_key = ?`,
+		userID, deviceID, preKey)
+	if err != nil {
+		return nil, err
+	}
+	return preKey, tx.Commit()
+}
+
+// UploadOneTimePreKeys appends new one-time pre-keys for a device.
+func (s *Store) UploadOneTimePreKeys(userID int64, deviceID string, preKeys [][]byte) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, pk := range preKeys {
+		if _, err := tx.Exec(
+			`INSERT INTO one_time_pre_keys (user_id, device_id, pre_key, created_at) VALUES (?, ?, ?, ?)`,
+			userID, deviceID, pk, now()); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// PreKeyCount returns the number of available one-time pre-keys for a device.
+func (s *Store) PreKeyCount(userID int64, deviceID string) (int, error) {
+	var n int
+	err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM one_time_pre_keys WHERE user_id = ? AND device_id = ?`,
+		userID, deviceID).Scan(&n)
+	return n, err
+}
+
+// CleanupOldPreKeys deletes one-time pre-keys for devices that have not
+// connected in the last 90 days.
+func (s *Store) CleanupOldPreKeys() (int64, error) {
+	cutoff := time.Now().UTC().Add(-90 * 24 * time.Hour).Format(time.RFC3339Nano)
+	res, err := s.db.Exec(
+		`DELETE FROM one_time_pre_keys WHERE (user_id, device_id) IN (
+			SELECT user_id, device_id FROM signal_devices WHERE created_at < ?
+		)`, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }

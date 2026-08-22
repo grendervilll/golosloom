@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"golosloom/server/internal/hub"
 	"golosloom/server/internal/livekit"
 	"golosloom/server/internal/models"
 )
@@ -118,12 +117,15 @@ func (s *Server) handleCreateCall(w http.ResponseWriter, r *http.Request) {
 		if err := s.Store.CreateCallInvite(call.ID, targetID); err != nil {
 			continue
 		}
-		s.Hub.SendToUser(targetID, hub.NewEvent("call.invite", map[string]interface{}{
-			"call_id":      call.ID,
-			"channel_id":   channelID,
-			"initiator_id": userIDFrom(r),
-			"initiator_nick": callerNick,
-		}))
+		s.publishUser(targetID, centrifugoEvent{
+			Type: "call.invite",
+			Data: map[string]interface{}{
+				"call_id":        call.ID,
+				"channel_id":     channelID,
+				"initiator_id":   userIDFrom(r),
+				"initiator_nick": callerNick,
+			},
+		})
 		// Пуш, если приложение закрыто: телефон должен узнать о звонке.
 		s.pushNotify(targetID, "📞 Входящий звонок",
 			callerNick+" звонит в канале «"+s.channelName(channelID)+"»", "call")
@@ -141,10 +143,13 @@ func (s *Server) handleCreateCall(w http.ResponseWriter, r *http.Request) {
 	go s.autoDeclineRinging(call.ID)
 
 	// Оповещаем канал о новом звонке (для кнопки "Войти в звонок").
-	s.Hub.SendToChannel(channelID, hub.NewEvent("call.created", map[string]interface{}{
-		"call":       call,
-		"caller_nick": callerNick,
-	}))
+	s.publishChannel(channelID, centrifugoEvent{
+		Type: "call.created",
+		Data: map[string]interface{}{
+			"call":        call,
+			"caller_nick": callerNick,
+		},
+	})
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
 		"call": call,
 		"token": s.livekitToken(call, userIDFrom(r), deviceIDFromRequest(r)),
@@ -170,7 +175,10 @@ func (s *Server) autoDeclineRinging(callID int64) {
 	for _, inv := range ringing {
 		if err := s.Store.UpdateCallInviteStatus(callID, inv.UserID, models.CallInviteAutoDeclined); err == nil {
 			changed = true
-			s.Hub.SendToUser(inv.UserID, hub.NewEvent("call.invite.timeout", map[string]int64{"call_id": callID}))
+			s.publishUser(inv.UserID, centrifugoEvent{
+				Type: "call.invite.timeout",
+				Data: map[string]int64{"call_id": callID},
+			})
 		}
 	}
 	if !changed {
@@ -299,7 +307,10 @@ func (s *Server) handleAcceptCall(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// Звук дозвона у звонящего прекращается.
-		s.Hub.SendToChannel(call.ChannelID, hub.NewEvent("call.started", map[string]int64{"call_id": callID}))
+		s.publishChannel(call.ChannelID, centrifugoEvent{
+			Type: "call.started",
+			Data: map[string]int64{"call_id": callID},
+		})
 	}
 	s.broadcastParticipants(callID)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -328,9 +339,12 @@ func (s *Server) handleDeclineCall(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.Hub.SendToUser(call.InitiatorID, hub.NewEvent("call.declined", map[string]interface{}{
-		"call_id": callID, "user_id": userIDFrom(r),
-	}))
+	s.publishUser(call.InitiatorID, centrifugoEvent{
+		Type: "call.declined",
+		Data: map[string]interface{}{
+			"call_id": callID, "user_id": userIDFrom(r),
+		},
+	})
 	// Если в звонке остался один участник и больше никто не звонит —
 	// звонок бессмыслен, завершаем его (иначе инициатор сидел бы в
 	// одиночестве в вечно «активном» звонке).
@@ -377,7 +391,10 @@ func (s *Server) handleJoinCall(w http.ResponseWriter, r *http.Request) {
 	s.leaveOtherCalls(callID, userIDFrom(r))
 	if call.Status == models.CallRinging {
 		_ = s.Store.UpdateCallStatus(callID, models.CallActive)
-		s.Hub.SendToChannel(call.ChannelID, hub.NewEvent("call.started", map[string]int64{"call_id": callID}))
+		s.publishChannel(call.ChannelID, centrifugoEvent{
+			Type: "call.started",
+			Data: map[string]int64{"call_id": callID},
+		})
 	}
 	s.broadcastParticipants(callID)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -410,9 +427,12 @@ func (s *Server) broadcastParticipants(callID int64) {
 		return
 	}
 	participants, _ := s.Store.CallParticipantIDs(callID)
-	s.Hub.SendToChannel(call.ChannelID, hub.NewEvent("call.participants", map[string]interface{}{
-		"call_id": callID, "participants": participants,
-	}))
+	s.publishChannel(call.ChannelID, centrifugoEvent{
+		Type: "call.participants",
+		Data: map[string]interface{}{
+			"call_id": callID, "participants": participants,
+		},
+	})
 }
 
 // leaveOtherCalls — пользователь может быть только в одном активном звонке:
@@ -440,9 +460,12 @@ func (s *Server) finishCall(call models.Call, reason string) {
 		return
 	}
 	_ = s.Store.EndCall(call.ID)
-	s.Hub.SendToChannel(call.ChannelID, hub.NewEvent("call.ended", map[string]interface{}{
-		"call_id": call.ID, "reason": reason,
-	}))
+	s.publishChannel(call.ChannelID, centrifugoEvent{
+		Type: "call.ended",
+		Data: map[string]interface{}{
+			"call_id": call.ID, "reason": reason,
+		},
+	})
 }
 
 func itoa(v int64) string {

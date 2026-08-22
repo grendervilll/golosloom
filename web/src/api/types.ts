@@ -46,6 +46,7 @@ export interface Message {
   sender_nick: string
   ciphertext: string
   iv: string
+  protocol_version?: number
   created_at: string
   edited_at?: string
   history?: MessageVersion[]
@@ -102,6 +103,7 @@ export interface Call {
 
 export interface ServerConfig {
   ws_path: string
+  centrifugo_url?: string
   livekit_url: string
   max_message_len: number
   turn: { urls: string[]; username: string; credential: string }

@@ -80,23 +80,21 @@ type MessageVersion struct {
 }
 
 type Message struct {
-	ID         int64     `json:"id"`
-	ChannelID  int64     `json:"channel_id"`
-	SenderID   int64     `json:"sender_id"`
-	Ciphertext []byte    `json:"ciphertext"`
-	IV         []byte    `json:"iv"`
-	CreatedAt  time.Time `json:"created_at"`
-	EditedAt   *time.Time `json:"edited_at,omitempty"`
-	History    []MessageVersion `json:"history,omitempty"`
-	Deleted    bool      `json:"deleted"`
-	DeletedBy  *int64    `json:"deleted_by,omitempty"`
-	DeletedAt  *time.Time `json:"deleted_at,omitempty"`
-	Attachment *Attachment `json:"attachment,omitempty"`
-	// Attachments — все живые вложения сообщения (может быть несколько).
-	Attachments []Attachment `json:"attachments,omitempty"`
-	ReplyTo    *int64    `json:"reply_to,omitempty"`
-	// AttachmentDeleted — все вложения удалены администратором сервера
-	// (файлы стёрты с диска, сообщение и текст остались).
+	ID              int64     `json:"id"`
+	ChannelID       int64     `json:"channel_id"`
+	SenderID        int64     `json:"sender_id"`
+	Ciphertext      []byte    `json:"ciphertext"`
+	IV              []byte    `json:"iv"`
+	ProtocolVersion int       `json:"protocol_version"`
+	CreatedAt       time.Time `json:"created_at"`
+	EditedAt        *time.Time `json:"edited_at,omitempty"`
+	History         []MessageVersion `json:"history,omitempty"`
+	Deleted         bool      `json:"deleted"`
+	DeletedBy       *int64    `json:"deleted_by,omitempty"`
+	DeletedAt       *time.Time `json:"deleted_at,omitempty"`
+	Attachment      *Attachment `json:"attachment,omitempty"`
+	Attachments     []Attachment `json:"attachments,omitempty"`
+	ReplyTo         *int64    `json:"reply_to,omitempty"`
 	AttachmentDeleted bool `json:"attachment_deleted,omitempty"`
 }
 

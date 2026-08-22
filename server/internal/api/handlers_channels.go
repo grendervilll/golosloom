@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"golosloom/server/internal/auth"
-	"golosloom/server/internal/hub"
 	"golosloom/server/internal/models"
 	"golosloom/server/internal/store"
 )
@@ -38,7 +37,7 @@ func (s *Server) handleCreateChannel(w http.ResponseWriter, r *http.Request) {
 	}
 	// Приватный канал виден только его участникам; публичный — всем.
 	// Создатель уже является участником (и админом канала).
-	s.Hub.SendToChannel(c.ID, hub.NewEvent("channel.created", c))
+	s.publishChannel(c.ID, centrifugoEvent{Type: "channel.created", Data: c})
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
 		"id":         c.ID,
 		"name":       c.Name,
@@ -148,7 +147,10 @@ func (s *Server) handleDeleteChannel(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.Hub.SendToChannel(id, hub.NewEvent("channel.deleted", map[string]int64{"channel_id": id}))
+	s.publishChannel(id, centrifugoEvent{
+		Type: "channel.deleted",
+		Data: map[string]int64{"channel_id": id},
+	})
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -208,12 +210,15 @@ func (s *Server) broadcastKeyNeeded(channelID, userID int64) {
 		return
 	}
 	for _, d := range devices {
-		s.Hub.SendToChannel(channelID, hub.NewEvent("key.needed", map[string]interface{}{
-			"channel_id": channelID,
-			"user_id":    userID,
-			"device_id":  d.DeviceID,
-			"public_key": d.PublicKey,
-		}))
+		s.publishChannel(channelID, centrifugoEvent{
+			Type: "key.needed",
+			Data: map[string]interface{}{
+				"channel_id": channelID,
+				"user_id":    userID,
+				"device_id":  d.DeviceID,
+				"public_key": d.PublicKey,
+			},
+		})
 	}
 }
 
@@ -270,7 +275,10 @@ func (s *Server) handleCreateInvite(w http.ResponseWriter, r *http.Request) {
 		"channel_name": s.channelName(channelID),
 	}
 	// Приглашение приходит сразу (онлайн — мгновенно, офлайн — очередь при входе).
-	s.Hub.SendToUser(req.UserID, hub.NewEvent("invite.new", data))
+	s.publishUser(req.UserID, centrifugoEvent{
+		Type: "invite.new",
+		Data: data,
+	})
 	// Пуш, если приложение закрыто.
 	s.pushNotify(req.UserID, "📨 Приглашение в канал",
 		"Вас пригласили в канал «"+s.channelName(channelID)+"»", "invite")
@@ -337,7 +345,10 @@ func (s *Server) respondInvite(w http.ResponseWriter, r *http.Request, status st
 		// Участники с ключом канала обернут его для нового участника.
 		s.broadcastKeyNeeded(inv.ChannelID, inv.UserID)
 	}
-	s.Hub.SendToChannel(inv.ChannelID, hub.NewEvent("invite.updated", map[string]interface{}{"invite": inv}))
+	s.publishChannel(inv.ChannelID, centrifugoEvent{
+		Type: "invite.updated",
+		Data: map[string]interface{}{"invite": inv},
+	})
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -461,9 +472,12 @@ func (s *Server) handleSetMemberRole(w http.ResponseWriter, r *http.Request) {
 			s.deleteChannelNoAdmin(channelID)
 		}
 	}
-	s.Hub.SendToChannel(channelID, hub.NewEvent("role.changed", map[string]interface{}{
-		"channel_id": channelID, "user_id": targetID, "role": req.Role,
-	}))
+	s.publishChannel(channelID, centrifugoEvent{
+		Type: "role.changed",
+		Data: map[string]interface{}{
+			"channel_id": channelID, "user_id": targetID, "role": req.Role,
+		},
+	})
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -473,7 +487,10 @@ func (s *Server) deleteChannelNoAdmin(channelID int64) {
 	if err := s.Store.DeleteChannel(channelID); err != nil {
 		return
 	}
-	s.Hub.SendToChannel(channelID, hub.NewEvent("channel.deleted", map[string]int64{"channel_id": channelID}))
+	s.publishChannel(channelID, centrifugoEvent{
+		Type: "channel.deleted",
+		Data: map[string]int64{"channel_id": channelID},
+	})
 }
 
 func (s *Server) handleBanMember(w http.ResponseWriter, r *http.Request) {
@@ -505,12 +522,18 @@ func (s *Server) handleBanMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Бан разрывает подключение к каналу.
-	s.Hub.SendToUser(targetID, hub.NewEvent("banned", map[string]interface{}{
-		"channel_id": channelID, "reason": req.Reason,
-	}))
-	s.Hub.SendToChannel(channelID, hub.NewEvent("member.banned", map[string]interface{}{
-		"channel_id": channelID, "user_id": targetID,
-	}))
+	s.publishUser(targetID, centrifugoEvent{
+		Type: "banned",
+		Data: map[string]interface{}{
+			"channel_id": channelID, "reason": req.Reason,
+		},
+	})
+	s.publishChannel(channelID, centrifugoEvent{
+		Type: "member.banned",
+		Data: map[string]interface{}{
+			"channel_id": channelID, "user_id": targetID,
+		},
+	})
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -531,9 +554,12 @@ func (s *Server) handleUnbanMember(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "участник не найден")
 		return
 	}
-	s.Hub.SendToChannel(channelID, hub.NewEvent("member.unbanned", map[string]interface{}{
-		"channel_id": channelID, "user_id": targetID,
-	}))
+	s.publishChannel(channelID, centrifugoEvent{
+		Type: "member.unbanned",
+		Data: map[string]interface{}{
+			"channel_id": channelID, "user_id": targetID,
+		},
+	})
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -566,9 +592,12 @@ func (s *Server) handleKickMember(w http.ResponseWriter, r *http.Request) {
 	var req banReq
 	_ = readJSON(r, &req)
 	// Кик выкидывает из канала; сразу после кика можно вернуться.
-	s.Hub.SendToUser(targetID, hub.NewEvent("kicked", map[string]interface{}{
-		"channel_id": channelID, "reason": req.Reason,
-	}))
+	s.publishUser(targetID, centrifugoEvent{
+		Type: "kicked",
+		Data: map[string]interface{}{
+			"channel_id": channelID, "reason": req.Reason,
+		},
+	})
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -667,7 +696,10 @@ func (s *Server) handleUploadWrappedKey(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	// Уведомляем цель о выдаче ключа.
-	s.Hub.SendToUser(req.UserID, hub.NewEvent("key.granted", map[string]int64{"channel_id": channelID}))
+	s.publishUser(req.UserID, centrifugoEvent{
+		Type: "key.granted",
+		Data: map[string]int64{"channel_id": channelID},
+	})
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 

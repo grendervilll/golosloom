@@ -14,7 +14,6 @@ import (
 	"sync"
 	"time"
 
-	"golosloom/server/internal/hub"
 	"golosloom/server/internal/livekit"
 )
 
@@ -88,9 +87,12 @@ func (s *Server) reconcileCalls(absent map[int64]time.Time) {
 		}
 		s.maybeFinishSoloCall(&c)
 		if c2, err := s.Store.GetCall(c.ID); err == nil && c2.Status != "ended" {
-			s.Hub.SendToChannel(c2.ChannelID, hub.NewEvent("call.participants", map[string]interface{}{
-				"call_id": c2.ID, "participants": mustParticipantIDs(s, c2.ID),
-			}))
+			s.publishChannel(c2.ChannelID, centrifugoEvent{
+				Type: "call.participants",
+				Data: map[string]interface{}{
+					"call_id": c2.ID, "participants": mustParticipantIDs(s, c2.ID),
+				},
+			})
 		}
 	}
 }

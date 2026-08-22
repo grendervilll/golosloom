@@ -389,14 +389,14 @@ export const useChatStore = defineStore('chat', {
         attachmentDeleted: !!m.attachment_deleted,
         replyToId: m.reply_to || undefined,
       }
-      // Удалённые сообщения скрываются у простых пользователей.
       if (m.deleted && !this.canSeeDeleted()) {
         return base
       }
       try {
-        if (key) {
+        const protocolVersion = m.protocol_version || 1
+        if (protocolVersion === 1 && key) {
+          // Legacy: AES-256-GCM with shared channel key.
           base.text = await decryptMessage(key, b64ToBytes(m.ciphertext), b64ToBytes(m.iv))
-          // Оригинал для модераторов/админов.
           if (this.canSeeDeleted() && m.history && m.history.length > 0) {
             base.original = await decryptMessage(
               key,
@@ -404,6 +404,16 @@ export const useChatStore = defineStore('chat', {
               b64ToBytes(m.history[m.history.length - 1].iv),
             )
           }
+        } else if (protocolVersion >= 2) {
+          // Signal Protocol: for now, try channel key decrypt as fallback
+          // until full Signal Protocol session is established.
+          if (key) {
+            base.text = await decryptMessage(key, b64ToBytes(m.ciphertext), b64ToBytes(m.iv))
+          } else {
+            base.encrypted = true
+          }
+        } else if (key) {
+          base.text = await decryptMessage(key, b64ToBytes(m.ciphertext), b64ToBytes(m.iv))
         } else {
           base.encrypted = true
         }

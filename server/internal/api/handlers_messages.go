@@ -6,7 +6,6 @@ import (
 	"os"
 	"strconv"
 
-	"golosloom/server/internal/hub"
 	"golosloom/server/internal/models"
 )
 
@@ -50,14 +49,15 @@ func (s *Server) hasViewOriginals(role models.Role, channelID int64) bool {
 
 func (s *Server) messageJSON(m models.Message, withHistory bool) map[string]interface{} {
 	out := map[string]interface{}{
-		"id":         m.ID,
-		"channel_id": m.ChannelID,
-		"sender_id":  m.SenderID,
-		"sender_nick": s.nickOf(m.SenderID),
-		"ciphertext": m.Ciphertext,
-		"iv":         m.IV,
-		"created_at": m.CreatedAt,
-		"deleted":    m.Deleted,
+		"id":              m.ID,
+		"channel_id":      m.ChannelID,
+		"sender_id":       m.SenderID,
+		"sender_nick":     s.nickOf(m.SenderID),
+		"ciphertext":      m.Ciphertext,
+		"iv":              m.IV,
+		"protocol_version": m.ProtocolVersion,
+		"created_at":      m.CreatedAt,
+		"deleted":         m.Deleted,
 	}
 	if m.EditedAt != nil {
 		out["edited_at"] = m.EditedAt
@@ -96,18 +96,31 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Ciphertext   []byte `json:"ciphertext"`
-		IV           []byte `json:"iv"`
-		AttachmentID int64  `json:"attachment_id"`
-		AttachmentIDs []int64 `json:"attachment_ids"`
-		ReplyToID    int64  `json:"reply_to_id"`
+		Ciphertext      []byte `json:"ciphertext"`
+		IV              []byte `json:"iv"`
+		AttachmentID    int64  `json:"attachment_id"`
+		AttachmentIDs   []int64 `json:"attachment_ids"`
+		ReplyToID       int64  `json:"reply_to_id"`
+		ProtocolVersion int    `json:"protocol_version"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeErr(w, http.StatusBadRequest, "некорректный запрос")
 		return
 	}
-	if len(req.Ciphertext) == 0 || len(req.IV) == 0 {
+	if len(req.Ciphertext) == 0 {
 		writeErr(w, http.StatusBadRequest, "пустое сообщение")
+		return
+	}
+	// protocol_version: 1 = old AES-GCM (requires IV), 2 = Signal Protocol (no IV).
+	if req.ProtocolVersion == 0 {
+		req.ProtocolVersion = 1 // default for backward compatibility
+	}
+	if req.ProtocolVersion == 1 && len(req.IV) == 0 {
+		writeErr(w, http.StatusBadRequest, "iv обязателен для protocol_version=1")
+		return
+	}
+	if req.ProtocolVersion < 1 || req.ProtocolVersion > 2 {
+		writeErr(w, http.StatusBadRequest, "недопустимый protocol_version")
 		return
 	}
 	if len(req.Ciphertext) > s.Cfg.MaxMessageLen+16 {
@@ -143,7 +156,7 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusConflict, "сообщение уже отправлено")
 		return
 	}
-	m, err := s.Store.CreateMessage(channelID, userIDFrom(r), req.Ciphertext, req.IV, req.ReplyToID)
+	m, err := s.Store.CreateMessage(channelID, userIDFrom(r), req.Ciphertext, req.IV, req.ReplyToID, req.ProtocolVersion)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -156,7 +169,10 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		// Перечитываем сообщение, чтобы в ответе были вложения.
 		m, _ = s.Store.GetMessage(m.ID)
 	}
-	s.Hub.SendToChannel(channelID, hub.NewEvent("message.new", s.messageJSON(*m, true)))
+	s.publishChannel(channelID, centrifugoEvent{
+		Type: "message.new",
+		Data: s.messageJSON(*m, true),
+	})
 	// Пуши офлайн-участникам канала — в фоне, не задерживаем ответ отправителю.
 	go s.pushChannelMessage(channelID, userIDFrom(r))
 	writeJSON(w, http.StatusCreated, s.messageJSON(*m, false))
@@ -198,7 +214,10 @@ func (s *Server) handleEditMessage(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.Hub.SendToChannel(channelID, hub.NewEvent("message.edited", s.messageJSON(*edited, true)))
+	s.publishChannel(channelID, centrifugoEvent{
+		Type: "message.edited",
+		Data: s.messageJSON(*edited, true),
+	})
 	writeJSON(w, http.StatusOK, s.messageJSON(*edited, false))
 }
 
@@ -239,9 +258,12 @@ func (s *Server) handleDeleteMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	// Файл сообщения удаляется с диска вместе с сообщением.
 	s.deleteMessageFiles(mid)
-	s.Hub.SendToChannel(channelID, hub.NewEvent("message.deleted", map[string]interface{}{
-		"channel_id": channelID, "message_id": mid, "deleted_by": userIDFrom(r),
-	}))
+	s.publishChannel(channelID, centrifugoEvent{
+		Type: "message.deleted",
+		Data: map[string]interface{}{
+			"channel_id": channelID, "message_id": mid, "deleted_by": userIDFrom(r),
+		},
+	})
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 

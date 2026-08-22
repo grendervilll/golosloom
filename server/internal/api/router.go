@@ -53,9 +53,20 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("DELETE /api/admin/files/{id}", s.requireServerAdmin(s.handleAdminDeleteFile))
 
 	// Пользователи
-	mux.HandleFunc("POST /api/users/key", s.requireAuth(s.handleUploadKey))
+	mux.HandleFunc("POST /api/users/key", s.requireAuth(s.handleUploadKey)) // DEPRECATED: old device registration
 	mux.HandleFunc("GET /api/users", s.requireAuth(s.handleListUsers))
 	mux.HandleFunc("GET /api/gifs/search", s.requireAuth(s.handleGifSearch))
+
+	// Signal Protocol devices
+	mux.HandleFunc("POST /api/devices", s.requireAuth(s.handleRegisterDevice))
+	mux.HandleFunc("DELETE /api/devices/{device_id}", s.requireAuth(s.handleDeleteDevice))
+	mux.HandleFunc("GET /api/users/{id}/devices", s.requireAuth(s.handleListUserDevices))
+	mux.HandleFunc("GET /api/devices/{device_id}/prekey", s.requireAuth(s.handleConsumePreKey))
+	mux.HandleFunc("POST /api/devices/{device_id}/prekeys", s.requireAuth(s.handleUploadPreKeys))
+
+	// Centrifugo tokens
+	mux.HandleFunc("POST /api/centrifugo/token", s.requireAuth(s.handleCentrifugoToken))
+	mux.HandleFunc("POST /api/centrifugo/subscribe", s.requireAuth(s.handleCentrifugoSubscribe))
 
 	// Каналы
 	mux.HandleFunc("POST /api/channels", s.requireAuth(s.handleCreateChannel))
@@ -78,7 +89,7 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("POST /api/invites/{id}/accept", s.requireAuth(s.handleAcceptInvite))
 	mux.HandleFunc("POST /api/invites/{id}/decline", s.requireAuth(s.handleDeclineInvite))
 
-	// Ключи каналов
+	// DEPRECATED: Channel key endpoints -- kept for desktop-qt migration, removed in Phase 7.
 	mux.HandleFunc("POST /api/channels/{id}/keys/wrap", s.requireAuth(s.handleUploadWrappedKey))
 	mux.HandleFunc("GET /api/channels/{id}/keys/me", s.requireAuth(s.handleGetMyWrappedKey))
 	mux.HandleFunc("GET /api/channels/{id}/keys/pending", s.requireAuth(s.handlePendingKeyTargets))
@@ -114,7 +125,8 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"ws_path":         "/ws",
+		"ws_path":         "/ws", // DEPRECATED: kept for desktop-qt
+		"centrifugo_url":  "/centrifugo",
 		"livekit_url":     s.Cfg.LiveKitURL,
 		"max_message_len": s.Cfg.MaxMessageLen,
 		"vapid_public_key": s.Cfg.VAPIDPublicKey,

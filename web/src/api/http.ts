@@ -386,6 +386,38 @@ export class ApiClient {
     return this.post(`/api/calls/${callId}/leave`)
   }
 
+  // --- Signal Protocol devices ---
+  registerDevice(deviceId: string, identityKey: Uint8Array, signedPreKey: Uint8Array, preKeys: Uint8Array[]) {
+    return this.post('/api/devices', {
+      device_id: deviceId,
+      identity_key: Array.from(identityKey),
+      signed_pre_key: Array.from(signedPreKey),
+      pre_keys: preKeys.map((k) => Array.from(k)),
+    })
+  }
+  deleteDevice(deviceId: string) {
+    return this.delete(`/api/devices/${encodeURIComponent(deviceId)}`)
+  }
+  listUserDevices(userId: number) {
+    return this.get(`/api/users/${userId}/devices`)
+  }
+  consumePreKey(userId: number, deviceId: string) {
+    return this.get(`/api/devices/${encodeURIComponent(deviceId)}/prekey?user_id=${userId}`)
+  }
+  uploadPreKeys(deviceId: string, preKeys: Uint8Array[]) {
+    return this.post(`/api/devices/${encodeURIComponent(deviceId)}/prekeys`, {
+      pre_keys: preKeys.map((k) => Array.from(k)),
+    })
+  }
+
+  // --- Centrifugo tokens ---
+  centrifugoToken() {
+    return this.post('/api/centrifugo/token')
+  }
+  centrifugoSubscribe(channel: string) {
+    return this.post('/api/centrifugo/subscribe', { channel })
+  }
+
   // --- Админ панель сервера ---
   adminListUsers() {
     return this.get('/api/admin/users')
@@ -418,6 +450,7 @@ export class ApiClient {
 // Простая типизация ответа /api/config без импорта типов
 export interface ServerConfigShape {
   ws_path: string
+  centrifugo_url?: string
   livekit_url: string
   max_message_len: number
   vapid_public_key?: string

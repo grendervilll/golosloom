@@ -14,8 +14,6 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
-
-	"golosloom/server/internal/hub"
 )
 
 func (s *Server) handleAdminStats(w http.ResponseWriter, r *http.Request) {
@@ -194,12 +192,15 @@ func (s *Server) handleAdminDeleteFile(w http.ResponseWriter, r *http.Request) {
 				"id": a.ID, "filename": a.Filename, "mime": a.Mime, "size": a.Size,
 			})
 		}
-		s.Hub.SendToChannel(f.ChannelID, hub.NewEvent("attachment.deleted", map[string]interface{}{
-			"channel_id":         f.ChannelID,
-			"message_id":         messageID,
-			"attachment_deleted": allGone,
-			"attachments":        atts,
-		}))
+		s.publishChannel(f.ChannelID, centrifugoEvent{
+			Type: "attachment.deleted",
+			Data: map[string]interface{}{
+				"channel_id":         f.ChannelID,
+				"message_id":         messageID,
+				"attachment_deleted": allGone,
+				"attachments":        atts,
+			},
+		})
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }

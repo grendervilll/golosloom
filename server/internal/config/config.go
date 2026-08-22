@@ -31,6 +31,9 @@ type Config struct {
 	AvatarDir          string
 	FilesDir           string
 	MaxFileSize        int64
+	CentrifugoURL      string
+	CentrifugoAPIKey   string
+	CentrifugoSecret   string
 }
 
 func Load() Config {
@@ -58,6 +61,9 @@ func Load() Config {
 		AvatarDir:          getenv("AVATAR_DIR", "data/avatars"),
 		FilesDir:           getenv("FILES_DIR", "data/files"),
 		MaxFileSize:        getenvInt64("MAX_FILE_SIZE", 100*1024*1024),
+		CentrifugoURL:      getenv("CENTRIFUGO_URL", "http://centrifugo:8000"),
+		CentrifugoAPIKey:   getenv("CENTRIFUGO_API_KEY", ""),
+		CentrifugoSecret:   getenv("CENTRIFUGO_SECRET", ""),
 	}
 }
 

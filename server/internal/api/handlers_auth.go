@@ -7,7 +7,6 @@ import (
 	"strconv"
 
 	"golosloom/server/internal/auth"
-	"golosloom/server/internal/hub"
 	"golosloom/server/internal/models"
 	"golosloom/server/internal/store"
 )
@@ -198,8 +197,12 @@ func (s *Server) handleAdminServerBan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Разрываем активные подключения забаненного.
-	s.Hub.SendToUser(id, hub.NewEvent("server_banned", map[string]string{"reason": req.Reason}))
-	s.Hub.CloseUser(id)
+	s.publishUser(id, centrifugoEvent{
+		Type: "server_banned",
+		Data: map[string]string{"reason": req.Reason},
+	})
+	s.Hub.CloseUser(id) // DEPRECATED: kept for desktop-qt during migration
+	s.disconnectUser(id)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -310,9 +313,12 @@ func (s *Server) handleUploadKey(w http.ResponseWriter, r *http.Request) {
 	// Новое устройство зарегистрировано — остальные устройства пользователя
 	// должны раздать ему ключи каналов (обёрнутый ключ может создать только
 	// клиент, у которого есть открытый ключ канала).
-	s.Hub.SendToUser(userIDFrom(r), hub.NewEvent("device.registered", map[string]interface{}{
-		"device_id": req.DeviceID,
-	}))
+	s.publishUser(userIDFrom(r), centrifugoEvent{
+		Type: "device.registered",
+		Data: map[string]interface{}{
+			"device_id": req.DeviceID,
+		},
+	})
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
