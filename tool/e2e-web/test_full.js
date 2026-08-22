@@ -77,7 +77,7 @@ async function api(page, method, path, body) {
   // User2 joins channel
   await api(p2, 'POST', `/api/channels/${chId}/join`)
   await p2.reload({ waitUntil: 'load' })
-  await p2.waitForTimeout(3000)
+  await p2.waitForTimeout(8000) // Ждём распределения ключей
 
   // User2 sees messages
   const m2 = await api(p2, 'GET', `/api/channels/${chId}/messages`).then(r => r.length)
@@ -85,19 +85,19 @@ async function api(page, method, path, body) {
 
   // User2 sends
   await p2.locator('.chat-list .chat-row').filter({ hasText: 'test-' }).first().click()
-  await p2.waitForTimeout(3000)
+  await p2.waitForTimeout(5000) // Ждём загрузки истории и ключей
   await p2.locator('textarea').click()
   await p2.locator('textarea').fill('Reply from User2!')
   await p2.keyboard.press('Enter')
-  await p2.waitForTimeout(3000)
+  await p2.waitForTimeout(5000) // Ждём отправки
   const m3 = await api(p2, 'GET', `/api/channels/${chId}/messages`).then(r => r.length)
   ok('8. User2 sent', m3 > 2, `msgs=${m3}`)
 
   // User1 sees reply
   await p1.reload({ waitUntil: 'load' })
-  await p1.waitForTimeout(3000)
+  await p1.waitForTimeout(5000)
   await p1.locator('.chat-list .chat-row').filter({ hasText: 'test-' }).first().click()
-  await p1.waitForTimeout(3000)
+  await p1.waitForTimeout(5000)
   const m4 = await api(p1, 'GET', `/api/channels/${chId}/messages`).then(r => r.length)
   ok('9. User1 sees reply', m4 > 2, `msgs=${m4}`)
 
