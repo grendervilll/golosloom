@@ -18,7 +18,7 @@
   },
   "devDependencies": {
     "concurrently": "^9.1.0",
-    "electron": "^33.0.0",
+    "electron": "^33.4.11",
     "electron-builder": "^25.1.8",
     "typescript": "^5.7.2",
     "wait-on": "^8.0.3"
@@ -38,16 +38,25 @@
       "category": "public.app-category.social-networking",
       "icon": "resources/icon.icns",
       "minimumSystemVersion": "11.0",
-      "target": ["dmg", "zip"]
+      "target": [
+        "dmg",
+        "zip"
+      ]
     },
     "win": {
       "icon": "resources/icon.ico",
-      "target": ["nsis", "portable"]
+      "target": [
+        "nsis",
+        "portable"
+      ]
     },
     "linux": {
       "icon": "resources",
       "category": "Network;Chat;AudioVideo",
-      "target": ["AppImage", "deb"],
+      "target": [
+        "AppImage",
+        "deb"
+      ],
       "desktop": {
         "Name": "Golosloom",
         "Comment": "Голосовой сервер с чатом и звонками"
