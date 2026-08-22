@@ -1,18 +1,27 @@
-// Copy web/src to desktop/src for Electron build.
-// The frontend code is shared between web and desktop.
+// Copy web/src to desktop/src and web/dist to desktop/app for Electron build.
 const { cpSync, existsSync, mkdirSync, rmSync } = require('fs')
-const { join, dirname } = require('path')
+const { join } = require('path')
 
-const webSrc = join(__dirname, '..', '..', 'web', 'src')
+const base = join(__dirname, '..', '..')
+
+// src (for development)
+const webSrc = join(base, 'web', 'src')
 const desktopSrc = join(__dirname, '..', 'src')
-
-if (!existsSync(webSrc)) {
-  console.error('web/src not found — run from desktop/')
-  process.exit(1)
+if (existsSync(webSrc)) {
+  if (existsSync(desktopSrc)) rmSync(desktopSrc, { recursive: true })
+  mkdirSync(desktopSrc, { recursive: true })
+  cpSync(webSrc, desktopSrc, { recursive: true })
+  console.log('Copied web/src -> desktop/src')
 }
 
-// Remove old copy and recreate
-if (existsSync(desktopSrc)) rmSync(desktopSrc, { recursive: true })
-mkdirSync(desktopSrc, { recursive: true })
-cpSync(webSrc, desktopSrc, { recursive: true })
-console.log('Copied web/src -> desktop/src')
+// dist (for production build)
+const webDist = join(base, 'web', 'dist')
+const desktopApp = join(__dirname, '..', 'app')
+if (existsSync(webDist)) {
+  if (existsSync(desktopApp)) rmSync(desktopApp, { recursive: true })
+  mkdirSync(desktopApp, { recursive: true })
+  cpSync(webDist, desktopApp, { recursive: true })
+  console.log('Copied web/dist -> desktop/app')
+} else {
+  console.error('web/dist not found — run "cd ../web && npm run build" first')
+}
