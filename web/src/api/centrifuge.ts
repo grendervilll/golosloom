@@ -14,7 +14,10 @@ export class CentrifugeClient {
   private shouldReconnect = true
 
   connect(centrifugoUrl: string, connectionToken: string) {
-    this.baseUrl = centrifugoUrl
+    // centrifugoUrl from server is just the path (e.g. "/centrifugo").
+    // We need the full WebSocket URL with the current origin.
+    const origin = typeof window !== 'undefined' ? window.location.origin : ''
+    this.baseUrl = origin + centrifugoUrl
     this.connectionToken = connectionToken
     this.shouldReconnect = true
     this.open()
