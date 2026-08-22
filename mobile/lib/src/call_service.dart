@@ -180,7 +180,7 @@ class CallService extends ChangeNotifier {
     callError = null;
     try {
       final res = await session.api
-          .createCall(channelId, targetIds, session.device.deviceId);
+          .createCall(channelId, targetIds, session.deviceId);
       final call = CallInfo.fromJson(res['call'] as Map<String, dynamic>);
       currentCall = call.copyWith(status: 'active');
       ringing = null;
@@ -198,7 +198,7 @@ class CallService extends ChangeNotifier {
     callError = null;
     try {
       final res =
-          await session.api.acceptCall(call.id, session.device.deviceId);
+          await session.api.acceptCall(call.id, session.deviceId);
       final accepted = CallInfo.fromJson(res['call'] as Map<String, dynamic>);
       currentCall = accepted.copyWith(status: 'active', incoming: true);
       ringing = null;
@@ -223,7 +223,7 @@ class CallService extends ChangeNotifier {
   Future<bool> join(int callId) async {
     callError = null;
     try {
-      final res = await session.api.joinCall(callId, session.device.deviceId);
+      final res = await session.api.joinCall(callId, session.deviceId);
       currentCall = CallInfo.fromJson(res['call'] as Map<String, dynamic>)
           .copyWith(status: 'active');
       ringing = null;

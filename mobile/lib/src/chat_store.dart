@@ -3,6 +3,7 @@
 library;
 
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 
@@ -165,9 +166,25 @@ class ChatStore extends ChangeNotifier {
   /// Оптимистичная отправка: своё сообщение появляется сразу (pending).
   /// attachments — уже загруженные на сервер вложения.
   Future<bool> send(int channelId, String text, {List<Attachment> attachments = const []}) async {
-    final key = await session.keyStore.loadChannelKey(channelId);
-    if (key == null) return false;
-    final (ciphertext: ct, iv: iv) = await encryptMessage(key, text);
+    String ciphertext;
+    String iv;
+    int protocolVersion = 2;
+
+    final senderKeyData = await session.keyStore.loadSenderKey(channelId.toString());
+    if (senderKeyData != null) {
+      final sk = SenderKeyState.fromMap(senderKeyData);
+      final (ciphertext: ct, iv: ivBytes) = await encryptSenderKeyMessage(sk, text);
+      ciphertext = bytesToB64(ct);
+      iv = bytesToB64(ivBytes);
+    } else {
+      final key = await session.keyStore.loadChannelKey(channelId);
+      if (key == null) return false;
+      final (ciphertext: ct, iv: ivBytes) = await encryptMessage(key, text);
+      ciphertext = bytesToB64(ct);
+      iv = bytesToB64(ivBytes);
+      protocolVersion = 1;
+    }
+
     final user = session.settings.user;
     final pending = ChatMessage(
       id: --_lastTempId,
@@ -184,8 +201,9 @@ class ChatStore extends ChangeNotifier {
     notifyListeners();
     try {
       final res = await session.api.sendMessage(
-          channelId, bytesToB64(ct), bytesToB64(iv),
-          attachmentIds: attachments.map((a) => a.id).toList());
+          channelId, ciphertext, iv,
+          attachmentIds: attachments.map((a) => a.id).toList(),
+          protocolVersion: protocolVersion);
       final real = await _toMessage(res);
       final cur = _byChannel[channelId] ?? [];
       final idx = cur.indexWhere((m) => m.id == pending.id);
@@ -201,12 +219,28 @@ class ChatStore extends ChangeNotifier {
   }
 
   Future<void> edit(int channelId, int messageId, String text) async {
-    final key = await session.keyStore.loadChannelKey(channelId);
-    if (key == null) return;
-    final (ciphertext: ct, iv: iv) = await encryptMessage(key, text);
+    String ciphertext;
+    String iv;
+    int protocolVersion = 2;
+
+    final senderKeyData = await session.keyStore.loadSenderKey(channelId.toString());
+    if (senderKeyData != null) {
+      final sk = SenderKeyState.fromMap(senderKeyData);
+      final (ciphertext: ct, iv: ivBytes) = await encryptSenderKeyMessage(sk, text);
+      ciphertext = bytesToB64(ct);
+      iv = bytesToB64(ivBytes);
+    } else {
+      final key = await session.keyStore.loadChannelKey(channelId);
+      if (key == null) return;
+      final (ciphertext: ct, iv: ivBytes) = await encryptMessage(key, text);
+      ciphertext = bytesToB64(ct);
+      iv = bytesToB64(ivBytes);
+      protocolVersion = 1;
+    }
+
     try {
       final res = await session.api.editMessage(
-          channelId, messageId, bytesToB64(ct), bytesToB64(iv));
+          channelId, messageId, ciphertext, iv, protocolVersion: protocolVersion);
       _applyMessage(_byChannel[channelId], res);
     } catch (_) {
       /* событие message.edited придёт по WS */
@@ -293,17 +327,38 @@ class ChatStore extends ChangeNotifier {
 
   Future<ChatMessage> _toMessage(Map<String, dynamic> d) async {
     final channelId = (d['channel_id'] as num?)?.toInt() ?? 0;
-    final key = await session.keyStore.loadChannelKey(channelId);
+    final protocolVersion = (d['protocol_version'] as num?)?.toInt() ?? 1;
     final deleted = (d['deleted'] as bool?) ?? false;
     String? text;
     var encrypted = false;
-    if (!deleted && key != null) {
+
+    if (!deleted) {
       try {
-        text = await decryptMessage(
-          key,
-          b64ToBytes((d['ciphertext'] as String?) ?? ''),
-          b64ToBytes((d['iv'] as String?) ?? ''),
-        );
+        if (protocolVersion == 2) {
+          final senderKeyData = await session.keyStore.loadSenderKey(channelId.toString());
+          if (senderKeyData != null) {
+            final ciphertext = Uint8List.fromList(b64ToBytes((d['ciphertext'] as String?) ?? ''));
+            final ivBytes = Uint8List.fromList(b64ToBytes((d['iv'] as String?) ?? ''));
+            final msgNumber = (d['message_number'] as num?)?.toInt() ?? 0;
+            text = await decryptSenderKeyMessage(
+              senderKeyData['chainKey'] as List<int>,
+              ciphertext,
+              ivBytes,
+              msgNumber,
+            );
+          }
+        } else {
+          final key = await session.keyStore.loadChannelKey(channelId);
+          if (key != null) {
+            text = await decryptMessage(
+              key,
+              b64ToBytes((d['ciphertext'] as String?) ?? ''),
+              b64ToBytes((d['iv'] as String?) ?? ''),
+            );
+          } else {
+            encrypted = true;
+          }
+        }
       } catch (_) {
         encrypted = true;
       }

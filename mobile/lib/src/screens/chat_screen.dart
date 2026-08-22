@@ -67,8 +67,6 @@ class _ChatScreenState extends State<ChatScreen> {
     super.initState();
     widget.session.currentChannelId = _channelId;
     widget.session.joinChannel(_channelId);
-    // Ключ мог появиться после последней проверки — пересинхронизируемся.
-    widget.session.syncKeys(_channelId);
     widget.chat.addListener(_onChatChanged);
     widget.chat.loadHistory(_channelId);
     _scroll.addListener(_onScroll);

@@ -7,7 +7,6 @@ import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
-import 'package:web_socket_channel/web_socket_channel.dart';
 
 class ApiException implements Exception {
   final int status;
@@ -19,6 +18,7 @@ class ApiException implements Exception {
 
 class ServerConfig {
   final String livekitUrl;
+  final String? centrifugoUrl;
   final int maxMessageLen;
   final String? vapidPublicKey;
   final List<String> turnUrls;
@@ -28,6 +28,7 @@ class ServerConfig {
   const ServerConfig({
     required this.livekitUrl,
     required this.maxMessageLen,
+    this.centrifugoUrl,
     this.vapidPublicKey,
     this.turnUrls = const [],
     this.turnUsername = '',
@@ -38,6 +39,7 @@ class ServerConfig {
     final turn = (j['turn'] as Map<String, dynamic>?) ?? const {};
     return ServerConfig(
       livekitUrl: (j['livekit_url'] as String?) ?? '',
+      centrifugoUrl: j['centrifugo_url'] as String?,
       maxMessageLen: (j['max_message_len'] as num?)?.toInt() ?? 2000,
       vapidPublicKey: j['vapid_public_key'] as String?,
       turnUrls: ((turn['urls'] as List?) ?? []).cast<String>(),
@@ -154,19 +156,29 @@ class ApiClient {
     String ciphertext,
     String iv, {
     List<int> attachmentIds = const [],
+    int replyToId = 0,
+    int protocolVersion = 1,
   }) async {
     return await _request('POST', '/api/channels/$channelId/messages', {
       'ciphertext': ciphertext,
       'iv': iv,
       if (attachmentIds.isNotEmpty) 'attachment_ids': attachmentIds,
+      if (replyToId != 0) 'reply_to_id': replyToId,
+      'protocol_version': protocolVersion,
     }) as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> editMessage(
-      int channelId, int messageId, String ciphertext, String iv) async {
+    int channelId,
+    int messageId,
+    String ciphertext,
+    String iv, {
+    int protocolVersion = 1,
+  }) async {
     return await _request('PATCH', '/api/channels/$channelId/messages/$messageId', {
       'ciphertext': ciphertext,
       'iv': iv,
+      'protocol_version': protocolVersion,
     }) as Map<String, dynamic>;
   }
 
@@ -198,6 +210,43 @@ class ApiClient {
       'device_id': deviceId,
       'wrapped_key': wrappedKey,
     });
+  }
+
+  // --- Signal Protocol devices ---
+  Future<void> registerDevice(String deviceId, List<int> identityKey, List<int> signedPreKey, List<List<int>> preKeys) async {
+    await _request('POST', '/api/devices', {
+      'device_id': deviceId,
+      'identity_key': identityKey,
+      'signed_pre_key': signedPreKey,
+      'pre_keys': preKeys,
+    });
+  }
+
+  Future<void> deleteDevice(String deviceId) async {
+    await _request('DELETE', '/api/devices/${Uri.encodeComponent(deviceId)}');
+  }
+
+  Future<List<dynamic>> listUserDevices(int userId) async {
+    return await _request('GET', '/api/users/$userId/devices') as List<dynamic>;
+  }
+
+  Future<Map<String, dynamic>> consumePreKey(int userId, String deviceId) async {
+    return await _request('GET', '/api/devices/${Uri.encodeComponent(deviceId)}/prekey?user_id=$userId') as Map<String, dynamic>;
+  }
+
+  Future<void> uploadPreKeys(String deviceId, List<List<int>> preKeys) async {
+    await _request('POST', '/api/devices/${Uri.encodeComponent(deviceId)}/prekeys', {
+      'pre_keys': preKeys,
+    });
+  }
+
+  // --- Centrifugo tokens ---
+  Future<Map<String, dynamic>> centrifugoToken() async {
+    return await _request('POST', '/api/centrifugo/token') as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> centrifugoSubscribe(String channel) async {
+    return await _request('POST', '/api/centrifugo/subscribe', {'channel': channel}) as Map<String, dynamic>;
   }
 
   // --- Звонки (device_id обязателен: из него собирается identity LiveKit) ---
@@ -243,12 +292,6 @@ class ApiClient {
 
   Future<void> declineInvite(int inviteId) async {
     await _request('POST', '/api/invites/$inviteId/decline');
-  }
-
-  // --- WebSocket ---
-  WebSocketChannel connectWs() {
-    final wsUrl = baseUrl.replaceFirst('https://', 'wss://').replaceFirst('http://', 'ws://');
-    return WebSocketChannel.connect(Uri.parse('$wsUrl/ws?token=${token ?? ''}'));
   }
 
   // --- Аватары ---
