@@ -117,7 +117,9 @@ export const useChannelsStore = defineStore('channels', {
       } catch { /* channel subscription failed */ }
       this.members = await settings.api.listMembers(channelId)
       await this.loadBanned(channelId)
+      console.log(`[channels] openChannel ${channelId}: loading history...`)
       await chat.loadHistory(channelId)
+      console.log(`[channels] openChannel ${channelId}: history loaded, messages count:`, chat.messages.get(channelId)?.length)
       await this.syncKeys(channelId)
       this.startKeyPoll()
       try {

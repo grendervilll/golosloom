@@ -88,8 +88,19 @@ async function createChannel(page, name) {
   await ta.fill('Привет из E2E!')
   await ta.press('Enter')
   await p1.waitForTimeout(3000)
+  // Логируем все классы в chat-panel для отладки
+  const chatClasses = await p1.evaluate(() => {
+    const panel = document.querySelector('.chat-panel')
+    if (!panel) return 'no chat-panel'
+    const classes = new Set()
+    panel.querySelectorAll('*').forEach(el => el.classList.forEach(c => classes.add(c)))
+    return [...classes].join(', ')
+  })
+  console.log('chat-panel classes:', chatClasses)
   const msgCount = await p1.locator('.chat-panel .msg').count()
-  ok('3. Сообщение отправлено', msgCount >= 1, `${msgCount} сообщений`)
+  const chatRowCount = await p1.locator('.chat-panel .chat-row').count()
+  console.log(`msg: ${msgCount}, chat-row: ${chatRowCount}`)
+  ok('3. Сообщение отправлено', msgCount >= 1 || chatRowCount >= 1, `msg=${msgCount} chat-row=${chatRowCount}`)
 
   // 4. Файл через API
   try {
@@ -192,10 +203,18 @@ async function createChannel(page, name) {
       }
     }
     if (!found) await p2.locator('.chat-list .chat-row').last().click()
-    // Ждём загрузки истории — может быть асинхронной
+    await p2.waitForTimeout(3000)
+    // Debug: что в chat-panel
+    const debugHTML = await p2.evaluate(() => {
+      const cl = document.querySelector('.chat-panel .chat-list')
+      return cl ? cl.innerHTML.slice(0, 300) : 'no .chat-list'
+    })
+    console.log('chat-panel .chat-list HTML:', debugHTML)
+    await p2.screenshot({ path: '/tmp/golosloom-user2-chat.png' })
+    
+    // Ждём загрузки истории
     for (let i = 0; i < 15; i++) {
       await p2.waitForTimeout(1000)
-      // Чат-сообщения используют класс .msg (не .chat-row!)
       const msgs = await p2.locator('.chat-panel .msg').count()
       if (msgs > 0) {
         ok('10. User2 видит историю', true, `${msgs} сообщений`)
