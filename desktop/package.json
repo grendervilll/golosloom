@@ -31,7 +31,7 @@
     },
     "files": [
       "electron/**/*",
-      "dist/**/*",
+      "app/**/*",
       "!node_modules"
     ],
     "mac": {

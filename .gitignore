@@ -12,6 +12,7 @@ node_modules/
 web/dist/
 desktop/dist/
 desktop/src/
+desktop/app/
 *.local
 
 # Electron
