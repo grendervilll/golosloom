@@ -98,6 +98,14 @@ func (s *Server) Router() http.Handler {
 		s.fileTokenLimiter.handle(w, r, s.handleFileToken)
 	}))
 
+	// Ключи каналов (backward compatibility — работает совместно с Signal Protocol)
+	mux.HandleFunc("POST /api/users/key", s.requireAuth(s.handleUploadKey))
+	mux.HandleFunc("POST /api/channels/{id}/keys/wrap", s.requireAuth(s.handleUploadWrappedKey))
+	mux.HandleFunc("GET /api/channels/{id}/keys/me", s.requireAuth(s.handleGetMyWrappedKey))
+	mux.HandleFunc("GET /api/channels/{id}/keys/pending", s.requireAuth(s.handlePendingKeyTargets))
+	mux.HandleFunc("GET /api/channels/{id}/keys/backup", s.requireAuth(s.handleGetKeyBackup))
+	mux.HandleFunc("PUT /api/channels/{id}/keys/backup", s.requireAuth(s.handleUploadKeyBackup))
+
 	// Звонки
 	mux.HandleFunc("POST /api/calls", s.requireAuth(s.handleCreateCall))
 	mux.HandleFunc("GET /api/channels/{id}/calls", s.requireAuth(s.handleListCalls))
