@@ -37,6 +37,7 @@ async function createChannel(page, name) {
   // ===== USER 1: регистрация через API =====
   const p1 = await browser.newPage()
   p1.on('pageerror', (e) => console.log('[p1-error]', e.message))
+  p1.on('console', (msg) => console.log('[p1-console]', msg.text()))
 
   // Регистрируем через API напрямую
   await p1.goto(BASE, { waitUntil: 'load', timeout: 30000 })
@@ -156,6 +157,7 @@ async function createChannel(page, name) {
   // ===== USER 2: регистрация + логин =====
   const p2 = await browser.newPage()
   p2.on('pageerror', (e) => console.log('[p2-error]', e.message))
+  p2.on('console', (msg) => console.log('[p2-console]', msg.text()))
   
   // Регистрируем через API
   await p2.goto(BASE, { waitUntil: 'load', timeout: 30000 })
