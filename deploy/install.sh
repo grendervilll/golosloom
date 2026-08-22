@@ -188,11 +188,14 @@ gen_vapid_keys() {
 # Генерация .env с секретами (запоминает и устанавливает ключи и пароли).
 # -----------------------------------------------------------------------------
 gen_env() {
-  local livekit_key livekit_secret turn_secret jwt_secret
+  local livekit_key livekit_secret turn_secret jwt_secret centrifugo_key centrifugo_admin_key centrifugo_secret
   livekit_key="$(openssl rand -hex 8)"
   livekit_secret="$(openssl rand -hex 32)"
   turn_secret="$(openssl rand -hex 32)"
   jwt_secret="$(openssl rand -hex 32)"
+  centrifugo_key="$(openssl rand -hex 16)"
+  centrifugo_admin_key="$(openssl rand -hex 16)"
+  centrifugo_secret="$(openssl rand -hex 32)"
   gen_vapid_keys
   cat > "$DEPLOY_DIR/.env" <<EOF
 DOMAIN=$DOMAIN
@@ -201,6 +204,10 @@ TURN_SHARED_SECRET=$turn_secret
 LIVEKIT_API_KEY=$livekit_key
 LIVEKIT_API_SECRET=$livekit_secret
 JWT_SECRET=$jwt_secret
+CENTRIFUGO_URL=http://centrifugo:8000
+CENTRIFUGO_API_KEY=$centrifugo_key
+CENTRIFUGO_ADMIN_KEY=$centrifugo_admin_key
+CENTRIFUGO_SECRET=$centrifugo_secret
 VAPID_PUBLIC_KEY=$VAPID_PUBLIC_KEY
 VAPID_PRIVATE_KEY=$VAPID_PRIVATE_KEY
 VAPID_SUBJECT=mailto:admin@$DOMAIN
@@ -273,6 +280,66 @@ logging:
 EOF
   chmod 644 "$LIVEKIT_CONFIG"
   log "Конфигурация LiveKit записана: $LIVEKIT_CONFIG"
+}
+
+# -----------------------------------------------------------------------------
+# Конфигурация Centrifugo (генерируется с реальными ключами из .env).
+# -----------------------------------------------------------------------------
+gen_centrifugo_config() {
+  local centrifugo_key centrifugo_admin_key centrifugo_secret vapid_pub vapid_priv
+  centrifugo_key="$(grep '^CENTRIFUGO_API_KEY=' "$DEPLOY_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2-)"
+  centrifugo_admin_key="$(grep '^CENTRIFUGO_ADMIN_KEY=' "$DEPLOY_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2-)"
+  centrifugo_secret="$(grep '^CENTRIFUGO_SECRET=' "$DEPLOY_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2-)"
+  vapid_pub="$(grep '^VAPID_PUBLIC_KEY=' "$DEPLOY_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2-)"
+  vapid_priv="$(grep '^VAPID_PRIVATE_KEY=' "$DEPLOY_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2-)"
+  cat > "$DEPLOY_DIR/centrifugo.json" <<EOF
+{
+  "http_address": "0.0.0.0:8000",
+  "api_key": "$centrifugo_key",
+  "admin_key": "$centrifugo_admin_key",
+  "token_hmac_secret_key": "$centrifugo_secret",
+  "namespaces": [
+    {
+      "name": "channel",
+      "presence": true,
+      "join_leave": true,
+      "history_size": 100,
+      "history_ttl": "24h",
+      "allow_publish_for_subscriber": false
+    },
+    {
+      "name": "user",
+      "presence": false,
+      "join_leave": false,
+      "history_size": 0,
+      "allow_publish_for_subscriber": false
+    },
+    {
+      "name": "call",
+      "presence": true,
+      "join_leave": true,
+      "history_size": 0,
+      "history_ttl": "0",
+      "allow_publish_for_subscriber": false
+    }
+  ],
+  "client_connection_limit": 20,
+  "presence": true,
+  "join_leave": true,
+  "push_enabled": true,
+  "web_push": {
+    "vapid_public_key": "$vapid_pub",
+    "vapid_private_key": "$vapid_priv",
+    "vapid_subject": "mailto:admin@$DOMAIN"
+  },
+  "firebase": {
+    "enabled": true,
+    "service_account_file": "/fcm-service-account.json"
+  }
+}
+EOF
+  chmod 644 "$DEPLOY_DIR/centrifugo.json"
+  log "Конфигурация Centrifugo записана: $DEPLOY_DIR/centrifugo.json"
 }
 
 # -----------------------------------------------------------------------------
@@ -468,6 +535,7 @@ install_fresh() {
   clone_repo
   gen_env
   gen_livekit_config
+  gen_centrifugo_config
   gen_certs
   check_ports
   open_ports
@@ -525,9 +593,15 @@ do_update() {
   # FCM: путь к файлу сервисного аккаунта Firebase (нативные пуши Android).
   # Путь контейнерный: файл монтируется в контейнер из $INSTALL_DIR.
   ensure_env_var "FCM_SERVICE_ACCOUNT_FILE" "/fcm-service-account.json"
-  # Заглушка: docker-compose монтирует файл как ro; если файла нет — docker
-  # создал бы каталог на его месте. Пустой файл безопасен: гейтвей не включится.
   [ -f "$INSTALL_DIR/fcm-service-account.json" ] || : > "$INSTALL_DIR/fcm-service-account.json"
+  # Centrifugo: добавляем переменные если .env со старой версии.
+  if ! grep -q "^CENTRIFUGO_API_KEY=" "$DEPLOY_DIR/.env" 2>/dev/null; then
+    log "Генерирую ключи Centrifugo..."
+    ensure_env_var "CENTRIFUGO_URL" "http://centrifugo:8000"
+    ensure_env_var "CENTRIFUGO_API_KEY" "$(openssl rand -hex 16)"
+    ensure_env_var "CENTRIFUGO_ADMIN_KEY" "$(openssl rand -hex 16)"
+    ensure_env_var "CENTRIFUGO_SECRET" "$(openssl rand -hex 32)"
+  fi
 
   cd "$REPO_DIR"
   log "Скачиваю последние изменения с GitHub..."
@@ -537,6 +611,7 @@ do_update() {
   git fetch origin
   git reset --hard origin/main
   gen_livekit_config
+  gen_centrifugo_config
   gen_certs
   log "Пересобираю контейнеры (база данных и порты не изменяются)..."
   docker compose -f "$DEPLOY_DIR/docker-compose.yml" up -d --build

@@ -1,0 +1,44 @@
+{
+  "http_address": "0.0.0.0:8000",
+  "api_key": "CENTRIFUGO_API_KEY_PLACEHOLDER",
+  "admin_key": "CENTRIFUGO_ADMIN_KEY_PLACEHOLDER",
+  "token_hmac_secret_key": "CENTRIFUGO_SECRET_PLACEHOLDER",
+  "namespaces": [
+    {
+      "name": "channel",
+      "presence": true,
+      "join_leave": true,
+      "history_size": 100,
+      "history_ttl": "24h",
+      "allow_publish_for_subscriber": false
+    },
+    {
+      "name": "user",
+      "presence": false,
+      "join_leave": false,
+      "history_size": 0,
+      "allow_publish_for_subscriber": false
+    },
+    {
+      "name": "call",
+      "presence": true,
+      "join_leave": true,
+      "history_size": 0,
+      "history_ttl": "0",
+      "allow_publish_for_subscriber": false
+    }
+  ],
+  "client_connection_limit": 20,
+  "presence": true,
+  "join_leave": true,
+  "push_enabled": true,
+  "web_push": {
+    "vapid_public_key": "VAPID_PUBLIC_KEY_PLACEHOLDER",
+    "vapid_private_key": "VAPID_PRIVATE_KEY_PLACEHOLDER",
+    "vapid_subject": "mailto:admin@example.com"
+  },
+  "firebase": {
+    "enabled": true,
+    "service_account_file": "/fcm-service-account.json"
+  }
+}

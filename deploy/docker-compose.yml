@@ -18,27 +18,26 @@ services:
       - DB_PATH=/data/golosloom.db
       - AVATAR_DIR=/data/avatars
       - FILES_DIR=/data/files
-      # Публичный адрес LiveKit: клиенты подключаются к wss://домен/rtc/...
-      # напрямую через Caddy (без префикса), а не к внутреннему адресу контейнера.
       - LIVEKIT_URL=wss://${DOMAIN}
       - TURN_URLS=${TURN_URLS}
       - TURN_SHARED_SECRET=${TURN_SHARED_SECRET}
       - TURN_REALM=${TURN_REALM}
       - ALLOW_ORIGINS=${ALLOW_ORIGINS}
+      - CENTRIFUGO_URL=http://centrifugo:8000
+      - CENTRIFUGO_API_KEY=${CENTRIFUGO_API_KEY}
+      - CENTRIFUGO_SECRET=${CENTRIFUGO_SECRET}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
       - ${DATA_DIR}:/data
-      # Ключ сервисного аккаунта Firebase (нативные пуши Android). Читается
-      # гейтвеем при старте; без файла FCM просто не включается, сервер живёт.
       - /opt/golosloom/fcm-service-account.json:/fcm-service-account.json:ro
     depends_on:
       - livekit
+      - centrifugo
     networks:
       - golosloom
     mem_limit: 256m
     logging: *default-logging
-    # Health check: /api/health без аутентификации (проверяет и БД).
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/health"]
       interval: 30s
@@ -58,6 +57,28 @@ services:
       - golosloom
     mem_limit: 32m
     logging: *default-logging
+
+  centrifugo:
+    image: centrifugo/centrifugo:v5
+    container_name: golosloom-centrifugo
+    restart: unless-stopped
+    command: --config /etc/centrifugo/config.json
+    volumes:
+      - ./centrifugo.json:/etc/centrifugo/config.json:ro
+      - /opt/golosloom/fcm-service-account.json:/fcm-service-account.json:ro
+    ports:
+      - "8000:8000"
+    networks:
+      - golosloom
+    mem_limit: 384m
+    memswap_limit: 512m
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   livekit:
     # v1.8 не поддерживает новый путь сигналинга /rtc/v1 (SDK: "v1 RTC path

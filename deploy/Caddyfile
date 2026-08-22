@@ -1,19 +1,15 @@
-# Caddy: HTTPS для веб-клиента и API, WebSocket, а также выпуск сертификатов
-# для coturn (TURN over TLS). Сертификаты автоматически перевыпускаются Caddy.
-# Доступные логи пишутся в /data/access.log — fail2ban банит IP по 401 на
-# /api/login и /api/register.
+# Caddy: HTTPS для веб-клиента и API, WebSocket, Centrifugo, а также выпуск
+# сертификатов для coturn (TURN over TLS). Сертификаты автоматически
+# перевыпускаются Caddy.
 
 {$DOMAIN} {
 	encode zstd gzip
 
 	log {
-		# Ротация: 3 файла по 50 МБ — access.log не заполнит диск (15-20 ГБ).
 		output file /data/access.log {
 			roll_size 50mb
 			roll_keep 3
 		}
-		# JSON + вырезаем токены из query: в URL файлов/WS есть токены,
-		# они не должны попадать в логи (fail2ban ждёт именно JSON-формат).
 		format filter {
 			wrap json
 			request>uri query {
@@ -22,44 +18,54 @@
 		}
 	}
 
-	# Безопасность: HSTS, защита от XSS-поверхностей (CSP), кликджекинга,
-	# sniffing и утечек Referer. style-src с 'unsafe-inline' обязателен —
-	# Vue инжектит стили и inline-атрибуты; connect-src wss: нужен для
-	# сигналинга LiveKit; img/media https: — для GIF Klipy и медиа.
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"
 		X-Frame-Options "DENY"
 		Referrer-Policy "no-referrer"
-		# Приватный мессенджер: страницы не индексируются поисковиками.
 		X-Robots-Tag "noindex, nofollow"
-		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; media-src 'self' blob: https:; connect-src 'self' wss:; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+		# CSP: wss: для Centrifugo + LiveKit, turns: turn: stun: для TURN/STUN
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; media-src 'self' blob: https:; connect-src 'self' wss: https: turns: turn: stun:; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
 	}
 
-	# Сигналинг LiveKit: клиент подключается к wss://домен/rtc/... напрямую
-	# (путь /rtc/* свободен, префикс резать не нужно). livekit работает на
-	# host-сети и не виден по имени в docker-сети — проксируем через host-gateway.
-	# Точный /rtc тоже обязателен: старые клиенты/инструменты используют
-	# фолбэк-путь /rtc (без /v1).
+	# LiveKit
 	handle /rtc {
 		reverse_proxy host.docker.internal:7880
 	}
 	handle /rtc/* {
 		reverse_proxy host.docker.internal:7880
 	}
-	# API LiveKit (сверка участников звонков сервером Go).
 	handle /twirp/* {
 		reverse_proxy host.docker.internal:7880
 	}
 
+	# API
 	handle /api/* {
 		reverse_proxy server:8080
 	}
 
+	# WebSocket (deprecated — удалится в Phase 7 после миграции всех клиентов)
 	handle /ws {
 		reverse_proxy server:8080
 	}
 
+	# Centrifugo: WebSocket + HTTP streaming для клиентов
+	handle /centrifugo {
+		reverse_proxy centrifugo:8000
+	}
+	handle /centrifugo/* {
+		reverse_proxy centrifugo:8000
+	}
+
+	# Блокировка админ-панели Centrifugo из интернета (только SSH-туннель)
+	handle /centrifugo/admin {
+		respond 403
+	}
+	handle /centrifugo/admin/* {
+		respond 403
+	}
+
+	# SPA
 	handle {
 		root * /srv
 		file_server
