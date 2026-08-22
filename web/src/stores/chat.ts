@@ -79,12 +79,19 @@ export const useChatStore = defineStore('chat', {
       const auth = useAuthStore()
       const storage = await getKeyStorage()
       const key = await storage.loadChannelKey(channelId)
-      const msgs: Message[] = await settings.api.listMessages(channelId)
+      let msgs: Message[]
+      try {
+        msgs = await settings.api.listMessages(channelId)
+      } catch (e) {
+        console.error('[chat] loadHistory API error:', e)
+        return
+      }
       const decrypted: ChatMessage[] = []
       for (const m of msgs) {
         decrypted.push(await this.toChatMessage(m, channelId, key, auth.user?.id || 0))
       }
       this.messages.set(channelId, decrypted)
+      console.log(`[chat] loadHistory ch=${channelId}: ${msgs.length} msgs, ${decrypted.length} decrypted, key=${!!key}`)
     },
     // Открытие канала: прочитанными считаются все сообщения в нём.
     markRead(channelId: number) {
