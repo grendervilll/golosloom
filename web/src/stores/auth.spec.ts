@@ -22,12 +22,6 @@ describe('auth', () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
     localStorage.clear()
-    ;(globalThis as any).WebSocket = class {
-      static OPEN = 1
-      readyState = 1
-      send() {}
-      close() {}
-    }
   })
 
   it('сохраняет токен и пользователя после входа', async () => {

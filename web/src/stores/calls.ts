@@ -487,10 +487,10 @@ export const useCallStore = defineStore('calls', {
       const now = Date.now()
       if (now - this.lastPunch < 10000) return
       this.lastPunch = now
-      const auth = useAuthStore()
+      const settings = useSettingsStore()
       const call = this.currentCall
       if (!call) return
-      auth.ws.send('call.punch', { call_id: call.id, target_user_id: targetUserId })
+      settings.api.post(`/api/calls/${call.id}/punch`).catch(() => {})
     },
     // Громкость конкретного участника (сохраняется и применяется к его трекам).
     async setParticipantVolume(userId: number, volume: number) {

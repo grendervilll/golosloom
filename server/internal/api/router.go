@@ -105,6 +105,10 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("POST /api/calls/{id}/decline", s.requireAuth(s.handleDeclineCall))
 	mux.HandleFunc("POST /api/calls/{id}/join", s.requireAuth(s.handleJoinCall))
 	mux.HandleFunc("POST /api/calls/{id}/leave", s.requireAuth(s.handleLeaveCall))
+	mux.HandleFunc("POST /api/calls/{id}/punch", s.requireAuth(s.handleCallPunch))
+
+	// Typing indicator
+	mux.HandleFunc("POST /api/channels/{id}/typing", s.requireAuth(s.handleSendTyping))
 
 	return withCORS(s, mux)
 }

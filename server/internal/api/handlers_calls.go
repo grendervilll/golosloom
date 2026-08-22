@@ -489,3 +489,62 @@ func itoa(v int64) string {
 	}
 	return string(b[i:])
 }
+
+// handleCallPunch — «пнуть» участника звонка (напомнить о вызове).
+func (s *Server) handleCallPunch(w http.ResponseWriter, r *http.Request) {
+	callID := pathID(r, "id")
+	c, err := s.Store.GetCall(callID)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "звонок не найден")
+		return
+	}
+	userID := userIDFrom(r)
+	if c.InitiatorID != userID {
+		writeErr(w, http.StatusForbidden, "только инициатор может пнуть")
+		return
+	}
+	if !s.allowPunch(userID, c.InitiatorID) {
+		writeErr(w, http.StatusTooManyRequests, "можно пнуть раз в 10 секунд")
+		return
+	}
+	u, err := s.Store.GetUserByID(userID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.publishUser(c.InitiatorID, centrifugoEvent{
+		Type: "punch",
+		Data: map[string]interface{}{
+			"call_id":    callID,
+			"by_user_id": userID,
+			"by_nick":    u.Nick,
+		},
+	})
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// handleSendTyping — индикатор «печатает…».
+func (s *Server) handleSendTyping(w http.ResponseWriter, r *http.Request) {
+	channelID := pathID(r, "id")
+	role, ok := s.requireChannelMember(w, r, channelID)
+	if !ok {
+		return
+	}
+	if !s.can(w, role, channelID, models.PermSendMessage) {
+		return
+	}
+	u, err := s.Store.GetUserByID(userIDFrom(r))
+	if err != nil {
+		writeErr(w, http.StatusUnauthorized, "пользователь не найден")
+		return
+	}
+	s.publishChannel(channelID, centrifugoEvent{
+		Type: "typing",
+		Data: map[string]interface{}{
+			"channel_id": channelID,
+			"user_id":    u.ID,
+			"nick":       u.Nick,
+		},
+	})
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}

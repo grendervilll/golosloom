@@ -1,7 +1,6 @@
 // Аутентификация и присутствие пользователя.
 import { defineStore } from 'pinia'
 import { useSettingsStore } from './settings'
-import { WsClient } from '../api/ws'
 import { CentrifugeClient } from '../api/centrifuge'
 import type { User, PublicUser } from '../api/types'
 
@@ -12,10 +11,8 @@ export const useAuthStore = defineStore('auth', {
     user: null as User | null,
     token: localStorage.getItem(TOKEN_KEY) || '',
     password: '' as string,
-    ws: new WsClient(),
     centrifuge: new CentrifugeClient(),
     connected: false,
-    useCentrifuge: false as boolean,
     users: [] as PublicUser[],
   }),
   getters: {
@@ -33,7 +30,7 @@ export const useAuthStore = defineStore('auth', {
       localStorage.setItem(TOKEN_KEY, this.token)
       settings.api.setToken(this.token)
       await this.fetchMe()
-      this.connectWs()
+      this.connect()
     },
     async register(nick: string, password: string, invite?: string): Promise<void> {
       const settings = useSettingsStore()
@@ -46,7 +43,7 @@ export const useAuthStore = defineStore('auth', {
       localStorage.setItem(TOKEN_KEY, this.token)
       settings.api.setToken(this.token)
       await this.fetchMe()
-      this.connectWs()
+      this.connect()
     },
     async fetchMe(): Promise<void> {
       const settings = useSettingsStore()
@@ -57,33 +54,27 @@ export const useAuthStore = defineStore('auth', {
       const settings = useSettingsStore()
       this.users = await settings.api.listUsers()
     },
-    async connectWs() {
+    async connect() {
       const settings = useSettingsStore()
       await settings.loadConfig()
-      // Use Centrifugo if server supports it, otherwise fall back to WebSocket.
       if (settings.serverConfig?.centrifugo_url) {
         try {
           const tokenRes = await settings.api.centrifugoToken()
           if (tokenRes?.token) {
             this.centrifuge.connect(settings.serverConfig.centrifugo_url, tokenRes.token)
-            this.useCentrifuge = true
             this.connected = true
             return
           }
         } catch {
-          // Centrifugo not available, fall back to WebSocket
+          /* Centrifugo unavailable */
         }
       }
-      this.ws.connect(settings.serverUrl, this.token)
-      this.connected = true
     },
     logout() {
-      this.ws.disconnect()
       this.centrifuge.disconnect()
       this.token = ''
       this.password = ''
       this.user = null
-      this.useCentrifuge = false
       localStorage.removeItem(TOKEN_KEY)
     },
   },

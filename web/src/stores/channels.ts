@@ -105,18 +105,21 @@ export const useChannelsStore = defineStore('channels', {
       const settings = useSettingsStore()
       const auth = useAuthStore()
       const ch = this.channels.find((c) => c.id === channelId)
-      // Покидаем предыдущий канал в подписке WS (иначе будем получать
-      // события всех каналов, которые когда-либо открывали).
+      // Отписываемся от предыдущего канала в Centrifugo.
       if (this.currentId && this.currentId !== channelId) {
-        auth.ws.send('channel.leave', { channel_id: this.currentId })
+        auth.centrifuge.unsubscribeChannel('channel:' + this.currentId)
       }
       if (!ch?.is_member) {
         await settings.api.joinChannel(channelId)
       }
       this.currentId = channelId
-      // Подписываемся на события канала (message.new/deleted, presence
-      // участников и т.д.) — без этого клиент не получает ничего.
-      auth.ws.send('channel.join', { channel_id: channelId })
+      // Подписываемся на Centrifugo канал.
+      try {
+        const subRes = await settings.api.centrifugoSubscribe('channel:' + channelId)
+        if (subRes?.token) {
+          auth.centrifuge.subscribeChannel('channel:' + channelId, subRes.token)
+        }
+      } catch { /* channel subscription failed */ }
       await this.refresh()
       await this.openChannel(channelId)
     },
@@ -133,9 +136,13 @@ export const useChannelsStore = defineStore('channels', {
         await settings.api.joinChannel(channelId)
         await this.refresh()
       }
-      // Подписка на события канала (вызывается и при init(), когда канал
-      // открывается автоматически).
-      auth.ws.send('channel.join', { channel_id: channelId })
+      // Подписка на Centrifugo канал (вызывается и при init()).
+      try {
+        const subRes = await settings.api.centrifugoSubscribe('channel:' + channelId)
+        if (subRes?.token) {
+          auth.centrifuge.subscribeChannel('channel:' + channelId, subRes.token)
+        }
+      } catch { /* channel subscription failed */ }
       this.members = await settings.api.listMembers(channelId)
       await this.loadBanned(channelId)
       await chat.loadHistory(channelId)

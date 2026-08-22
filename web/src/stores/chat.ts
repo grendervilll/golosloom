@@ -150,8 +150,8 @@ export const useChatStore = defineStore('chat', {
       const now = Date.now()
       if (now - this.typingLastSent < 2500) return
       this.typingLastSent = now
-      const auth = useAuthStore()
-      auth.ws.send('typing', { channel_id: channelId })
+      const settings = useSettingsStore()
+      settings.api.post(`/api/channels/${channelId}/typing`).catch(() => {})
     },
     // Событие «печатает…» от другого пользователя.
     handleTyping(data: { channel_id: number; user_id: number; nick: string }) {

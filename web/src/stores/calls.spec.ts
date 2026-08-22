@@ -47,11 +47,8 @@ function mockApi() {
     listChannels: vi.fn(async () => []),
     listUsers: vi.fn(async () => []),
     listInvites: vi.fn(async () => []),
-    uploadKey: vi.fn(async () => ({})),
-    getMyWrappedKey: vi.fn(async () => ({ wrapped_key: null })),
-    pendingKeyTargets: vi.fn(async () => []),
-    uploadWrappedKey: vi.fn(async () => ({})),
-    config: vi.fn(async () => ({ ws_path: '/ws', livekit_url: 'ws://lk', max_message_len: 2000, turn: {} })),
+    post: vi.fn(async () => ({})),
+    config: vi.fn(async () => ({ centrifugo_url: '/centrifugo', livekit_url: 'ws://lk', max_message_len: 2000, turn: {} })),
   }
 }
 
@@ -157,15 +154,15 @@ describe('звонки', () => {
     setup()
     const calls = useCallStore()
     await calls.initiate(10, [2])
-    const auth = useAuthStore()
-    const sendSpy = vi.spyOn(auth.ws, 'send')
+    const settings = useSettingsStore()
+    const postSpy = vi.spyOn(settings.api, 'post')
     await calls.punch(2)
-    expect(sendSpy).toHaveBeenCalledTimes(1)
+    expect(postSpy).toHaveBeenCalledTimes(1)
     await calls.punch(2)
-    expect(sendSpy).toHaveBeenCalledTimes(1)
+    expect(postSpy).toHaveBeenCalledTimes(1)
     vi.setSystemTime(1000000 + 11000)
     await calls.punch(2)
-    expect(sendSpy).toHaveBeenCalledTimes(2)
+    expect(postSpy).toHaveBeenCalledTimes(2)
   })
 
   it('показывает кнопку "Войти в звонок" после отклонения', async () => {

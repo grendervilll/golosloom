@@ -28,9 +28,9 @@ watch(
 function wireWs() {
   unsubs.forEach((u) => u())
   unsubs = []
-  const ws = auth.ws
+  const c = auth.centrifuge
   unsubs.push(
-    ws.on('presence', async (d: { user_id: number }) => {
+    c.on('presence', async (d: { user_id: number }) => {
       await channels.refresh()
       if (channels.currentId) {
         channels.members = await settings.api.listMembers(channels.currentId)
@@ -38,57 +38,56 @@ function wireWs() {
       auth.refreshUsers()
       void d
     }),
-    ws.on('message.new', (d: any) => void chat.handleNew(d)),
-    ws.on('message.edited', (d: any) => void chat.handleEdited(d)),
-    ws.on('message.deleted', (d: any) => chat.handleDeleted(d)),
-    ws.on('attachment.deleted', (d: any) => chat.handleAttachmentDeleted(d)),
-    ws.on('typing', (d: any) => chat.handleTyping(d)),
-    ws.on('invite.new', (d: any) => void channels.handleInviteEvent(d)),
-    ws.on('invite.pending', (d: any) => void channels.handleInviteEvent(d)),
-    ws.on('invite.updated', () => void channels.refreshInvites()),
-    ws.on('call.invite', (d: any) => calls.handleCallInvite(d)),
-    ws.on('call.started', (d: any) => calls.handleCallStarted(d.call_id)),
-    ws.on('call.ended', (d: any) => {
+    c.on('message.new', (d: any) => void chat.handleNew(d)),
+    c.on('message.edited', (d: any) => void chat.handleEdited(d)),
+    c.on('message.deleted', (d: any) => chat.handleDeleted(d)),
+    c.on('attachment.deleted', (d: any) => chat.handleAttachmentDeleted(d)),
+    c.on('typing', (d: any) => chat.handleTyping(d)),
+    c.on('invite.new', (d: any) => void channels.handleInviteEvent(d)),
+    c.on('invite.pending', (d: any) => void channels.handleInviteEvent(d)),
+    c.on('invite.updated', () => void channels.refreshInvites()),
+    c.on('call.invite', (d: any) => calls.handleCallInvite(d)),
+    c.on('call.started', (d: any) => calls.handleCallStarted(d.call_id)),
+    c.on('call.ended', (d: any) => {
       calls.handleCallEnded(d)
-      // «Звонок завершён, время …» — в открытый канал.
       const dur = calls.callDurationText()
       if (dur && channels.currentId) {
         chat.pushSystem(channels.currentId, 'Звонок завершён, время звонка ' + dur)
       }
     }),
-    ws.on('call.participants', (d: any) => {
-      const c = calls.calls.find((x) => x.id === d.call_id)
-      if (c) c.participants = d.participants
+    c.on('call.participants', (d: any) => {
+      const c2 = calls.calls.find((x) => x.id === d.call_id)
+      if (c2) c2.participants = d.participants
     }),
-    ws.on('call.invite.timeout', (d: any) => {
+    c.on('call.invite.timeout', (d: any) => {
       calls.stopIncoming(d.call_id)
       toast.info('Вызов не принят, звонок отклонён автоматически')
     }),
-    ws.on('punch', (d: any) => calls.handlePunch(d)),
-    ws.on('device.registered', () => void channels.syncAllKeys()),
-    ws.on('kicked', (d: any) => {
+    c.on('punch', (d: any) => calls.handlePunch(d)),
+    c.on('device.registered', () => void channels.syncAllKeys()),
+    c.on('kicked', (d: any) => {
       sounds.warning()
       toast.warning(`Вас кикнули из канала: ${d.reason || 'без причины'}`)
     }),
-    ws.on('banned', (d: any) => {
+    c.on('banned', (d: any) => {
       sounds.warning()
       toast.warning(`Вас забанили в канале: ${d.reason || 'без причины'}`)
       void channels.refresh()
     }),
-    ws.on('server_banned', (d: any) => {
+    c.on('server_banned', (d: any) => {
       sounds.warning()
       toast.warning(`Вы забанены на сервере: ${d.reason || 'без причины'}`)
       auth.logout()
     }),
-    ws.on('channel.deleted', (d: any) => {
+    c.on('channel.deleted', (d: any) => {
       calls.endAllInChannel(d.channel_id)
       void channels.refresh()
     }),
-    ws.on('role.changed', () => void channels.refresh()),
-    ws.on('member.banned', () => void channels.refresh()),
-    ws.on('member.unbanned', () => void channels.refresh()),
-    ws.on('key.needed', (d: any) => void channels.handleKeyNeeded(d)),
-    ws.on('key.granted', (d: any) => void channels.handleKeyGranted(d.channel_id)),
+    c.on('role.changed', () => void channels.refresh()),
+    c.on('member.banned', () => void channels.refresh()),
+    c.on('member.unbanned', () => void channels.refresh()),
+    c.on('session.needed', (d: any) => void channels.handleKeyNeeded(d)),
+    c.on('key.granted', (d: any) => void channels.handleKeyGranted(d.channel_id)),
   )
 }
 
@@ -102,7 +101,7 @@ onMounted(async () => {
   if (auth.token) {
     try {
       await auth.fetchMe()
-      auth.connectWs()
+      auth.connect()
       wireWs()
       // Короткоживущий файловый токен: в URL файлов не попадает основной JWT.
       settings.api.setToken(auth.token)
