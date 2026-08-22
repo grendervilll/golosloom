@@ -8,7 +8,8 @@
 server/   — Go-бэкенд (REST, Centrifugo, SQLite, LiveKit-токены, TURN-учётные данные)
 web/      — веб-клиент Vue 3 (общий код и для десктопа)
 desktop/  — Electron-приложение (safeStorage для ключей; фронтенд — из web/)
-deploy/   — docker-compose.yml, Caddyfile, livekit.yaml, .env.example, install.sh
+mobile/   — Flutter-клиент (Signal Protocol, Centrifugo, LiveKit)
+deploy/   — docker-compose.yml, Caddyfile, centrifugo.json, livekit.yaml, .env.example, install.sh
 icons/    — исходники логотипа (лого сайта и иконка приложения)
 .github/  — сборка установщиков Electron для всех ОС (GitHub Actions)
 ```
@@ -81,11 +82,14 @@ sudo bash install.sh harden      # fail2ban, SSH только по ключам,
 # Сервер
 cd server && go run ./cmd/server   # http://localhost:8080
 
-# Веб-клиент (Vite проксирует /api и /ws на сервер)
+# Веб-клиент (Vite проксирует /api и /centrifugo на сервер)
 cd web && npm install && npm run dev   # http://localhost:5173
 
 # Десктоп-клиент (Electron)
 cd desktop && npm install && npm run dev
+
+# Мобильный клиент (Flutter)
+cd mobile && flutter run
 ```
 
 Веб-клиент и Electron-приложение используют один и тот же код (`web/`): Electron лишь обёртка с safeStorage для ключей шифрования. Адрес сервера вводится при первом запуске приложения и доступен в настройках.
@@ -128,11 +132,11 @@ git push origin v2.0.0
 ## Тесты
 
 ```bash
-# Бэкенд (Go): права, регистрация, запрет регистрации, сообщения, нагрузка,
-# вызовы, статусы, каналы, приглашения, шифрование-ключи, бан/кик, дубликаты, миграции
+# Бэкенд (Go): права, регистрация, сообщения, звонки, каналы,
+# приглашения, Signal Protocol устройства, бан/кик, миграции
 cd server && go test ./... -count=1
 
-# Клиент (Vitest): криптография, пароли, чат, звонки, ключи каналов, WebSocket
+# Клиент (Vitest): криптография, чат, звонки, Centrifugo, Signal Protocol
 cd web && npm test
 ```
 
@@ -141,12 +145,21 @@ cd web && npm test
 - **1:1 чаты**: Signal Protocol — X3DH (обмен ключами) + Double Ratchet (сессионное шифрование). Forward secrecy и post-compromise security.
 - **Групповые чаты**: Signal Protocol Sender Keys — один ключ на группу, ротация при изменении состава.
 - **Сервер**: хранит только публичные ключи устройств (identity key, signed pre-key, one-time pre-keys). Крипто-слепой — ретранслирует шифротексты.
-- **Ключи хранятся на клиенте**: веб — IndexedDB; десктоп — Electron safeStorage (macOS Keychain / Windows DPAPI / Linux libsecret).
+- **Ключи хранятся на клиенте**: веб — IndexedDB; десктоп — Electron safeStorage (macOS Keychain / Windows DPAPI / Linux libsecret); мобильный — flutter_secure_storage.
 - **Файлы**: каждый файл шифруется уникальным AES-256-GCM ключом, ключ файла передаётся через Signal Protocol.
+
+## Реалтайм (Centrifugo)
+
+Все события доставляются через Centrifugo (WebSocket-сервер pub/sub):
+- Клиент подключается с JWT-токеном (без списка каналов).
+- Для каждого канала запрашивается subscription token через REST API (`POST /api/centrifugo/subscribe`).
+- Сервер публикует события в каналы `channel:{id}` (сообщения,typing, звонки) и `user:{id}` (приглашения, кики, баны).
+- Клиенты не публикуют напрямую — все события проходят через REST API сервера.
+- Старый WebSocket-эндпоинт (`/ws`) удалён.
 
 ## Звонки (LiveKit + coturn)
 
-Медиа всегда идёт через TURN (coturn), без прямого подключения: вызов инициирован → ответ → разговор начинается без ожидания выбора подключения. Токены LiveKit выдаёт Go-сервер; временные учётные данные TURN генерируются по shared-secret. Кодирование экрана и камеры выполняется на клиенте, SFU только пересылает потоки. Голос: opus 48 кГц моно, 96 кбит/с, эхо-подавление/автоусиление включены. Звонок автоматически завершается, когда участников остаётся меньше двух (в том числе при обрыве соединения/закрытии вкладки); звонок в ожидании (никто не ответил) живёт, пока в него можно войти через «Войти в звонок».
+Сигналинг звонков идёт через Centrifugo (приглашения, принятие, завершение). Медиа всегда идёт через TURN (coturn), без прямого подключения: вызов инициирован → ответ → разговор начинается без ожидания выбора подключения. Токены LiveKit выдаёт Go-сервер; временные учётные данные TURN генерируются по shared-secret. Кодирование экрана и камеры выполняется на клиенте, SFU только пересылает потоки. Голос: opus 48 кГц моно, 96 кбит/с, эхо-подавление/автоусиление включены. Звонок автоматически завершается, когда участников остаётся меньше двух (в том числе при обрыве соединения/закрытии вкладки); звонок в ожидании (никто не ответил) живёт, пока в него можно войти через «Войти в звонок».
 
 В десктопном приложении для микрофона/камеры/демонстрации заданы разрешения macOS (`Info.plist`): `NSMicrophoneUsageDescription`, `NSCameraUsageDescription`, `NSScreenCaptureUsageDescription`.
 
