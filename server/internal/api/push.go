@@ -36,13 +36,8 @@ func (p *pushService) sendNotification(payload []byte, sub store.PushSubscriptio
 	})
 }
 
-// pushNotify отправляет пуш пользователю, если у него нет активного
-// WS-соединения (приложение открыто — уведомление не нужно).
+// pushNotify отправляет пуш пользователю.
 func (s *Server) pushNotify(userID int64, title, body, tag string) {
-	// Приложение открыто — событие и так придёт по WebSocket.
-	if s.Hub.IsOnline(userID) {
-		return
-	}
 	payload, _ := json.Marshal(map[string]string{"title": title, "body": body, "tag": tag})
 	if s.push != nil {
 		subs, err := s.Store.PushSubscriptions(userID)

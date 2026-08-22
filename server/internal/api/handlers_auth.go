@@ -201,7 +201,6 @@ func (s *Server) handleAdminServerBan(w http.ResponseWriter, r *http.Request) {
 		Type: "server_banned",
 		Data: map[string]string{"reason": req.Reason},
 	})
-	s.Hub.CloseUser(id) // DEPRECATED: kept for desktop-qt during migration
 	s.disconnectUser(id)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }

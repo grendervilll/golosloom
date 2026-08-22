@@ -386,7 +386,7 @@ func (s *Server) handleListMembers(w http.ResponseWriter, r *http.Request) {
 			"nick":            nick,
 			"role":            m.Role,
 			"is_server_admin": isAdmin,
-			"online":          s.Hub.IsOnline(m.UserID),
+			"online":          false, // Online status via Centrifugo presence
 			"joined_at":       m.JoinedAt,
 			"avatar":          avatar,
 		})

@@ -111,9 +111,9 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "пустое сообщение")
 		return
 	}
-	// protocol_version: 1 = old AES-GCM (requires IV), 2 = Signal Protocol (no IV).
+	// protocol_version: 2 = Signal Protocol (required). Version 1 is deprecated.
 	if req.ProtocolVersion == 0 {
-		req.ProtocolVersion = 1 // default for backward compatibility
+		req.ProtocolVersion = 1 // will be rejected below
 	}
 	if req.ProtocolVersion == 1 && len(req.IV) == 0 {
 		writeErr(w, http.StatusBadRequest, "iv обязателен для protocol_version=1")
@@ -121,6 +121,10 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.ProtocolVersion < 1 || req.ProtocolVersion > 2 {
 		writeErr(w, http.StatusBadRequest, "недопустимый protocol_version")
+		return
+	}
+	if req.ProtocolVersion == 1 {
+		writeErr(w, http.StatusForbidden, "protocol_version_1_deprecated")
 		return
 	}
 	if len(req.Ciphertext) > s.Cfg.MaxMessageLen+16 {

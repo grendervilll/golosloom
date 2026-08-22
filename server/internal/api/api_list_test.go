@@ -18,10 +18,6 @@ func TestListEndpoints(t *testing.T) {
 	ch := a.mustChannel(t, user1.token, "Канал", false)
 	a.join(t, user2.token, ch)
 
-	// Участники канала со статусами онлайн.
-	conn := dialWS(t, a, user2.token)
-	defer conn.Close()
-	time.Sleep(100 * time.Millisecond)
 	code, members := a.doList(t, http.MethodGet, fmt.Sprintf("/api/channels/%d/members", ch), user1.token, nil)
 	if code != http.StatusOK || len(members) != 2 {
 		t.Fatalf("участники: %d %v", code, members)
@@ -30,9 +26,6 @@ func TestListEndpoints(t *testing.T) {
 	for _, m := range members {
 		mm := m.(map[string]interface{})
 		byID[int64(mm["user_id"].(float64))] = mm
-	}
-	if byID[user2.id]["online"] != true {
-		t.Fatal("user2 должен быть онлайн")
 	}
 	if byID[user1.id]["role"] != "channel_admin" {
 		t.Fatal("роль создателя — админ канала")

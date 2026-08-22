@@ -11,14 +11,12 @@ import (
 
 	"golosloom/server/internal/centrifugo"
 	"golosloom/server/internal/config"
-	"golosloom/server/internal/hub"
 	"golosloom/server/internal/store"
 )
 
 type Server struct {
 	Cfg       config.Config
 	Store     *store.Store
-	Hub       *hub.Hub    // DEPRECATED: kept for desktop-qt migration, removed in Phase 7
 	Centi     *centrifugo.Client
 	startedAt time.Time
 
@@ -53,7 +51,6 @@ func New(cfg config.Config, st *store.Store) *Server {
 	s := &Server{
 		Cfg:             cfg,
 		Store:           st,
-		Hub:             hub.New(),
 		Centi:           centrifugo.New(cfg.CentrifugoURL, cfg.CentrifugoAPIKey),
 		startedAt:       time.Now(),
 		lastMsg:         map[string]time.Time{},
@@ -207,21 +204,15 @@ type centrifugoEvent struct {
 }
 
 // publishChannel sends an event to a Centrifugo channel.
-// Falls back to Hub for backward compatibility during migration.
 func (s *Server) publishChannel(channelID int64, ev centrifugoEvent) {
 	ch := "channel:" + itoa(channelID)
 	_ = s.Centi.Publish(ch, ev)
-	// DEPRECATED: also send via Hub for desktop-qt clients during migration.
-	s.Hub.SendToChannel(channelID, hub.Event{Type: ev.Type, Data: mustJSON(ev.Data)})
 }
 
 // publishUser sends an event to a Centrifugo user channel.
-// Falls back to Hub for backward compatibility during migration.
 func (s *Server) publishUser(userID int64, ev centrifugoEvent) {
 	ch := "user:" + itoa(userID)
 	_ = s.Centi.Publish(ch, ev)
-	// DEPRECATED: also send via Hub for desktop-qt clients during migration.
-	s.Hub.SendToUser(userID, hub.Event{Type: ev.Type, Data: mustJSON(ev.Data)})
 }
 
 func mustJSON(v interface{}) json.RawMessage {

@@ -12,8 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gorilla/websocket"
-
 	"golosloom/server/internal/auth"
 	"golosloom/server/internal/config"
 	"golosloom/server/internal/store"
@@ -143,7 +141,7 @@ func (a *testApp) join(t *testing.T, token string, channelID int64) {
 func (a *testApp) sendMsg(t *testing.T, token string, channelID int64, plain string) int64 {
 	t.Helper()
 	code, body := a.do(t, http.MethodPost, fmt.Sprintf("/api/channels/%d/messages", channelID), token,
-		map[string]string{"ciphertext": b64(plain), "iv": "aXY="})
+		map[string]interface{}{"ciphertext": b64(plain), "iv": "aXY=", "protocol_version": 2})
 	if code != http.StatusCreated {
 		t.Fatalf("отправка сообщения: код %d, тело %v", code, body)
 	}
@@ -155,19 +153,6 @@ func b64(s string) string { return base64.StdEncoding.EncodeToString([]byte(s)) 
 
 func generateTestToken(userID int64, secret string) (string, error) {
 	return auth.GenerateToken(userID, 0, secret, time.Hour)
-}
-
-func dialWS(t *testing.T, a *testApp, token string) *websocket.Conn {
-	t.Helper()
-	conn, _, err := websocket.DefaultDialer.Dial(wsURL(a, token), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return conn
-}
-
-func wsURL(a *testApp, token string) string {
-	return "ws" + strings.TrimPrefix(a.ts.URL, "http") + "/ws?token=" + token
 }
 
 // ---------- Регистрация и аутентификация ----------
@@ -353,17 +338,17 @@ func TestGroupPermissionOverrideAndDemotion(t *testing.T) {
 		t.Fatalf("настройка прав группы: %d", code)
 	}
 	code, _ = a.do(t, http.MethodPost, fmt.Sprintf("/api/channels/%d/messages", ch), user2.token,
-		map[string]string{"ciphertext": b64("hi"), "iv": "aXY="})
+		map[string]interface{}{"ciphertext": b64("hi"), "iv": "aXY=", "protocol_version": 2})
 	if code != http.StatusForbidden {
 		t.Fatalf("после запрета права пользователь не должен писать: %d", code)
 	}
 	code, _ = a.do(t, http.MethodPost, fmt.Sprintf("/api/channels/%d/messages", ch), user1.token,
-		map[string]string{"ciphertext": b64("hi"), "iv": "aXY="})
+		map[string]interface{}{"ciphertext": b64("hi"), "iv": "aXY=", "protocol_version": 2})
 	if code != http.StatusCreated {
 		t.Fatalf("админ канала должен писать: %d", code)
 	}
 	code, _ = a.do(t, http.MethodPost, fmt.Sprintf("/api/channels/%d/messages", ch), admin.token,
-		map[string]string{"ciphertext": b64("hi2"), "iv": "aXYy"})
+		map[string]interface{}{"ciphertext": b64("hi2"), "iv": "aXYy", "protocol_version": 2})
 	if code != http.StatusCreated {
 		t.Fatalf("админ сервера должен писать всегда: %d", code)
 	}
@@ -421,7 +406,7 @@ func TestMessagesFlow(t *testing.T) {
 	}
 	// Редактирование своего сообщения.
 	code, _ := a.do(t, http.MethodPatch, fmt.Sprintf("/api/channels/%d/messages/%d", ch, mid), user1.token,
-		map[string]string{"ciphertext": b64("hello-edited"), "iv": "aXYy"})
+		map[string]interface{}{"ciphertext": b64("hello-edited"), "iv": "aXYy", "protocol_version": 2})
 	if code != http.StatusOK {
 		t.Fatalf("редактирование: %d", code)
 	}
@@ -437,7 +422,7 @@ func TestMessagesFlow(t *testing.T) {
 	}
 	// Нельзя редактировать чужие сообщения.
 	code, _ = a.do(t, http.MethodPatch, fmt.Sprintf("/api/channels/%d/messages/%d", ch, mid), user2.token,
-		map[string]string{"ciphertext": b64("hack"), "iv": "aXYz"})
+		map[string]interface{}{"ciphertext": b64("hack"), "iv": "aXYz", "protocol_version": 2})
 	if code != http.StatusForbidden {
 		t.Fatalf("редактирование чужого сообщения: ожидали 403, получили %d", code)
 	}
@@ -484,12 +469,12 @@ func TestDuplicateMessageRejected(t *testing.T) {
 	ch := a.mustChannel(t, u.token, "Канал", false)
 	a.sendMsg(t, u.token, ch, "same")
 	code, _ := a.do(t, http.MethodPost, fmt.Sprintf("/api/channels/%d/messages", ch), u.token,
-		map[string]string{"ciphertext": b64("same"), "iv": "aXY="})
+		map[string]interface{}{"ciphertext": b64("same"), "iv": "aXY=", "protocol_version": 2})
 	if code != http.StatusConflict {
 		t.Fatalf("дубликат сообщения: ожидали 409, получили %d", code)
 	}
 	code, _ = a.do(t, http.MethodPost, fmt.Sprintf("/api/channels/%d/messages", ch), u.token,
-		map[string]string{"ciphertext": b64("different"), "iv": "aXY="})
+		map[string]interface{}{"ciphertext": b64("different"), "iv": "aXY=", "protocol_version": 2})
 	if code != http.StatusCreated {
 		t.Fatalf("новое сообщение должно проходить: %d", code)
 	}
@@ -501,13 +486,13 @@ func TestMessageRateLimit(t *testing.T) {
 	ch := a.mustChannel(t, u.token, "Канал", false)
 	for i := 0; i < 3; i++ {
 		code, _ := a.do(t, http.MethodPost, fmt.Sprintf("/api/channels/%d/messages", ch), u.token,
-			map[string]string{"ciphertext": b64(fmt.Sprintf("m%d", i)), "iv": b64(fmt.Sprintf("iv%d", i))})
+			map[string]interface{}{"ciphertext": b64(fmt.Sprintf("m%d", i)), "iv": b64(fmt.Sprintf("iv%d", i)), "protocol_version": 2})
 		if code != http.StatusCreated {
 			t.Fatalf("сообщение %d: %d", i, code)
 		}
 	}
 	code, _ := a.do(t, http.MethodPost, fmt.Sprintf("/api/channels/%d/messages", ch), u.token,
-		map[string]string{"ciphertext": b64("too-many"), "iv": "aXZ4"})
+		map[string]interface{}{"ciphertext": b64("too-many"), "iv": "aXZ4", "protocol_version": 2})
 	if code != http.StatusTooManyRequests {
 		t.Fatalf("превышение лимита: ожидали 429, получили %d", code)
 	}
@@ -518,7 +503,7 @@ func TestMessageTooLong(t *testing.T) {
 	u := a.register(t, "User1")
 	ch := a.mustChannel(t, u.token, "Канал", false)
 	code, _ := a.do(t, http.MethodPost, fmt.Sprintf("/api/channels/%d/messages", ch), u.token,
-		map[string]string{"ciphertext": b64(strings.Repeat("x", 100)), "iv": "aXY="})
+		map[string]interface{}{"ciphertext": b64(strings.Repeat("x", 100)), "iv": "aXY=", "protocol_version": 2})
 	if code != http.StatusBadRequest {
 		t.Fatalf("слишком длинное сообщение: ожидали 400, получили %d", code)
 	}
@@ -536,7 +521,7 @@ func TestConcurrentMessages(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			code, _ := a.do(t, http.MethodPost, fmt.Sprintf("/api/channels/%d/messages", ch), u.token,
-				map[string]string{"ciphertext": b64(fmt.Sprintf("bulk-%d", i)), "iv": b64(fmt.Sprintf("iv-%d", i))})
+				map[string]interface{}{"ciphertext": b64(fmt.Sprintf("bulk-%d", i)), "iv": b64(fmt.Sprintf("iv-%d", i)), "protocol_version": 2})
 			if code != http.StatusCreated {
 				errs <- fmt.Errorf("сообщение %d: код %d", i, code)
 			}
@@ -745,46 +730,6 @@ func TestServerBanBlocksLogin(t *testing.T) {
 
 // ---------- Ключи каналов ----------
 
-func TestChannelKeyExchange(t *testing.T) {
-	a := newTestApp(t, nil)
-	user1 := a.register(t, "User1")
-	user2 := a.register(t, "User2")
-	ch := a.mustChannel(t, user1.token, "Канал", false)
-	a.join(t, user2.token, ch)
-
-	code, _ := a.do(t, http.MethodPost, "/api/users/key", user1.token, map[string]string{"device_id": "dev1", "public_key": "pk1"})
-	if code != http.StatusOK {
-		t.Fatal("публикация ключа устройства")
-	}
-	code, _ = a.do(t, http.MethodPost, "/api/users/key", user2.token, map[string]string{"device_id": "dev2", "public_key": "pk2"})
-	if code != http.StatusOK {
-		t.Fatal("публикация ключа устройства")
-	}
-	_, pending := a.doList(t, http.MethodGet, fmt.Sprintf("/api/channels/%d/keys/pending", ch), user1.token, nil)
-	if len(pending) != 2 {
-		t.Fatalf("pending-цели: %v", pending)
-	}
-	code, _ = a.do(t, http.MethodPost, fmt.Sprintf("/api/channels/%d/keys/wrap", ch), user1.token,
-		map[string]interface{}{"user_id": user2.id, "device_id": "dev2", "wrapped_key": []byte("wrapped-key-bytes")})
-	if code != http.StatusOK {
-		t.Fatalf("обёртка ключа: %d", code)
-	}
-	code, my := a.do(t, http.MethodGet, fmt.Sprintf("/api/channels/%d/keys/me?device_id=dev2", ch), user2.token, nil)
-	if code != http.StatusOK || my["wrapped_key"] == nil {
-		t.Fatalf("получение ключа: %d %v", code, my)
-	}
-	user3 := a.register(t, "User3")
-	code, _ = a.do(t, http.MethodGet, fmt.Sprintf("/api/channels/%d/keys/me?device_id=dev2", ch), user3.token, nil)
-	if code != http.StatusForbidden {
-		t.Fatalf("неучастник не должен получать ключ: %d", code)
-	}
-	code, _ = a.do(t, http.MethodPost, fmt.Sprintf("/api/channels/%d/keys/wrap", ch), user3.token,
-		map[string]interface{}{"user_id": user2.id, "device_id": "dev2", "wrapped_key": []byte("x")})
-	if code != http.StatusForbidden {
-		t.Fatalf("неучастник не должен загружать ключи: %d", code)
-	}
-}
-
 // ---------- Звонки ----------
 
 func TestCallSingleAllAndLifecycle(t *testing.T) {
@@ -962,127 +907,7 @@ func TestCallAutoDecline(t *testing.T) {
 	}
 }
 
-// ---------- Присутствие (онлайн/офлайн) ----------
-
-func TestPresenceOnlineOffline(t *testing.T) {
-	a := newTestApp(t, nil)
-	u := a.register(t, "User1")
-	if a.srv.Hub.IsOnline(u.id) {
-		t.Fatal("до подключения пользователь не должен быть онлайн")
-	}
-	conn := dialWS(t, a, u.token)
-	deadline := time.Now().Add(2 * time.Second)
-	for !a.srv.Hub.IsOnline(u.id) {
-		if time.Now().After(deadline) {
-			t.Fatal("пользователь не стал онлайн")
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	_ = conn.Close()
-	deadline = time.Now().Add(2 * time.Second)
-	for a.srv.Hub.IsOnline(u.id) {
-		if time.Now().After(deadline) {
-			t.Fatal("пользователь не стал офлайн")
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-}
-
-func TestKickedAndBannedEvents(t *testing.T) {
-	a := newTestApp(t, nil)
-	admin := a.register(t, "Admin")
-	u1 := a.register(t, "User1")
-	u2 := a.register(t, "User2")
-	ch := a.mustChannel(t, u1.token, "Канал", false)
-	a.join(t, u2.token, ch)
-
-	conn := dialWS(t, a, u2.token)
-	defer conn.Close()
-
-	code, _ := a.do(t, http.MethodPost, fmt.Sprintf("/api/channels/%d/members/%d/ban", ch, u2.id), u1.token,
-		map[string]string{"reason": "причина бана"})
-	if code != http.StatusOK {
-		t.Fatalf("бан: %d", code)
-	}
-	// Читаем события, пока не придёт banned (до него приходят presence и т.п.).
-	readUntil := func(typ string) map[string]interface{} {
-		t.Helper()
-		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		for {
-			var msg map[string]interface{}
-			if err := conn.ReadJSON(&msg); err != nil {
-				t.Fatalf("не пришло событие %s: %v", typ, err)
-			}
-			if msg["type"] == typ {
-				return msg
-			}
-		}
-	}
-	msg := readUntil("banned")
-	if msg["data"].(map[string]interface{})["reason"] != "причина бана" {
-		t.Fatalf("некорректное событие бана: %v", msg)
-	}
-	code, _ = a.do(t, http.MethodPost, fmt.Sprintf("/api/admin/users/%d/server-ban", u2.id), admin.token,
-		map[string]string{"reason": "серверный бан"})
-	if code != http.StatusOK {
-		t.Fatalf("серверный бан: %d", code)
-	}
-	msg = readUntil("server_banned")
-	if msg["data"].(map[string]interface{})["reason"] != "серверный бан" {
-		t.Fatalf("некорректное событие: %v", msg)
-	}
-}
-
-// ---------- Пнуть (Punch) ----------
-
-func TestPunchRateLimit(t *testing.T) {
-	a := newTestApp(t, func(c *config.Config) { c.RingTimeout = 5 * time.Second })
-	caller := a.register(t, "Caller")
-	u2 := a.register(t, "User2")
-	ch := a.mustChannel(t, caller.token, "Канал", false)
-	a.join(t, u2.token, ch)
-	code, body := a.do(t, http.MethodPost, "/api/calls", caller.token,
-		map[string]interface{}{"channel_id": ch, "target_ids": []int64{u2.id}})
-	if code != http.StatusCreated {
-		t.Fatalf("создание звонка: %d", code)
-	}
-	callID := int64(body["call"].(map[string]interface{})["id"].(float64))
-	a.do(t, http.MethodPost, fmt.Sprintf("/api/calls/%d/accept", callID), u2.token, nil)
-
-	callerConn := dialWS(t, a, caller.token)
-	defer callerConn.Close()
-	u2Conn := dialWS(t, a, u2.token)
-	defer u2Conn.Close()
-
-	if err := callerConn.WriteJSON(map[string]interface{}{
-		"type": "call.punch", "data": map[string]int64{"call_id": callID, "target_user_id": u2.id},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	// Читаем события, пока не придёт punch (до него идут presence).
-	_ = u2Conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-	var msg map[string]interface{}
-	for {
-		if err := u2Conn.ReadJSON(&msg); err != nil {
-			t.Fatalf("первый пинок не дошёл: %v", err)
-		}
-		if msg["type"] == "punch" {
-			break
-		}
-	}
-	// Второй пинок в течение 10 секунд блокируется.
-	if err := callerConn.WriteJSON(map[string]interface{}{
-		"type": "call.punch", "data": map[string]int64{"call_id": callID, "target_user_id": u2.id},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	_ = u2Conn.SetReadDeadline(time.Now().Add(300 * time.Millisecond))
-	if err := u2Conn.ReadJSON(&msg); err == nil {
-		t.Fatalf("второй пинок не должен дойти: %v", msg)
-	}
-}
-
-// ---------- Конфиг и WebSocket ----------
+// ---------- Конфиг ----------
 
 func TestConfigEndpoint(t *testing.T) {
 	a := newTestApp(t, func(c *config.Config) {
@@ -1101,40 +926,5 @@ func TestConfigEndpoint(t *testing.T) {
 	turn := cfg["turn"].(map[string]interface{})
 	if turn["username"] == nil || turn["credential"] == nil {
 		t.Fatal("должны выдаваться временные TURN-учётные данные")
-	}
-}
-
-func TestWSRequiresAuth(t *testing.T) {
-	a := newTestApp(t, nil)
-	_, status, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(a.ts.URL, "http")+"/ws", nil)
-	if err == nil {
-		t.Fatal("WS без токена должен отклоняться")
-	}
-	_ = status
-}
-
-func TestInviteDeliveredOnlineImmediately(t *testing.T) {
-	a := newTestApp(t, nil)
-	user1 := a.register(t, "User1")
-	user2 := a.register(t, "User2")
-	ch := a.mustChannel(t, user1.token, "Приват", true)
-
-	conn := dialWS(t, a, user2.token)
-	defer conn.Close()
-	// Приглашение отправляется после подключения.
-	code, _ := a.do(t, http.MethodPost, fmt.Sprintf("/api/channels/%d/invites", ch), user1.token,
-		map[string]int64{"user_id": user2.id})
-	if code != http.StatusCreated {
-		t.Fatalf("приглашение: %d", code)
-	}
-	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-	for {
-		var msg map[string]interface{}
-		if err := conn.ReadJSON(&msg); err != nil {
-			t.Fatalf("не пришло приглашение: %v", err)
-		}
-		if msg["type"] == "invite.new" {
-			return
-		}
 	}
 }

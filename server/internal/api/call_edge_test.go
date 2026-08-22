@@ -9,70 +9,6 @@ import (
 
 )
 
-// 1) Инициатор «перезагрузился» (WS оборвался, без POST leave) — возвращается в звонок.
-func TestCallEdgeInitiatorRejoinAfterReload(t *testing.T) {
-	a, us, ch := setupCallScenario(t, 3, 30*time.Second)
-	callID := a.createCallT(t, us[0].token, ch, []int64{us[1].id, us[2].id})
-	for _, u := range us[1:] {
-		a.do(t, http.MethodPost, fmt.Sprintf("/api/calls/%d/accept", callID), u.token, nil)
-	}
-	// Инициатор «закрыл вкладку»: WS оборвался.
-	conn := dialWS(t, a, us[0].token)
-	time.Sleep(100 * time.Millisecond)
-	_ = conn.Close()
-	time.Sleep(200 * time.Millisecond)
-
-	// Инициатор возвращается: звонок виден и в него можно войти.
-	code, calls := a.doList(t, http.MethodGet, fmt.Sprintf("/api/channels/%d/calls", ch), us[0].token, nil)
-	if code != http.StatusOK {
-		t.Fatalf("список звонков: %d", code)
-	}
-	found := false
-	for _, c := range calls {
-		if int64(c.(map[string]interface{})["id"].(float64)) == callID {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("инициатор не видит свой звонок после перезагрузки: %v", calls)
-	}
-	code, body := a.do(t, http.MethodPost, fmt.Sprintf("/api/calls/%d/join", callID), us[0].token, map[string]string{"device_id": "dev"})
-	if code != http.StatusOK {
-		t.Fatalf("инициатор не может войти в свой звонок: %d %v", code, body)
-	}
-	if body["token"] == nil {
-		t.Fatal("нет токена при возврате инициатора")
-	}
-	// Участников снова трое.
-	n, _ := a.srv.Store.CallParticipantCount(callID)
-	if n != 3 {
-		t.Fatalf("участников: %d", n)
-	}
-}
-
-// 2) Участника внезапно выкинуло — он возвращается.
-func TestCallEdgeParticipantKickedOffRejoin(t *testing.T) {
-	a, us, ch := setupCallScenario(t, 3, 30*time.Second)
-	callID := a.createCallT(t, us[0].token, ch, []int64{us[1].id, us[2].id})
-	for _, u := range us[1:] {
-		a.do(t, http.MethodPost, fmt.Sprintf("/api/calls/%d/accept", callID), u.token, nil)
-	}
-	// us1 отвалился (WS).
-	conn := dialWS(t, a, us[1].token)
-	time.Sleep(100 * time.Millisecond)
-	_ = conn.Close()
-	time.Sleep(200 * time.Millisecond)
-	n, _ := a.srv.Store.CallParticipantCount(callID)
-	if n != 2 {
-		t.Fatalf("после обрыва участника должно быть 2: %d", n)
-	}
-	// Возвращается и входит.
-	code, body := a.do(t, http.MethodPost, fmt.Sprintf("/api/calls/%d/join", callID), us[1].token, map[string]string{"device_id": "dev"})
-	if code != http.StatusOK || body["token"] == nil {
-		t.Fatalf("повторный вход выкинутого: %d %v", code, body)
-	}
-}
-
 // 3) Забаненные не могут звонить.
 func TestCallEdgeBannedCannotCall(t *testing.T) {
 	a := newTestApp(t, nil)
@@ -248,25 +184,6 @@ func TestCallEdgeCallInDeletedChannel(t *testing.T) {
 	// 400 (нет получателей в удалённом канале), 403 (нет доступа) или 404 — ок.
 	if code != http.StatusBadRequest && code != http.StatusForbidden && code != http.StatusNotFound {
 		t.Fatalf("звонок в удалённый канал: %d", code)
-	}
-}
-
-// 12) Пинок неучастником звонка — игнорируется.
-func TestCallEdgePunchByOutsider(t *testing.T) {
-	a, us, ch := setupCallScenario(t, 3, 30*time.Second)
-	callID := a.createCallT(t, us[0].token, ch, []int64{us[1].id})
-	a.do(t, http.MethodPost, fmt.Sprintf("/api/calls/%d/accept", callID), us[1].token, nil)
-	conn := dialWS(t, a, us[2].token)
-	defer conn.Close()
-	time.Sleep(100 * time.Millisecond)
-	conn.WriteJSON(map[string]interface{}{
-		"type": "call.punch",
-		"data": map[string]interface{}{"call_id": callID, "target_user_id": us[1].id},
-	})
-	_ = conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
-	var msg map[string]interface{}
-	if err := conn.ReadJSON(&msg); err == nil && msg["type"] == "punch" {
-		t.Fatal("неучастник не должен пинковать")
 	}
 }
 

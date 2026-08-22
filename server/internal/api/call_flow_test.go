@@ -1,6 +1,6 @@
 // Комплексное тестирование жизненного цикла звонков: все комбинации —
 // создание, приглашения, занятость, выход/повторный вход, завершение,
-// таймауты, WS-события.
+// таймауты.
 package api
 
 import (
@@ -267,103 +267,17 @@ func TestCallFlowRingTimeoutFinishesSolo(t *testing.T) {
 	}
 }
 
-// ---------- WS-события ----------
-
-func TestCallFlowWsEvents(t *testing.T) {
-	a, us, ch := setupCallScenario(t, 2, 30*time.Second)
-	conn := dialWS(t, a, us[1].token)
-	defer conn.Close()
-	time.Sleep(100 * time.Millisecond)
-
-	seen := map[string]bool{}
-	go func() {
-		for {
-			var msg map[string]interface{}
-			if err := conn.ReadJSON(&msg); err != nil {
-				return
-			}
-			if t, ok := msg["type"].(string); ok {
-				seen[t] = true
-			}
-		}
-	}()
-
-	callID := a.createCallT(t, us[0].token, ch, []int64{us[1].id})
-	a.do(t, http.MethodPost, fmt.Sprintf("/api/calls/%d/accept", callID), us[1].token, nil)
-	a.do(t, http.MethodPost, fmt.Sprintf("/api/calls/%d/leave", callID), us[1].token, nil)
-	time.Sleep(300 * time.Millisecond)
-
-	for _, ev := range []string{"call.invite", "call.started", "call.participants"} {
-		if !seen[ev] {
-			t.Fatalf("не получено WS-событие %s", ev)
-		}
-	}
-}
-
 // ---------- Пинок ----------
 
-func TestCallFlowPunch(t *testing.T) {
+func TestCallFlowPunchNonParticipant(t *testing.T) {
 	a, us, ch := setupCallScenario(t, 3, 30*time.Second)
-	conn := dialWS(t, a, us[2].token)
-	defer conn.Close()
-	time.Sleep(100 * time.Millisecond)
-
-	callID := a.createCallT(t, us[0].token, ch, []int64{us[1].id, us[2].id})
+	callID := a.createCallT(t, us[0].token, ch, []int64{us[1].id})
 	a.do(t, http.MethodPost, fmt.Sprintf("/api/calls/%d/accept", callID), us[1].token, nil)
-	a.do(t, http.MethodPost, fmt.Sprintf("/api/calls/%d/accept", callID), us[2].token, nil)
-	time.Sleep(100 * time.Millisecond)
-
-	// Пинок участнику звонка.
-	conn.WriteJSON(map[string]interface{}{
-		"type": "call.punch",
-		"data": map[string]interface{}{"call_id": callID, "target_user_id": us[2].id},
-	})
-	deadline := time.Now().Add(2 * time.Second)
-	got := false
-	for time.Now().Before(deadline) {
-		var msg map[string]interface{}
-		if err := conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond)); err != nil {
-			break
-		}
-		if err := conn.ReadJSON(&msg); err != nil {
-			break
-		}
-		if msg["type"] == "punch" {
-			got = true
-			break
-		}
-	}
-	if !got {
-		t.Fatal("участник не получил пинок")
-	}
 
 	// Пинок неучастнику звонка — молча.
 	code, _ := a.do(t, http.MethodPost, "/api/calls", us[2].token,
 		map[string]interface{}{"channel_id": ch, "target_ids": []int64{us[0].id}})
 	if code != http.StatusConflict {
 		t.Fatalf("us2 в звонке — повторный вызов: %d", code)
-	}
-}
-
-// ---------- WS-отключение ----------
-
-func TestCallFlowWsDisconnectLastParticipant(t *testing.T) {
-	a, us, ch := setupCallScenario(t, 2, 30*time.Second)
-	callID := a.createCallT(t, us[0].token, ch, []int64{us[1].id})
-	a.do(t, http.MethodPost, fmt.Sprintf("/api/calls/%d/accept", callID), us[1].token, nil)
-
-	conn := dialWS(t, a, us[0].token)
-	time.Sleep(100 * time.Millisecond)
-	_ = conn.Close()
-	deadline := time.Now().Add(3 * time.Second)
-	for {
-		call, _ := a.srv.Store.GetCall(callID)
-		if call.Status == "ended" {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("звонок должен завершиться после WS-отключения последнего участника")
-		}
-		time.Sleep(50 * time.Millisecond)
 	}
 }

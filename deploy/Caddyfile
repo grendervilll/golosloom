@@ -44,11 +44,6 @@
 		reverse_proxy server:8080
 	}
 
-	# WebSocket (deprecated — удалится в Phase 7 после миграции всех клиентов)
-	handle /ws {
-		reverse_proxy server:8080
-	}
-
 	# Centrifugo: WebSocket + HTTP streaming для клиентов
 	handle /centrifugo {
 		reverse_proxy centrifugo:8000

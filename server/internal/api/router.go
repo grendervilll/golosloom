@@ -9,7 +9,7 @@ import (
 	"golosloom/server/internal/models"
 )
 
-// NewRouter собирает все маршруты REST и WebSocket.
+// NewRouter собирает все REST-маршруты.
 func (s *Server) Router() http.Handler {
 	mux := http.NewServeMux()
 
@@ -25,7 +25,6 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("POST /api/login", func(w http.ResponseWriter, r *http.Request) {
 		s.loginLimiter.handle(w, r, s.handleLogin)
 	})
-	mux.HandleFunc("GET /ws", s.handleWS)
 
 	// Web Push-уведомления
 	mux.HandleFunc("POST /api/push/subscribe", s.requireAuth(s.handlePushSubscribe))
@@ -53,7 +52,6 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("DELETE /api/admin/files/{id}", s.requireServerAdmin(s.handleAdminDeleteFile))
 
 	// Пользователи
-	mux.HandleFunc("POST /api/users/key", s.requireAuth(s.handleUploadKey)) // DEPRECATED: old device registration
 	mux.HandleFunc("GET /api/users", s.requireAuth(s.handleListUsers))
 	mux.HandleFunc("GET /api/gifs/search", s.requireAuth(s.handleGifSearch))
 
@@ -89,13 +87,6 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("POST /api/invites/{id}/accept", s.requireAuth(s.handleAcceptInvite))
 	mux.HandleFunc("POST /api/invites/{id}/decline", s.requireAuth(s.handleDeclineInvite))
 
-	// DEPRECATED: Channel key endpoints -- kept for desktop-qt migration, removed in Phase 7.
-	mux.HandleFunc("POST /api/channels/{id}/keys/wrap", s.requireAuth(s.handleUploadWrappedKey))
-	mux.HandleFunc("GET /api/channels/{id}/keys/me", s.requireAuth(s.handleGetMyWrappedKey))
-	mux.HandleFunc("GET /api/channels/{id}/keys/pending", s.requireAuth(s.handlePendingKeyTargets))
-	mux.HandleFunc("GET /api/channels/{id}/keys/backup", s.requireAuth(s.handleGetKeyBackup))
-	mux.HandleFunc("PUT /api/channels/{id}/keys/backup", s.requireAuth(s.handleUploadKeyBackup))
-
 	// Сообщения
 	mux.HandleFunc("GET /api/channels/{id}/messages", s.requireAuth(s.handleListMessages))
 	mux.HandleFunc("POST /api/channels/{id}/messages", s.requireAuth(s.handleSendMessage))
@@ -125,7 +116,6 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"ws_path":         "/ws", // DEPRECATED: kept for desktop-qt
 		"centrifugo_url":  "/centrifugo",
 		"livekit_url":     s.Cfg.LiveKitURL,
 		"max_message_len": s.Cfg.MaxMessageLen,
@@ -160,7 +150,7 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 			"id":              u.ID,
 			"nick":            u.Nick,
 			"is_server_admin": u.IsServerAdmin,
-			"online":          s.Hub.IsOnline(u.ID),
+			"online":          false, // Online status via Centrifugo presence
 			"avatar":          u.AvatarAt,
 		})
 	}
@@ -211,7 +201,7 @@ func (s *Server) handleAdminListUsers(w http.ResponseWriter, r *http.Request) {
 			"is_server_admin":   u.IsServerAdmin,
 			"server_banned":     u.ServerBanned,
 			"server_ban_reason": u.ServerBanReason,
-			"online":            s.Hub.IsOnline(u.ID),
+			"online":            false, // Online status via Centrifugo presence
 			"created_at":        u.CreatedAt,
 		})
 	}

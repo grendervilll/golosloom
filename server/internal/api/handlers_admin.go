@@ -66,7 +66,7 @@ func (s *Server) handleAdminStats(w http.ResponseWriter, r *http.Request) {
 		"channels":      channels,
 		"messages":      messages,
 		"calls":         calls,
-		"online":        s.Hub.OnlineCount(),
+		"online":        0, // Online status via Centrifugo presence
 		"db_size":       dbSize,
 		"files_size":    filesSize,
 		"disk_total":    diskTotal,

@@ -18,7 +18,7 @@ func TestMessageReplyTo(t *testing.T) {
 
 	// Ответ с reply_to.
 	code, body := a.do(t, http.MethodPost, fmt.Sprintf("/api/channels/%d/messages", ch), u.token,
-		map[string]interface{}{"ciphertext": b64("ответ"), "iv": "aXY=", "reply_to_id": target})
+		map[string]interface{}{"ciphertext": b64("ответ"), "iv": "aXY=", "reply_to_id": target, "protocol_version": 2})
 	if code != http.StatusCreated {
 		t.Fatalf("ответ на сообщение: %d", code)
 	}
@@ -44,7 +44,7 @@ func TestMessageReplyTo(t *testing.T) {
 
 	// Ответ на несуществующее сообщение — 404.
 	code, _ = a.do(t, http.MethodPost, fmt.Sprintf("/api/channels/%d/messages", ch), u.token,
-		map[string]interface{}{"ciphertext": b64("x"), "iv": "aXY=", "reply_to_id": 999999})
+		map[string]interface{}{"ciphertext": b64("x"), "iv": "aXY=", "reply_to_id": 999999, "protocol_version": 2})
 	if code != http.StatusNotFound {
 		t.Fatalf("ответ на несуществующее: ожидали 404, получили %d", code)
 	}
@@ -55,7 +55,7 @@ func TestMessageReplyTo(t *testing.T) {
 	a.join(t, other.token, ch2)
 	target2 := a.sendMsg(t, other.token, ch2, "в другом канале")
 	code, _ = a.do(t, http.MethodPost, fmt.Sprintf("/api/channels/%d/messages", ch), u.token,
-		map[string]interface{}{"ciphertext": b64("y"), "iv": "aXY=", "reply_to_id": target2})
+		map[string]interface{}{"ciphertext": b64("y"), "iv": "aXY=", "reply_to_id": target2, "protocol_version": 2})
 	if code != http.StatusNotFound {
 		t.Fatalf("ответ на сообщение из другого канала: ожидали 404, получили %d", code)
 	}

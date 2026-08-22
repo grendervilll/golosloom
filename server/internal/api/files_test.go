@@ -151,7 +151,7 @@ func TestFileUploadAttachSendDelete(t *testing.T) {
 
 	// Привязка к сообщению (отправитель — владелец файла).
 	code, msg := a.do(t, http.MethodPost, "/api/channels/"+strconv.FormatInt(ch, 10)+"/messages", u.token,
-		map[string]interface{}{"ciphertext": b64("с файлом"), "iv": "aXY=", "attachment_id": fileID})
+		map[string]interface{}{"ciphertext": b64("с файлом"), "iv": "aXY=", "attachment_id": fileID, "protocol_version": 2})
 	if code != http.StatusCreated {
 		t.Fatalf("отправка с файлом: %d", code)
 	}
@@ -179,7 +179,7 @@ func TestFileUploadAttachSendDelete(t *testing.T) {
 
 	// Повторная привязка того же файла — 403 (файл уже занят).
 	code, _ = a.do(t, http.MethodPost, "/api/channels/"+strconv.FormatInt(ch, 10)+"/messages", u.token,
-		map[string]interface{}{"ciphertext": b64("дубль"), "iv": "aXY=", "attachment_id": fileID})
+		map[string]interface{}{"ciphertext": b64("дубль"), "iv": "aXY=", "attachment_id": fileID, "protocol_version": 2})
 	if code != http.StatusForbidden {
 		t.Fatalf("повторная привязка: ожидали 403, получили %d", code)
 	}
@@ -188,7 +188,7 @@ func TestFileUploadAttachSendDelete(t *testing.T) {
 	_, f2 := uploadFile(a, t, other.token, ch, "b.txt", []byte("other"))
 	fileID2 := int64(f2["id"].(float64))
 	code, _ = a.do(t, http.MethodPost, "/api/channels/"+strconv.FormatInt(ch, 10)+"/messages", u.token,
-		map[string]interface{}{"ciphertext": b64("чужой"), "iv": "aXY=", "attachment_id": fileID2})
+		map[string]interface{}{"ciphertext": b64("чужой"), "iv": "aXY=", "attachment_id": fileID2, "protocol_version": 2})
 	if code != http.StatusForbidden {
 		t.Fatalf("чужой файл: ожидали 403, получили %d", code)
 	}
