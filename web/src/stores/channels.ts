@@ -1,4 +1,4 @@
-// Каналы: список, создание, приглашения, участники, права.
+// Каналы: список, создание, приглашения, участники, права, ключи каналов.
 import { defineStore } from 'pinia'
 import { useSettingsStore } from './settings'
 import { toast } from 'vue-sonner'
@@ -6,6 +6,14 @@ import { useAuthStore } from './auth'
 import { useChatStore } from './chat'
 import { useCallStore } from './calls'
 import type { Channel, ChannelMember, Invite, Role } from '../api/types'
+import { getKeyStorage } from '../crypto/storage'
+import { generateChannelKey, wrapChannelKey, unwrapChannelKey, generateDeviceKeys, bytesToB64, b64ToBytes } from '../crypto/crypto'
+
+export interface KeyTarget {
+  user_id: number
+  device_id: string
+  public_key: string
+}
 
 export const useChannelsStore = defineStore('channels', {
   state: () => ({
@@ -14,6 +22,8 @@ export const useChannelsStore = defineStore('channels', {
     members: [] as ChannelMember[],
     banned: [] as { user_id: number; nick: string; ban_reason: string }[],
     invites: [] as Invite[],
+    deviceKeys: null as ReturnType<typeof generateDeviceKeys> | null,
+    keyPollTimer: 0 as number,
   }),
   getters: {
     current(): Channel | undefined {
@@ -27,18 +37,26 @@ export const useChannelsStore = defineStore('channels', {
     },
   },
   actions: {
+    ensureDevice(): ReturnType<typeof generateDeviceKeys> {
+      if (!this.deviceKeys) {
+        this.deviceKeys = generateDeviceKeys()
+      }
+      return this.deviceKeys
+    },
     async init() {
       const settings = useSettingsStore()
       const auth = useAuthStore()
+      const keys = this.ensureDevice()
+      await settings.api.uploadKey(keys.deviceId, bytesToB64(keys.publicKey))
       await this.refresh()
       await this.refreshInvites()
       auth.refreshUsers()
+      this.startKeyPoll()
+      await this.syncAllKeys()
       if (this.currentId) {
         try {
           await this.openChannel(this.currentId)
-        } catch {
-          /* канал откроется при клике */
-        }
+        } catch { /* канал откроется при клике */ }
       }
     },
     async refresh() {
@@ -57,6 +75,7 @@ export const useChannelsStore = defineStore('channels', {
       const ch = await settings.api.createChannel(name, isPrivate)
       await this.refresh()
       this.currentId = ch.id
+      await this.initChannelKey(ch.id)
       await this.openChannel(ch.id)
       return ch
     },
@@ -99,6 +118,8 @@ export const useChannelsStore = defineStore('channels', {
       this.members = await settings.api.listMembers(channelId)
       await this.loadBanned(channelId)
       await chat.loadHistory(channelId)
+      await this.syncKeys(channelId)
+      this.startKeyPoll()
       try {
         await useCallStore().refresh(channelId)
       } catch { /* ignore */ }
@@ -119,6 +140,73 @@ export const useChannelsStore = defineStore('channels', {
       chat.messages.delete(channelId)
       calls.endAllInChannel(channelId)
       await this.refresh()
+    },
+    async initChannelKey(channelId: number) {
+      const storage = await getKeyStorage()
+      const settings = useSettingsStore()
+      const keys = this.ensureDevice()
+      const existing = await storage.loadChannelKey(channelId)
+      if (existing) return
+      const key = generateChannelKey()
+      const wrapped = await wrapChannelKey(key, keys.publicKey)
+      await settings.api.uploadWrappedKey(channelId, Number(useAuthStore().user!.id), keys.deviceId, wrapped)
+      await storage.saveChannelKey(channelId, key)
+    },
+    async syncKeys(channelId: number) {
+      try {
+        const storage = await getKeyStorage()
+        const settings = useSettingsStore()
+        const auth = useAuthStore()
+        const keys = this.ensureDevice()
+        const ch = this.channels.find((c) => c.id === channelId)
+        const isMember = ch ? ch.is_member : this.members.some((m) => m.user_id === auth.user?.id)
+        if (auth.user && isMember) {
+          const res = await settings.api.getMyWrappedKey(channelId, keys.deviceId)
+          if (res.wrapped_key) {
+            const key = await unwrapChannelKey(b64ToBytes(res.wrapped_key), keys.privateKey)
+            const hadKey = await storage.loadChannelKey(channelId)
+            await storage.saveChannelKey(channelId, key)
+            if (!hadKey) {
+              const chat = useChatStore()
+              try { await chat.loadHistory(channelId) } catch { /* ignore */ }
+            }
+          }
+        }
+        const myKey = await storage.loadChannelKey(channelId)
+        if (!myKey) return
+        const targets: KeyTarget[] = await settings.api.pendingKeyTargets(channelId)
+        for (const target of targets) {
+          if (target.user_id === auth.user?.id && target.device_id === keys.deviceId) continue
+          const pub = b64ToBytes(target.public_key)
+          if (pub.length !== 32) continue
+          const wrapped = await wrapChannelKey(myKey, pub)
+          await settings.api.uploadWrappedKey(channelId, target.user_id, target.device_id, wrapped)
+        }
+      } catch { /* не критично */ }
+    },
+    async syncAllKeys() {
+      for (const ch of this.channels) {
+        const id = (ch.id as number)
+        if (id) await this.syncKeys(id)
+      }
+    },
+    startKeyPoll() {
+      if (this.keyPollTimer) return
+      this.keyPollTimer = window.setInterval(() => {
+        if (this.currentId) void this.syncKeys(this.currentId)
+      }, 7000)
+    },
+    async handleKeyNeeded(data: { channel_id: number; user_id: number; device_id: string; public_key: string }) {
+      if (data.channel_id !== this.currentId) return
+      const storage = await getKeyStorage()
+      const myKey = await storage.loadChannelKey(data.channel_id)
+      if (!myKey) return
+      const settings = useSettingsStore()
+      const wrapped = await wrapChannelKey(myKey, b64ToBytes(data.public_key))
+      await settings.api.uploadWrappedKey(data.channel_id, data.user_id, data.device_id, wrapped)
+    },
+    async handleKeyGranted(channelId: number) {
+      if (channelId === this.currentId) await this.syncKeys(channelId)
     },
     async handleInviteEvent(invite: Invite) {
       const toastId = toast(`Приглашение в канал «${invite.channel_name}» от ${invite.invited_by_nick}`, {
