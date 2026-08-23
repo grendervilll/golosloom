@@ -208,7 +208,7 @@ export const useChannelsStore = defineStore('channels', {
     async syncAllKeys() {
       for (const ch of this.channels) {
         const id = (ch.id as number)
-        if (id) await this.syncKeys(id)
+        if (id && ch.is_member) await this.syncKeys(id)
       }
     },
     startKeyPoll() {
