@@ -19,9 +19,19 @@ export class CentrifugeClient {
   private tokenProvider: TokenProvider | null = null
 
   connect(serverUrl: string, centrifugoUrl: string, connectionToken: string, tokenProvider?: TokenProvider) {
+    // Already connected with the same token — skip.
+    if (this.centrifuge && this.connectionToken === connectionToken) {
+      console.log('[centrifuge] already connected, skipping')
+      return
+    }
+    // Disconnect old connection before creating a new one.
+    if (this.centrifuge) {
+      this.shouldReconnect = false
+      this.centrifuge.disconnect()
+      this.centrifuge = null
+      this.shouldReconnect = true
+    }
     // centrifugoUrl from server is just the path (e.g. "/centrifugo").
-    // We need the full WebSocket URL with the server origin.
-    // In Electron, window.location.origin is file:// — use the configured server URL instead.
     let origin = serverUrl
     if (!origin && typeof window !== 'undefined' && window.location && window.location.origin !== 'null' && !window.location.origin.startsWith('file')) {
       origin = window.location.origin

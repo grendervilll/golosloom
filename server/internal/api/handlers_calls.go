@@ -484,6 +484,23 @@ func (s *Server) finishCall(call models.Call, reason string) {
 			"call_id": call.ID, "reason": reason,
 		},
 	})
+	// Также отправляем каждому участнику на личный канал (чтобы Electron гарантированно получил).
+	participants, _ := s.Store.CallParticipantIDs(call.ID)
+	for _, pid := range participants {
+		s.publishUser(pid, centrifugoEvent{
+			Type: "call.ended",
+			Data: map[string]interface{}{
+				"call_id": call.ID, "reason": reason,
+			},
+		})
+	}
+	// И инициатору (если он не в participants).
+	s.publishUser(call.InitiatorID, centrifugoEvent{
+		Type: "call.ended",
+		Data: map[string]interface{}{
+			"call_id": call.ID, "reason": reason,
+		},
+	})
 }
 
 func itoa(v int64) string {
