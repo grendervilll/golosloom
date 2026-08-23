@@ -169,6 +169,7 @@ export const useCallStore = defineStore('calls', {
         await settings.api.leaveCall(call.id)
       }
       await this.disconnectRoom()
+      sounds.stopAll()
       this.micOn = false
       this.camOn = false
       this.screenOn = false
