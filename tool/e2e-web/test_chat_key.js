@@ -7,22 +7,23 @@ const CHROME = '/Users/alex/Library/Caches/ms-playwright/chromium-1234/chrome-ma
 ;(async () => {
   const browser = await chromium.launch({ executablePath: CHROME, args: ['--no-sandbox'], headless: true })
   const ts = Date.now()
-  const msg = 'test_msg_' + ts
+  const msg1 = 'msg1_' + ts
+  const msg2 = 'msg2_' + ts
 
   // --- User1: register + create channel ---
   const p1 = await browser.newPage()
-  p1.on('console', m => { const t = m.text(); if (t.includes('channels') || t.includes('chat') || t.includes('key')) console.log('[p1]', t.slice(0, 200)) })
+  p1.on('console', m => { const t = m.text(); if (t.includes('chat') || t.includes('channels') || t.includes('key')) console.log('[p1]', t.slice(0, 200)) })
   await p1.goto(BASE, { waitUntil: 'load', timeout: 30000 })
   await p1.waitForTimeout(2000)
   await p1.getByText('Зарегистрироваться').first().click()
-  await p1.getByPlaceholder('Ваш ник').fill('chat1_' + ts)
+  await p1.getByPlaceholder('Ваш ник').fill('ch1_' + ts)
   await p1.getByPlaceholder('Пароль').first().fill(PASS)
   await p1.getByPlaceholder('Ещё раз').fill(PASS)
   await p1.getByRole('button', { name: 'Зарегистрироваться' }).click()
   await p1.waitForSelector('.sidebar', { timeout: 30000 })
-  await p1.waitForTimeout(20000) // wait for key upload + sync
+  await p1.waitForTimeout(20000) // wait for key upload
 
-  // Create channel
+  // Create a fresh channel
   await p1.click('.add-btn')
   await p1.waitForSelector('input[placeholder="Название канала"]')
   await p1.fill('input[placeholder="Название канала"]', 'chat-' + ts)
@@ -38,11 +39,11 @@ const CHROME = '/Users/alex/Library/Caches/ms-playwright/chromium-1234/chrome-ma
 
   // --- User2: register + join channel ---
   const p2 = await browser.newPage()
-  p2.on('console', m => { const t = m.text(); if (t.includes('channels') || t.includes('chat') || t.includes('key')) console.log('[p2]', t.slice(0, 200)) })
+  p2.on('console', m => { const t = m.text(); if (t.includes('chat') || t.includes('channels') || t.includes('key')) console.log('[p2]', t.slice(0, 200)) })
   await p2.goto(BASE, { waitUntil: 'load', timeout: 30000 })
   await p2.waitForTimeout(2000)
   await p2.getByText('Зарегистрироваться').first().click()
-  await p2.getByPlaceholder('Ваш ник').fill('chat2_' + ts)
+  await p2.getByPlaceholder('Ваш ник').fill('ch2_' + ts)
   await p2.getByPlaceholder('Пароль').first().fill(PASS)
   await p2.getByPlaceholder('Ещё раз').fill(PASS)
   await p2.getByRole('button', { name: 'Зарегистрироваться' }).click()
@@ -57,69 +58,55 @@ const CHROME = '/Users/alex/Library/Caches/ms-playwright/chromium-1234/chrome-ma
   await p2.reload({ waitUntil: 'load' })
   await p2.waitForTimeout(5000)
 
-  // Open channel
+  // Open the fresh channel (click last in sidebar which is the new one)
   await p2.locator('.chat-list .chat-row').last().click()
-  await p2.waitForTimeout(8000) // wait for key exchange + history load
-
-  // Check if p2 has key
-  const p2HasKey = await p2.evaluate(async (chId) => {
-    // Check if messages are decrypted (not encrypted placeholder)
-    const msgs = document.querySelectorAll('.message-text')
-    for (const m of msgs) {
-      if (m.textContent && !m.textContent.includes('[зашифровано]') && m.textContent.trim().length > 0) {
-        return true
-      }
-    }
-    return false
-  }, chId)
-  console.log('p2 has decrypted messages:', p2HasKey)
+  await p2.waitForTimeout(10000) // wait for key exchange + history load
 
   // --- User2 sends a message ---
-  const textarea = p2.locator('textarea').first()
-  await textarea.fill(msg)
-  await p2.locator('button[title="Отправить"], button:has(svg)').last().click()
+  const textarea2 = p2.locator('textarea').first()
+  await textarea2.fill(msg1)
+  await p2.locator('.send-btn').click()
   await p2.waitForTimeout(5000)
 
-  // Check if message appears in p2's chat
+  // Check if message appears in p2's chat (use .bubble selector)
   const p2sent = await p2.evaluate((msg) => {
-    const msgs = document.querySelectorAll('.message-text')
-    for (const m of msgs) {
-      if (m.textContent?.includes(msg)) return true
+    const bubbles = document.querySelectorAll('.bubble')
+    for (const b of bubbles) {
+      if (b.textContent?.includes(msg)) return true
     }
     return false
-  }, msg)
+  }, msg1)
   console.log('p2 sent message visible:', p2sent)
 
   // --- Check if p1 received the message ---
   await p1.waitForTimeout(5000)
   const p1received = await p1.evaluate((msg) => {
-    const msgs = document.querySelectorAll('.message-text')
-    for (const m of msgs) {
-      if (m.textContent?.includes(msg)) return true
+    const bubbles = document.querySelectorAll('.bubble')
+    for (const b of bubbles) {
+      if (b.textContent?.includes(msg)) return true
     }
     return false
-  }, msg)
+  }, msg1)
   console.log('p1 received message:', p1received)
 
   // --- User1 sends a message back ---
-  const p1msg = 'reply_' + ts
   const textarea1 = p1.locator('textarea').first()
-  await textarea1.fill(p1msg)
-  await p1.locator('button[title="Отправить"], button:has(svg)').last().click()
+  await textarea1.fill(msg2)
+  await p1.locator('.send-btn').click()
   await p1.waitForTimeout(5000)
 
   const p2receivedReply = await p2.evaluate((msg) => {
-    const msgs = document.querySelectorAll('.message-text')
-    for (const m of msgs) {
-      if (m.textContent?.includes(msg)) return true
+    const bubbles = document.querySelectorAll('.bubble')
+    for (const b of bubbles) {
+      if (b.textContent?.includes(msg)) return true
     }
     return false
-  }, p1msg)
+  }, msg2)
   console.log('p2 received reply:', p2receivedReply)
 
   // Summary
   console.log('---')
-  console.log('RESULT:', p2HasKey && p2sent && p1received && p2receivedReply ? 'PASS' : 'FAIL')
+  console.log('RESULT:', p2sent && p1received && p2receivedReply ? 'PASS' : 'FAIL')
 
   await browser.close()
 })().catch(e => console.error('ERROR:', e.message))
