@@ -3,6 +3,11 @@
   "private": true,
   "version": "2.5.0",
   "description": "Golosloom — голосовой сервер с чатом, звонками и демонстрацией экрана",
+  "author": {
+    "name": "grendervilll",
+    "email": "grendervilll@users.noreply.github.com"
+  },
+  "homepage": "https://github.com/grendervilll/golosloom",
   "main": "electron/main.js",
   "scripts": {
     "prebuild": "node scripts/copy-web-src.js",
