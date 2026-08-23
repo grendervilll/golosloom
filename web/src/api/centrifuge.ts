@@ -72,7 +72,12 @@ export class CentrifugeClient {
   // Subscribe to a Centrifugo channel using a subscription token.
   async subscribeChannel(channel: string, subscriptionToken: string): Promise<void> {
     if (this.subscriptions.has(channel)) return
-    if (!this.centrifuge) return
+    if (!this.centrifuge) {
+      console.log('[centrifuge] subscribeChannel: centrifuge not ready, queuing')
+      // Retry after a short delay
+      setTimeout(() => this.subscribeChannel(channel, subscriptionToken), 1000)
+      return
+    }
 
     const sub = this.centrifuge.newSubscription(channel, {
       token: subscriptionToken,

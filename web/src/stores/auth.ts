@@ -67,12 +67,20 @@ export const useAuthStore = defineStore('auth', {
             this.connected = true
             // Подписываемся на личный канал user:{id} для звонков и приглашений
             if (this.user) {
-              try {
-                const subRes = await settings.api.centrifugoSubscribe('user:' + this.user.id)
-                if (subRes?.token) {
-                  this.centrifuge.subscribeChannel('user:' + this.user.id, subRes.token)
-                }
-              } catch { /* ignore */ }
+              const subscribeToUser = async () => {
+                try {
+                  const subRes = await settings.api.centrifugoSubscribe('user:' + this.user!.id)
+                  if (subRes?.token) {
+                    this.centrifuge.subscribeChannel('user:' + this.user!.id, subRes.token)
+                  }
+                } catch { /* ignore */ }
+              }
+              // Retry until subscription succeeds (Centrifuge SDK queues subscriptions)
+              for (let i = 0; i < 5; i++) {
+                await subscribeToUser()
+                if (this.centrifuge['subscriptions']?.has('user:' + this.user.id)) break
+                await new Promise(r => setTimeout(r, 1000))
+              }
             }
             return
           }
