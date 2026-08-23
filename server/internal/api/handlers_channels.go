@@ -725,6 +725,18 @@ func (s *Server) handleGetMyWrappedKey(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{"wrapped_key": wrapped})
 }
 
+// handleRequestKey — существующий участник запрашивает распределение ключа канала
+// для своего устройства (новый браузер/девайс). Рассылает key.needed на канал,
+// чтобы держатели ключа обернули его для этого устройства.
+func (s *Server) handleRequestKey(w http.ResponseWriter, r *http.Request) {
+	channelID := pathID(r, "id")
+	if _, ok := s.requireChannelMember(w, r, channelID); !ok {
+		return
+	}
+	s.broadcastKeyNeeded(channelID, userIDFrom(r))
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
 func (s *Server) handlePendingKeyTargets(w http.ResponseWriter, r *http.Request) {
 	channelID := pathID(r, "id")
 	if _, ok := s.requireChannelMember(w, r, channelID); !ok {

@@ -253,6 +253,9 @@ export class ApiClient {
   pendingKeyTargets(channelId: number) {
     return this.get(`/api/channels/${channelId}/keys/pending`)
   }
+  requestKey(channelId: number) {
+    return this.post(`/api/channels/${channelId}/keys/request`, {})
+  }
   getKeyBackup(channelId: number) {
     return this.get(`/api/channels/${channelId}/keys/backup`)
   }

@@ -185,7 +185,11 @@ export const useChannelsStore = defineStore('channels', {
           }
         }
         const myKey = await storage.loadChannelKey(channelId)
-        if (!myKey) return
+        if (!myKey) {
+          // Ключа нет — запрашиваем у сервера, чтобы держатели ключа обернули его для нас.
+          try { await settings.api.requestKey(channelId) } catch { /* ignore */ }
+          return
+        }
         const targets: KeyTarget[] = await settings.api.pendingKeyTargets(channelId)
         for (const target of targets) {
           if (target.user_id === auth.user?.id && target.device_id === keys.deviceId) continue
