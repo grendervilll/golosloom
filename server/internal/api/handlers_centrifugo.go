@@ -34,8 +34,8 @@ func (s *Server) handleCentrifugoToken(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleCentrifugoSubscribe — POST /api/centrifugo/subscribe
-// Issues a Centrifugo subscription token for a specific channel after
-// verifying the user is a member of that channel.
+// Issues a Centrifugo subscription token for a specific channel.
+// Supports both "channel:{id}" and "user:{id}" formats.
 func (s *Server) handleCentrifugoSubscribe(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Channel string `json:"channel"`
@@ -50,15 +50,23 @@ func (s *Server) handleCentrifugoSubscribe(w http.ResponseWriter, r *http.Reques
 	}
 	userID := userIDFrom(r)
 
-	// Verify channel membership.
-	// Channel format: "channel:{id}" -> extract ID.
-	channelID, err := strconv.ParseInt(trimChannelPrefix(req.Channel), 10, 64)
-	if err != nil {
-		writeErr(w, http.StatusBadRequest, "неверный формат канала")
-		return
-	}
-	if _, ok := s.requireChannelMember(w, r, channelID); !ok {
-		return
+	// For "user:{id}" channels, only the owner can subscribe.
+	if len(req.Channel) > 5 && req.Channel[:5] == "user:" {
+		channelUserID, err := strconv.ParseInt(req.Channel[5:], 10, 64)
+		if err != nil || channelUserID != userID {
+			writeErr(w, http.StatusForbidden, "нет доступа к этому каналу")
+			return
+		}
+	} else {
+		// For "channel:{id}" channels, verify membership.
+		channelID, err := strconv.ParseInt(trimChannelPrefix(req.Channel), 10, 64)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "неверный формат канала")
+			return
+		}
+		if _, ok := s.requireChannelMember(w, r, channelID); !ok {
+			return
+		}
 	}
 
 	token, err := centrifugo.GenerateSubscriptionToken(

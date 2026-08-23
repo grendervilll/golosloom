@@ -25,9 +25,8 @@ export class CentrifugeClient {
 
   private open() {
     if (!this.baseUrl || !this.connectionToken) return
-    // Centrifuge JS connects via WebSocket to the Centrifugo endpoint.
-    // The URL must be ws(s)://host/centrifugo for WebSocket transport.
     const wsUrl = this.baseUrl.replace(/^http/, 'ws') + '/connection/websocket'
+    console.log('[centrifuge] connecting to:', wsUrl)
     this.centrifuge = new Centrifuge(wsUrl, {
       token: this.connectionToken,
       getToken: () => Promise.resolve(this.connectionToken),
@@ -41,13 +40,15 @@ export class CentrifugeClient {
     })
 
     this.centrifuge.on('subscribed', (ctx: any) => {
-      // Channel subscribed successfully
+      console.log('[centrifuge] subscribed to:', ctx?.channel || 'unknown')
     })
 
     this.centrifuge.on('disconnected', () => {
-      if (this.shouldReconnect) {
-        // Centrifuge SDK handles reconnection automatically
-      }
+      console.log('[centrifuge] disconnected')
+    })
+
+    this.centrifuge.on('connected', () => {
+      console.log('[centrifuge] connected')
     })
 
     this.centrifuge.connect()
