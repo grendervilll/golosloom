@@ -1,6 +1,7 @@
 package api
 
 import (
+	"log"
 	"net/http"
 	"time"
 
@@ -181,18 +182,19 @@ func (s *Server) handleJoinChannel(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "пользователь не найден")
 		return
 	}
-	if u.IsServerAdmin {
-		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
-		return
-	}
+	// Проверяем, не забанен ли пользователь (даже админы).
 	if m, err := s.Store.GetMember(id, u.ID); err == nil {
 		if m.Banned {
 			writeErr(w, http.StatusForbidden, "пользователь забанен в канале")
 			return
 		}
+		// Уже участник — ключ мог не дойти (новое устройство, сбой доставки).
+		// Повторно рассылаем key.needed чтобы держатели ключа обернули его.
+		s.broadcastKeyNeeded(id, u.ID)
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 		return
 	}
+	// Новый участник: добавляем в БМ.
 	if err := s.Store.AddMember(id, u.ID, models.RoleUser); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -207,8 +209,10 @@ func (s *Server) handleJoinChannel(w http.ResponseWriter, r *http.Request) {
 func (s *Server) broadcastKeyNeeded(channelID, userID int64) {
 	devices, err := s.Store.UserDevices(userID)
 	if err != nil {
+		log.Printf("[key] broadcastKeyNeeded ch=%d user=%d → UserDevices error: %v", channelID, userID, err)
 		return
 	}
+	log.Printf("[key] broadcastKeyNeeded ch=%d user=%d → %d devices", channelID, userID, len(devices))
 	for _, d := range devices {
 		s.publishChannel(channelID, centrifugoEvent{
 			Type: "key.needed",
@@ -679,11 +683,13 @@ func (s *Server) handleUploadWrappedKey(w http.ResponseWriter, r *http.Request) 
 	// Цель должна быть участником канала, а обёрнутый ключ загружает участник.
 	target, err := s.Store.GetDevice(req.UserID, req.DeviceID)
 	if err != nil {
+		log.Printf("[key] uploadWrappedKey ch=%d target=%d dev=%s → device not found", channelID, req.UserID, req.DeviceID)
 		writeErr(w, http.StatusBadRequest, "устройство цели не найдено")
 		return
 	}
 	_ = target
 	if !s.Store.IsMember(channelID, req.UserID) {
+		log.Printf("[key] uploadWrappedKey ch=%d target=%d → NOT A MEMBER", channelID, req.UserID)
 		writeErr(w, http.StatusBadRequest, "цель не является участником канала")
 		return
 	}
@@ -730,10 +736,14 @@ func (s *Server) handleGetMyWrappedKey(w http.ResponseWriter, r *http.Request) {
 // чтобы держатели ключа обернули его для этого устройства.
 func (s *Server) handleRequestKey(w http.ResponseWriter, r *http.Request) {
 	channelID := pathID(r, "id")
+	userID := userIDFrom(r)
+	log.Printf("[key] requestKey ch=%d user=%d", channelID, userID)
 	if _, ok := s.requireChannelMember(w, r, channelID); !ok {
+		log.Printf("[key] requestKey ch=%d user=%d → NOT A MEMBER", channelID, userID)
 		return
 	}
-	s.broadcastKeyNeeded(channelID, userIDFrom(r))
+	s.broadcastKeyNeeded(channelID, userID)
+	log.Printf("[key] requestKey ch=%d user=%d → broadcastKeyNeeded sent", channelID, userID)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 

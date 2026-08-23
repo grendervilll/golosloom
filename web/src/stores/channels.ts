@@ -170,19 +170,20 @@ export const useChannelsStore = defineStore('channels', {
         const settings = useSettingsStore()
         const auth = useAuthStore()
         const keys = this.ensureDevice()
-        const ch = this.channels.find((c) => c.id === channelId)
-        const isMember = ch ? ch.is_member : this.members.some((m) => m.user_id === auth.user?.id)
-        if (auth.user && isMember) {
-          const res = await settings.api.getMyWrappedKey(channelId, keys.deviceId)
-          if (res.wrapped_key) {
-            const key = await unwrapChannelKey(b64ToBytes(res.wrapped_key), keys.privateKey)
-            const hadKey = await storage.loadChannelKey(channelId)
-            await storage.saveChannelKey(channelId, key)
-            if (!hadKey) {
-              const chat = useChatStore()
-              try { await chat.loadHistory(channelId) } catch { /* ignore */ }
+        // Всегда пытаемся скачать свой обёрнутый ключ (сервер отклонит, если не участник).
+        if (auth.user) {
+          try {
+            const res = await settings.api.getMyWrappedKey(channelId, keys.deviceId)
+            if (res.wrapped_key) {
+              const key = await unwrapChannelKey(b64ToBytes(res.wrapped_key), keys.privateKey)
+              const hadKey = await storage.loadChannelKey(channelId)
+              await storage.saveChannelKey(channelId, key)
+              if (!hadKey) {
+                const chat = useChatStore()
+                try { await chat.loadHistory(channelId) } catch { /* ignore */ }
+              }
             }
-          }
+          } catch { /* не участник или сеть — игнорируем */ }
         }
         const myKey = await storage.loadChannelKey(channelId)
         if (!myKey) {
