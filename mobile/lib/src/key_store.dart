@@ -11,6 +11,7 @@
 library;
 
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
@@ -55,7 +56,7 @@ class KeyStore {
     final pub = await _storage.read(key: 'ik_pub');
     final priv = await _storage.read(key: 'ik_priv');
     if (pub == null || priv == null) return null;
-    return IdentityKeyPair(publicKey: b64ToBytes(pub), privateKey: b64ToBytes(priv));
+    return IdentityKeyPair(publicKey: Uint8List.fromList(b64ToBytes(pub)), privateKey: Uint8List.fromList(b64ToBytes(priv)));
   }
 
   Future<void> deleteIdentityKeyPair() async {
@@ -74,7 +75,7 @@ class KeyStore {
     final pub = await _storage.read(key: 'spk_pub');
     final priv = await _storage.read(key: 'spk_priv');
     if (pub == null || priv == null) return null;
-    return SignedPreKey(publicKey: b64ToBytes(pub), privateKey: b64ToBytes(priv));
+    return SignedPreKey(publicKey: Uint8List.fromList(b64ToBytes(pub)), privateKey: Uint8List.fromList(b64ToBytes(priv)));
   }
 
   Future<void> deleteSignedPreKey() async {
@@ -93,7 +94,7 @@ class KeyStore {
     final pub = await _storage.read(key: 'opk_${index}_pub');
     final priv = await _storage.read(key: 'opk_${index}_priv');
     if (pub == null || priv == null) return null;
-    return OneTimePreKey(publicKey: b64ToBytes(pub), privateKey: b64ToBytes(priv));
+    return OneTimePreKey(publicKey: Uint8List.fromList(b64ToBytes(pub)), privateKey: Uint8List.fromList(b64ToBytes(priv)));
   }
 
   Future<void> deleteOneTimePreKey(int index) async {

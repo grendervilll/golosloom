@@ -341,7 +341,7 @@ class ChatStore extends ChangeNotifier {
             final ivBytes = Uint8List.fromList(b64ToBytes((d['iv'] as String?) ?? ''));
             final msgNumber = (d['message_number'] as num?)?.toInt() ?? 0;
             text = await decryptSenderKeyMessage(
-              senderKeyData['chainKey'] as List<int>,
+              Uint8List.fromList(senderKeyData['chainKey'] as List<int>),
               ciphertext,
               ivBytes,
               msgNumber,
