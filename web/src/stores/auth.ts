@@ -57,9 +57,11 @@ export const useAuthStore = defineStore('auth', {
     async connect() {
       const settings = useSettingsStore()
       await settings.loadConfig()
+      console.log('[auth] connect: centrifugo_url =', settings.serverConfig?.centrifugo_url)
       if (settings.serverConfig?.centrifugo_url) {
         try {
           const tokenRes = await settings.api.centrifugoToken()
+          console.log('[auth] centrifugo token:', tokenRes?.token ? 'OK' : 'FAIL')
           if (tokenRes?.token) {
             try {
               this.centrifuge.connect(settings.serverConfig.centrifugo_url, tokenRes.token)
@@ -67,20 +69,20 @@ export const useAuthStore = defineStore('auth', {
             this.connected = true
             // Подписываемся на личный канал user:{id} для звонков и приглашений
             if (this.user) {
-              const subscribeToUser = async () => {
+              console.log('[auth] subscribing to user:' + this.user.id)
+              for (let i = 0; i < 10; i++) {
                 try {
                   const subRes = await settings.api.centrifugoSubscribe('user:' + this.user!.id)
                   if (subRes?.token) {
                     this.centrifuge.subscribeChannel('user:' + this.user!.id, subRes.token)
+                    console.log('[auth] user channel subscribed')
+                    break
                   }
-                } catch { /* ignore */ }
-              }
-              // Retry until subscription succeeds (Centrifuge SDK queues subscriptions)
-              for (let i = 0; i < 5; i++) {
-                await subscribeToUser()
-                if (this.centrifuge['subscriptions']?.has('user:' + this.user.id)) break
+                } catch (e) { console.log('[auth] subscribe error:', e) }
                 await new Promise(r => setTimeout(r, 1000))
               }
+            } else {
+              console.log('[auth] user is null, cannot subscribe')
             }
             return
           }
