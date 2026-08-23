@@ -62,7 +62,8 @@ function wireWs() {
       if (c2) c2.participants = d.participants
     }),
     c.on('call.invite.timeout', (d: any) => {
-      calls.stopIncoming(d.call_id)
+      // Для исходящего — гасит гудки, для входящего — гасит звонок.
+      calls.handleInviteTimeout(d.call_id)
       toast.info('Вызов не принят, звонок отклонён автоматически')
     }),
     c.on('punch', (d: any) => calls.handlePunch(d)),

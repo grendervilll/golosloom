@@ -22,11 +22,41 @@ func withCORS(s *Server, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
 		allowed := false
+		// Explicit wildcard or exact match.
 		for _, o := range s.Cfg.AllowOrigins {
 			if o == "*" || strings.EqualFold(o, origin) {
 				allowed = true
 				break
 			}
+			// Prefix wildcard like "capacitor://*" or "tauri://*"
+			if strings.HasSuffix(o, "*") {
+				prefix := strings.TrimSuffix(o, "*")
+				if strings.HasPrefix(origin, prefix) {
+					allowed = true
+					break
+				}
+			}
+		}
+		// Electron and some WebViews use file:// or null origin — always allow
+		// them because the API is authenticated via Bearer token, not cookies.
+		if !allowed && (origin == "" || origin == "null" || strings.HasPrefix(origin, "file://") ||
+			strings.HasPrefix(origin, "capacitor://") || strings.HasPrefix(origin, "tauri://")) {
+			allowed = true
+			// For null/file origins, use "*" but without credentials, or echo origin
+			// if present; for file:// we echo the origin.
+			if origin == "" || origin == "null" {
+				w.Header().Set("Access-Control-Allow-Origin", "*")
+			} else {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+			}
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
+			if r.Method == http.MethodOptions {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			next.ServeHTTP(w, r)
+			return
 		}
 		if allowed {
 			w.Header().Set("Access-Control-Allow-Origin", origin)

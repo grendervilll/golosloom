@@ -64,19 +64,19 @@ func (s *Server) reconcileCalls(absent map[int64]time.Time) {
 			}
 		}
 		if len(remove) == 0 {
-			// Даже без удаления: одиночный звонок (в комнате один участник,
-			// никто не ждёт ответа) завершаем автоматически.
+			// Даже без удаления: одиночный звонок с одним живым участником
+			// и без ожидающих завершаем автоматически. Пустые (0 в LiveKit)
+			// звонки чистятся через механизм absent (60с) и затем maybeFinish.
 			presentCount := 0
 			for _, uid := range ids {
 				if present[uid] {
 					presentCount++
 				}
 			}
-			if presentCount <= 1 {
+			if presentCount == 1 {
 				ringing, _ := s.Store.RingingInvites(c.ID)
-				if presentCount == 0 || len(ringing) == 0 {
+				if len(ringing) == 0 {
 					s.maybeFinishSoloCall(&c)
-					continue
 				}
 			}
 			continue

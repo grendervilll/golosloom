@@ -44,20 +44,20 @@
 		reverse_proxy server:8080
 	}
 
-	# Centrifugo: WebSocket + HTTP streaming для клиентов
-	handle /centrifugo {
-		reverse_proxy centrifugo:8000
-	}
-	handle /centrifugo/* {
-		reverse_proxy centrifugo:8000
-	}
-
 	# Блокировка админ-панели Centrifugo из интернета (только SSH-туннель)
 	handle /centrifugo/admin {
 		respond 403
 	}
 	handle /centrifugo/admin/* {
 		respond 403
+	}
+
+	# Centrifugo: WebSocket + HTTP streaming для клиентов
+	handle_path /centrifugo/* {
+		reverse_proxy centrifugo:8000
+	}
+	handle /centrifugo {
+		reverse_proxy centrifugo:8000
 	}
 
 	# SPA

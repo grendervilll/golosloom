@@ -212,7 +212,7 @@ VAPID_PUBLIC_KEY=$VAPID_PUBLIC_KEY
 VAPID_PRIVATE_KEY=$VAPID_PRIVATE_KEY
 VAPID_SUBJECT=mailto:admin@$DOMAIN
 TURN_URLS=turn:$DOMAIN:3478?transport=udp,turn:$DOMAIN:3478?transport=tcp
-ALLOW_ORIGINS=https://$DOMAIN,http://localhost:5173
+ALLOW_ORIGINS=https://$DOMAIN,http://localhost:5173,http://localhost:3000,tauri://localhost,http://tauri.localhost,file://,null,capacitor://*,tauri://*
 DATA_DIR=$DATA_DIR
 LIVEKIT_CONFIG=$LIVEKIT_CONFIG
 FCM_SERVICE_ACCOUNT_FILE=/fcm-service-account.json
@@ -298,7 +298,20 @@ config = {
     'api_key': sys.argv[1],
     'admin_key': sys.argv[2],
     'token_hmac_secret_key': sys.argv[3],
-    'allowed_origins': ['https://' + sys.argv[4], 'http://localhost:5173', 'http://localhost:3000'],
+    # Electron uses file:// origin, and some WebViews use null/capacitor/tauri schemes.
+    # Allow all common origins to support web + desktop + mobile without strict restriction.
+    'allowed_origins': [
+        'https://' + sys.argv[4],
+        'http://localhost:5173',
+        'http://localhost:3000',
+        'file://',
+        'null',
+        'capacitor://*',
+        'tauri://*',
+        'http://tauri.localhost',
+        'https://tauri.localhost',
+        '*',
+    ],
     'namespaces': [
         {'name': 'channel', 'presence': True, 'join_leave': True, 'history_size': 100, 'history_ttl': '24h', 'allow_publish_for_subscriber': False},
         {'name': 'user', 'presence': False, 'join_leave': False, 'history_size': 0, 'allow_publish_for_subscriber': False},

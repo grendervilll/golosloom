@@ -605,6 +605,19 @@ export const useCallStore = defineStore('calls', {
     handleCallDeclined(data: { call_id: number; user_id: number }) {
       const c = this.calls.find((x) => x.id === data.call_id)
       if (c) c.participants = c.participants.filter((id) => id !== data.user_id)
+      // Если звонок был исходящим и больше некому звонить, останавливаем гудки.
+      // Сервер также пришлёт call.invite.timeout, но на случай потери события — дублируем здесь.
+      const ringing = this.calls.find((x) => x.id === data.call_id && x.ringing)
+      if (ringing) sounds.stopDialTone()
+    },
+    handleInviteTimeout(callId: number) {
+      // Входящий — гасим звонок, исходящий — гасим гудки.
+      const c = this.calls.find((x) => x.id === callId)
+      if (c?.incoming) this.stopIncoming(callId)
+      if (c?.ringing) sounds.stopDialTone()
+      // Для входящих, которые не являются текущим ringingCall, всё равно глушим.
+      sounds.stopRing()
+      if (c?.ringing) sounds.stopDialTone()
     },
     handleCallCreated() {
       // Обновляем список звонков канала (для кнопки «Войти в звонок»):

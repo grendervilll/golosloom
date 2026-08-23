@@ -108,7 +108,8 @@ class SoundManager {
     }
   }
 
-  // Звук дозвона у звонящего — пока звонок не принят.
+  // Звук дозвона у звонящего — пока звонок не принят, максимум 20 секунд.
+  private dialStopTimer: number | null = null
   playDialTone(): void {
     if (this.dialTimer !== null) return
     const schedule = () => {
@@ -117,12 +118,19 @@ class SoundManager {
     }
     this.dialTimer = window.setInterval(schedule, 850)
     schedule()
+    // Авто-остановка через 20 секунд (RingTimeout), как и у входящего звонка.
+    if (this.dialStopTimer !== null) clearTimeout(this.dialStopTimer)
+    this.dialStopTimer = window.setTimeout(() => this.stopDialTone(), 20000)
   }
 
   stopDialTone(): void {
     if (this.dialTimer !== null) {
       clearInterval(this.dialTimer)
       this.dialTimer = null
+    }
+    if (this.dialStopTimer !== null) {
+      clearTimeout(this.dialStopTimer)
+      this.dialStopTimer = null
     }
   }
 

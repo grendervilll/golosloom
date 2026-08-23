@@ -19,15 +19,18 @@ export class CentrifugeClient {
   private tokenProvider: TokenProvider | null = null
 
   connect(serverUrl: string, centrifugoUrl: string, connectionToken: string, tokenProvider?: TokenProvider) {
-    // Already connected with the same token — skip.
+    // Already connected/connecting with same token — skip, but allow reconnect after disconnect.
     if (this.centrifuge && this.connectionToken === connectionToken) {
-      console.log('[centrifuge] already connected, skipping')
-      return
+      const state = (this.centrifuge as any).state
+      if (state === 'connected' || state === 'connecting') {
+        console.log('[centrifuge] already connected/connecting, skipping')
+        return
+      }
     }
     // Disconnect old connection before creating a new one.
     if (this.centrifuge) {
       this.shouldReconnect = false
-      this.centrifuge.disconnect()
+      try { this.centrifuge.disconnect() } catch {}
       this.centrifuge = null
       this.shouldReconnect = true
     }

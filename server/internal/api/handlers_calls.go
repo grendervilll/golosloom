@@ -185,6 +185,17 @@ func (s *Server) autoDeclineRinging(callID int64) {
 	if !changed {
 		return
 	}
+	// Уведомляем инициатора и канал, что ringing фаза завершилась — нужно
+	// остановить гудки дозвона, но сам звонок (ringing с одним участником)
+	// остаётся для "Войти в звонок".
+	s.publishUser(call.InitiatorID, centrifugoEvent{
+		Type: "call.invite.timeout",
+		Data: map[string]int64{"call_id": callID},
+	})
+	s.publishChannel(call.ChannelID, centrifugoEvent{
+		Type: "call.invite.timeout",
+		Data: map[string]int64{"call_id": callID},
+	})
 	// Если в звонке остался один участник (или никого) и никто больше
 	// не звонит — звонок завершается.
 	s.maybeFinishSoloCall(call)
@@ -192,8 +203,9 @@ func (s *Server) autoDeclineRinging(callID int64) {
 
 // maybeFinishSoloCall завершает активный звонок, в котором не осталось
 // собеседников: меньше двух участников и никто не ждёт ответа на приглашение.
-// Звонок в статусе "ringing" (ещё никто не ответил) остаётся жить —
-// приглашённые могут войти позже через «Войти в звонок».
+// Звонок в статусе "ringing" (ещё никто не ответил) остаётся жить для
+// "Войти в звонок", но не вечно — через 5 минут после создания завершается
+// автоматически, чтобы не плодить зомби.
 func (s *Server) maybeFinishSoloCall(call *models.Call) {
 	if call.Status == models.CallEnded {
 		return
@@ -205,9 +217,17 @@ func (s *Server) maybeFinishSoloCall(call *models.Call) {
 	}
 	if count == 1 {
 		ringing, _ := s.Store.RingingInvites(call.ID)
-		if len(ringing) > 0 || call.Status == models.CallRinging {
-			return // ждём ответа на приглашение или выхода инициатора
+		if len(ringing) > 0 {
+			return // ждём ответа на приглашение
 		}
+		if call.Status == models.CallRinging {
+			// Ringing с одним участником и без ожидающих — живёт для "Войти",
+			// но не дольше 5 минут, иначе звонок становится зомби.
+			if time.Since(call.CreatedAt) < 5*time.Minute {
+				return
+			}
+		}
+		// Active с одним участником и без ringing — завершаем сразу.
 		s.finishCall(*call, "в звонке остался один участник")
 	}
 }
@@ -355,6 +375,18 @@ func (s *Server) handleDeclineCall(w http.ResponseWriter, r *http.Request) {
 			"call_id": callID, "user_id": userIDFrom(r),
 		},
 	})
+	// Если больше никто не звонит — останавливаем гудки у инициатора,
+	// но сам звонок (ringing с одним участником) остаётся для "Войти".
+	if ringing, _ := s.Store.RingingInvites(callID); len(ringing) == 0 {
+		s.publishUser(call.InitiatorID, centrifugoEvent{
+			Type: "call.invite.timeout",
+			Data: map[string]int64{"call_id": callID},
+		})
+		s.publishChannel(call.ChannelID, centrifugoEvent{
+			Type: "call.invite.timeout",
+			Data: map[string]int64{"call_id": callID},
+		})
+	}
 	// Если в звонке остался один участник и больше никто не звонит —
 	// звонок бессмыслен, завершаем его (иначе инициатор сидел бы в
 	// одиночестве в вечно «активном» звонке).
