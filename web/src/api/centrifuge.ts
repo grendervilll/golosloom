@@ -4,16 +4,21 @@ import { Centrifuge, type Subscription } from 'centrifuge'
 import type { WSEvent } from './types'
 
 export type EventHandler = (data: any) => void
+// Callback to get a fresh subscription token for a channel (called on reconnect).
+export type TokenProvider = (channel: string) => Promise<string | null>
 
 export class CentrifugeClient {
   private centrifuge: Centrifuge | null = null
   private handlers = new Map<string, Set<EventHandler>>()
   private subscriptions = new Map<string, Subscription>()
+  // Store channel names and token providers for re-subscription on reconnect.
+  private channelTokens = new Map<string, TokenProvider>()
   private baseUrl = ''
   private connectionToken = ''
   private shouldReconnect = true
+  private tokenProvider: TokenProvider | null = null
 
-  connect(serverUrl: string, centrifugoUrl: string, connectionToken: string) {
+  connect(serverUrl: string, centrifugoUrl: string, connectionToken: string, tokenProvider?: TokenProvider) {
     // centrifugoUrl from server is just the path (e.g. "/centrifugo").
     // We need the full WebSocket URL with the server origin.
     // In Electron, window.location.origin is file:// — use the configured server URL instead.
@@ -23,6 +28,7 @@ export class CentrifugeClient {
     }
     this.baseUrl = origin.replace(/\/$/, '') + centrifugoUrl
     this.connectionToken = connectionToken
+    this.tokenProvider = tokenProvider || null
     this.shouldReconnect = true
     this.open()
   }
@@ -37,7 +43,7 @@ export class CentrifugeClient {
     })
 
     this.centrifuge.on('publication', (ctx: any) => {
-      const ev = ctx?.data || ctx?.pub?.data
+      const ev = ctx?.pub?.data || ctx?.data
       if (ev && typeof ev === 'object' && ev.type) {
         this.dispatch(ev.type, ev.data)
       }
@@ -47,12 +53,13 @@ export class CentrifugeClient {
       console.log('[centrifuge] subscribed to:', ctx?.channel || 'unknown')
     })
 
-    this.centrifuge.on('disconnected', () => {
-      console.log('[centrifuge] disconnected')
+    this.centrifuge.on('disconnected', (ctx: any) => {
+      console.log('[centrifuge] disconnected', ctx?.code, ctx?.reason)
     })
 
     this.centrifuge.on('connected', () => {
-      console.log('[centrifuge] connected')
+      console.log('[centrifuge] connected — re-subscribing', this.channelTokens.size, 'channels')
+      this.resubscribeAll()
     })
 
     this.centrifuge.connect()
@@ -64,6 +71,7 @@ export class CentrifugeClient {
       sub.unsubscribe()
     }
     this.subscriptions.clear()
+    this.channelTokens.clear()
     this.centrifuge?.disconnect()
     this.centrifuge = null
   }
@@ -75,7 +83,8 @@ export class CentrifugeClient {
   }
 
   // Subscribe to a Centrifugo channel using a subscription token.
-  async subscribeChannel(channel: string, subscriptionToken: string): Promise<void> {
+  // tokenProvider is saved for re-subscription on reconnect.
+  async subscribeChannel(channel: string, subscriptionToken: string, tokenProvider?: TokenProvider): Promise<void> {
     if (this.subscriptions.has(channel)) {
       console.log('[centrifuge] subscribeChannel: already subscribed to', channel)
       return
@@ -87,6 +96,12 @@ export class CentrifugeClient {
         console.log('[centrifuge] subscribeChannel: still not ready, giving up')
         return
       }
+    }
+
+    // Save for reconnection
+    const provider = tokenProvider || this.tokenProvider
+    if (provider) {
+      this.channelTokens.set(channel, provider)
     }
 
     console.log('[centrifuge] subscribeChannel:', channel)
@@ -107,6 +122,10 @@ export class CentrifugeClient {
       console.log('[centrifuge] SUBSCRIBED to', channel, ctx)
     })
 
+    sub.on('subscriptionError', (ctx: any) => {
+      console.error('[centrifuge] subscriptionError on', channel, ctx)
+    })
+
     sub.subscribe()
     this.subscriptions.set(channel, sub)
   }
@@ -117,6 +136,31 @@ export class CentrifugeClient {
     if (sub) {
       sub.unsubscribe()
       this.subscriptions.delete(channel)
+    }
+    this.channelTokens.delete(channel)
+  }
+
+  // Re-subscribe all channels after reconnection with fresh tokens.
+  private async resubscribeAll() {
+    for (const [channel, provider] of this.channelTokens) {
+      try {
+        const freshToken = await provider(channel)
+        if (!freshToken) {
+          console.error('[centrifuge] resubscribeAll: no token for', channel)
+          continue
+        }
+        // Remove old subscription
+        const old = this.subscriptions.get(channel)
+        if (old) {
+          try { old.unsubscribe() } catch {}
+          this.subscriptions.delete(channel)
+        }
+        // Subscribe with fresh token
+        await this.subscribeChannel(channel, freshToken, provider)
+        console.log('[centrifuge] resubscribed to', channel)
+      } catch (e) {
+        console.error('[centrifuge] resubscribeAll failed for', channel, e)
+      }
     }
   }
 

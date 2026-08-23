@@ -93,7 +93,8 @@ export const useChannelsStore = defineStore('channels', {
       try {
         const subRes = await settings.api.centrifugoSubscribe('channel:' + channelId)
         if (subRes?.token) {
-          auth.centrifuge.subscribeChannel('channel:' + channelId, subRes.token)
+          const chTP2 = async (ch: string) => { try { const r = await settings.api.centrifugoSubscribe(ch); return r?.token || null } catch { return null } }
+          auth.centrifuge.subscribeChannel('channel:' + channelId, subRes.token, chTP2)
         }
       } catch { /* channel subscription failed */ }
       await this.refresh()
@@ -113,7 +114,8 @@ export const useChannelsStore = defineStore('channels', {
       try {
         const subRes = await settings.api.centrifugoSubscribe('channel:' + channelId)
         if (subRes?.token) {
-          auth.centrifuge.subscribeChannel('channel:' + channelId, subRes.token)
+          const chTP = async (ch: string) => { try { const r = await settings.api.centrifugoSubscribe(ch); return r?.token || null } catch { return null } }
+          auth.centrifuge.subscribeChannel('channel:' + channelId, subRes.token, chTP)
         }
       } catch { /* channel subscription failed */ }
       this.members = await settings.api.listMembers(channelId)

@@ -316,6 +316,11 @@ func (s *Server) handleAcceptCall(w http.ResponseWriter, r *http.Request) {
 			Type: "call.started",
 			Data: map[string]int64{"call_id": callID},
 		})
+		// Также отправляем инициатору на личный канал (если не подписан на канал).
+		s.publishUser(call.InitiatorID, centrifugoEvent{
+			Type: "call.started",
+			Data: map[string]int64{"call_id": callID},
+		})
 	}
 	s.broadcastParticipants(callID)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -401,6 +406,10 @@ func (s *Server) handleJoinCall(w http.ResponseWriter, r *http.Request) {
 	if call.Status == models.CallRinging {
 		_ = s.Store.UpdateCallStatus(callID, models.CallActive)
 		s.publishChannel(call.ChannelID, centrifugoEvent{
+			Type: "call.started",
+			Data: map[string]int64{"call_id": callID},
+		})
+		s.publishUser(call.InitiatorID, centrifugoEvent{
 			Type: "call.started",
 			Data: map[string]int64{"call_id": callID},
 		})

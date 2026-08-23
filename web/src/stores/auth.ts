@@ -63,8 +63,15 @@ export const useAuthStore = defineStore('auth', {
           const tokenRes = await settings.api.centrifugoToken()
           console.log('[auth] centrifugo token:', tokenRes?.token ? 'OK' : 'FAIL')
           if (tokenRes?.token) {
+            // Token provider: gets a fresh subscription token for any channel on reconnect.
+            const tokenProvider = async (channel: string): Promise<string | null> => {
+              try {
+                const res = await settings.api.centrifugoSubscribe(channel)
+                return res?.token || null
+              } catch { return null }
+            }
             try {
-              this.centrifuge.connect(settings.serverUrl, settings.serverConfig.centrifugo_url, tokenRes.token)
+              this.centrifuge.connect(settings.serverUrl, settings.serverConfig.centrifugo_url, tokenRes.token, tokenProvider)
             } catch { /* Centrifuge SDK error */ }
             this.connected = true
             // Подписываемся на личный канал user:{id} для звонков и приглашений
@@ -74,7 +81,7 @@ export const useAuthStore = defineStore('auth', {
                 try {
                   const subRes = await settings.api.centrifugoSubscribe('user:' + this.user!.id)
                   if (subRes?.token) {
-                    this.centrifuge.subscribeChannel('user:' + this.user!.id, subRes.token)
+                    this.centrifuge.subscribeChannel('user:' + this.user!.id, subRes.token, tokenProvider)
                     console.log('[auth] user channel subscribed')
                     break
                   }
