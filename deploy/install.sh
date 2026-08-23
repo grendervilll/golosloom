@@ -292,52 +292,25 @@ gen_centrifugo_config() {
   centrifugo_secret="$(grep '^CENTRIFUGO_SECRET=' "$DEPLOY_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2-)"
   vapid_pub="$(grep '^VAPID_PUBLIC_KEY=' "$DEPLOY_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2-)"
   vapid_priv="$(grep '^VAPID_PRIVATE_KEY=' "$DEPLOY_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2-)"
-  cat > "$DEPLOY_DIR/centrifugo.json" <<EOF
-{
-  "http_address": "0.0.0.0:8000",
-  "api_key": "$centrifugo_key",
-  "admin_key": "$centrifugo_admin_key",
-  "token_hmac_secret_key": "$centrifugo_secret",
-  "namespaces": [
-    {
-      "name": "channel",
-      "presence": true,
-      "join_leave": true,
-      "history_size": 100,
-      "history_ttl": "24h",
-      "allow_publish_for_subscriber": false
-    },
-    {
-      "name": "user",
-      "presence": false,
-      "join_leave": false,
-      "history_size": 0,
-      "allow_publish_for_subscriber": false
-    },
-    {
-      "name": "call",
-      "presence": true,
-      "join_leave": true,
-      "history_size": 0,
-      "history_ttl": "0",
-      "allow_publish_for_subscriber": false
-    }
-  ],
-  "client_connection_limit": 20,
-  "presence": true,
-  "join_leave": true,
-  "push_enabled": true,
-  "web_push": {
-    "vapid_public_key": "$vapid_pub",
-    "vapid_private_key": "$vapid_priv",
-    "vapid_subject": "mailto:admin@$DOMAIN"
-  },
-  "firebase": {
-    "enabled": true,
-    "service_account_file": "/fcm-service-account.json"
-  }
+  python3 -c "
+import json, sys
+config = {
+    'api_key': sys.argv[1],
+    'admin_key': sys.argv[2],
+    'token_hmac_secret_key': sys.argv[3],
+    'allowed_origins': ['https://' + sys.argv[4], 'http://localhost:5173', 'http://localhost:3000'],
+    'namespaces': [
+        {'name': 'channel', 'presence': True, 'join_leave': True, 'history_size': 100, 'history_ttl': '24h', 'allow_publish_for_subscriber': False},
+        {'name': 'user', 'presence': False, 'join_leave': False, 'history_size': 0, 'allow_publish_for_subscriber': False},
+        {'name': 'call', 'presence': True, 'join_leave': True, 'history_size': 0, 'history_ttl': '0', 'allow_publish_for_subscriber': False}
+    ],
+    'client_connection_limit': 20,
+    'presence': True,
+    'join_leave': True
 }
-EOF
+with open(sys.argv[5], 'w') as f:
+    json.dump(config, f, indent=2)
+" "$centrifugo_key" "$centrifugo_admin_key" "$centrifugo_secret" "$DOMAIN" "$DEPLOY_DIR/centrifugo.json"
   chmod 644 "$DEPLOY_DIR/centrifugo.json"
   log "Конфигурация Centrifugo записана: $DEPLOY_DIR/centrifugo.json"
 }
