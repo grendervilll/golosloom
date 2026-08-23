@@ -64,7 +64,7 @@ export const useAuthStore = defineStore('auth', {
           console.log('[auth] centrifugo token:', tokenRes?.token ? 'OK' : 'FAIL')
           if (tokenRes?.token) {
             try {
-              this.centrifuge.connect(settings.serverConfig.centrifugo_url, tokenRes.token)
+              this.centrifuge.connect(settings.serverUrl, settings.serverConfig.centrifugo_url, tokenRes.token)
             } catch { /* Centrifuge SDK error */ }
             this.connected = true
             // Подписываемся на личный канал user:{id} для звонков и приглашений

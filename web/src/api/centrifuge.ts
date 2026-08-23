@@ -13,11 +13,15 @@ export class CentrifugeClient {
   private connectionToken = ''
   private shouldReconnect = true
 
-  connect(centrifugoUrl: string, connectionToken: string) {
+  connect(serverUrl: string, centrifugoUrl: string, connectionToken: string) {
     // centrifugoUrl from server is just the path (e.g. "/centrifugo").
-    // We need the full WebSocket URL with the current origin.
-    const origin = typeof window !== 'undefined' ? window.location.origin : ''
-    this.baseUrl = origin + centrifugoUrl
+    // We need the full WebSocket URL with the server origin.
+    // In Electron, window.location.origin is file:// — use the configured server URL instead.
+    let origin = serverUrl
+    if (!origin && typeof window !== 'undefined' && window.location && window.location.origin !== 'null' && !window.location.origin.startsWith('file')) {
+      origin = window.location.origin
+    }
+    this.baseUrl = origin.replace(/\/$/, '') + centrifugoUrl
     this.connectionToken = connectionToken
     this.shouldReconnect = true
     this.open()
