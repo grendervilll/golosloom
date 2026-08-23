@@ -65,6 +65,15 @@ export const useAuthStore = defineStore('auth', {
               this.centrifuge.connect(settings.serverConfig.centrifugo_url, tokenRes.token)
             } catch { /* Centrifuge SDK error */ }
             this.connected = true
+            // Подписываемся на личный канал user:{id} для звонков и приглашений
+            if (this.user) {
+              try {
+                const subRes = await settings.api.centrifugoSubscribe('user:' + this.user.id)
+                if (subRes?.token) {
+                  this.centrifuge.subscribeChannel('user:' + this.user.id, subRes.token)
+                }
+              } catch { /* ignore */ }
+            }
             return
           }
         } catch {
