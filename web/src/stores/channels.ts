@@ -118,10 +118,11 @@ export const useChannelsStore = defineStore('channels', {
       } catch { /* channel subscription failed */ }
       this.members = await settings.api.listMembers(channelId)
       await this.loadBanned(channelId)
+      // Сначала синхронизируем ключи, потом загружаем историю —
+      // иначе loadHistory не сможет расшифровать сообщения.
+      try { await this.syncKeys(channelId) } catch (e) { console.error('[channels] syncKeys error:', e) }
       console.log(`[channels] openChannel ${channelId}: loading history...`)
       try { await chat.loadHistory(channelId) } catch (e) { console.error('[channels] loadHistory error:', e) }
-      // Немедленно синхронизируем ключи (распределяем новым устройствам)
-      try { await this.syncKeys(channelId) } catch (e) { console.error('[channels] syncKeys error:', e) }
       this.startKeyPoll()
       // Повторяем через 1 сек для быстрого распределения ключей новым участникам
       setTimeout(() => { if (this.currentId === channelId) void this.syncKeys(channelId) }, 1000)
@@ -188,10 +189,14 @@ export const useChannelsStore = defineStore('channels', {
         const targets: KeyTarget[] = await settings.api.pendingKeyTargets(channelId)
         for (const target of targets) {
           if (target.user_id === auth.user?.id && target.device_id === keys.deviceId) continue
-          const pub = b64ToBytes(target.public_key)
-          if (pub.length !== 32) continue
-          const wrapped = await wrapChannelKey(myKey, pub)
-          await settings.api.uploadWrappedKey(channelId, target.user_id, target.device_id, wrapped)
+          try {
+            const pub = b64ToBytes(target.public_key)
+            if (pub.length !== 32) continue
+            const wrapped = await wrapChannelKey(myKey, pub)
+            await settings.api.uploadWrappedKey(channelId, target.user_id, target.device_id, wrapped)
+          } catch (e) {
+            console.error('[channels] syncKeys upload error for target', target.user_id, target.device_id, e)
+          }
         }
       } catch { /* не критично */ }
     },
@@ -204,20 +209,23 @@ export const useChannelsStore = defineStore('channels', {
     startKeyPoll() {
       if (this.keyPollTimer) return
       this.keyPollTimer = window.setInterval(() => {
-        if (this.currentId) void this.syncKeys(this.currentId)
+        void this.syncAllKeys()
       }, 2000)
     },
     async handleKeyNeeded(data: { channel_id: number; user_id: number; device_id: string; public_key: string }) {
-      if (data.channel_id !== this.currentId) return
-      const storage = await getKeyStorage()
-      const myKey = await storage.loadChannelKey(data.channel_id)
-      if (!myKey) return
-      const settings = useSettingsStore()
-      const wrapped = await wrapChannelKey(myKey, b64ToBytes(data.public_key))
-      await settings.api.uploadWrappedKey(data.channel_id, data.user_id, data.device_id, wrapped)
+      try {
+        const storage = await getKeyStorage()
+        const myKey = await storage.loadChannelKey(data.channel_id)
+        if (!myKey) return
+        const settings = useSettingsStore()
+        const wrapped = await wrapChannelKey(myKey, b64ToBytes(data.public_key))
+        await settings.api.uploadWrappedKey(data.channel_id, data.user_id, data.device_id, wrapped)
+      } catch (e) {
+        console.error('[channels] handleKeyNeeded error:', e)
+      }
     },
     async handleKeyGranted(channelId: number) {
-      if (channelId === this.currentId) await this.syncKeys(channelId)
+      await this.syncKeys(channelId)
     },
     async handleInviteEvent(invite: Invite) {
       const toastId = toast(`Приглашение в канал «${invite.channel_name}» от ${invite.invited_by_nick}`, {
