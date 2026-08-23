@@ -564,6 +564,7 @@ export const useCallStore = defineStore('calls', {
     },
     // ---------- Обработка WS-событий ----------
     handleCallInvite(data: { call_id: number; channel_id: number; initiator_id: number; initiator_nick: string }) {
+      console.log('[calls] handleCallInvite', data.call_id, 'from', data.initiator_nick)
       // Не даём двум вызовам звучать одновременно.
       // ВАЖНО: проверяем ДО добавления нового звонка в список — иначе
       // ringingCall уже истинен и звук звонка никогда не заиграет.

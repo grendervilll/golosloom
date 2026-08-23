@@ -91,10 +91,15 @@ export class CentrifugeClient {
     })
 
     sub.on('publication', (ctx: any) => {
-      const ev = ctx?.data || ctx?.pub?.data
-      console.log('[centrifuge] publication on', channel, ':', JSON.stringify(ev).slice(0, 100))
-      if (ev && typeof ev === 'object' && ev.type) {
-        this.dispatch(ev.type, ev.data)
+      const ev = ctx?.pub?.data || ctx?.data
+      const evType = typeof ev
+      console.log('[centrifuge] pub', channel, 'evType:', evType, 'ev:', evType === 'object' ? JSON.stringify(ev).slice(0, 80) : String(ev).slice(0, 80))
+      let parsed = ev
+      if (typeof ev === 'string') {
+        try { parsed = JSON.parse(ev) } catch {}
+      }
+      if (parsed && typeof parsed === 'object' && parsed.type) {
+        this.dispatch(parsed.type, parsed.data)
       }
     })
 
@@ -127,6 +132,7 @@ export class CentrifugeClient {
 
   private dispatch(type: string, data: any) {
     const set = this.handlers.get(type)
+    console.log('[centrifuge] dispatch', type, 'handlers:', set ? set.size : 0)
     if (set) for (const h of [...set]) h(data)
   }
 }
