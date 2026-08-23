@@ -51,8 +51,8 @@ function wireWs() {
     c.on('call.declined', (d: any) => calls.handleCallDeclined(d)),
     c.on('call.created', () => calls.handleCallCreated()),
     c.on('call.ended', (d: any) => {
-      calls.handleCallEnded(d)
       const dur = calls.callDurationText()
+      calls.handleCallEnded(d)
       if (dur && channels.currentId) {
         chat.pushSystem(channels.currentId, 'Звонок завершён, время звонка ' + dur)
       }
