@@ -69,10 +69,10 @@ export const useCallStore = defineStore('calls', {
       const settings = useSettingsStore()
       const auth = useAuthStore()
       const calls: Call[] = await settings.api.listCalls(channelId)
+      console.log('[calls] refresh ch=' + channelId + ': ' + calls.length + ' calls, user=' + auth.user!.id)
       const merged: ActiveCall[] = []
       for (const c of calls) {
         const prev = this.calls.find((x) => x.id === c.id)
-        // Звонок «входящий» если: я НЕ инициатор И статус ringing.
         const isIncoming = c.initiator_id !== auth.user!.id && c.status === 'ringing'
         merged.push({
           ...c,
@@ -192,7 +192,8 @@ export const useCallStore = defineStore('calls', {
       this.stopCallPoll()
       console.log('[calls] startCallPoll for channel', channelId)
       this.callPollTimer = window.setInterval(() => {
-        void this.refresh(channelId)
+        console.log('[calls] polling ch=' + channelId)
+        void this.refresh(channelId).catch(e => console.error('[calls] poll error:', e))
       }, 5000)
     },
     stopCallPoll() {
