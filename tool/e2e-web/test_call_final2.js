@@ -74,7 +74,7 @@ const CHROME = '/Users/alex/Library/Caches/ms-playwright/chromium-1234/chrome-ma
   await p2.waitForTimeout(15000)
   const overlay = await p2.evaluate(() => {
     const d = document.querySelectorAll('[role="dialog"]')
-    for (const el of d) { if (el.textContent.includes('звонит')) return true }
+    for (const el of d) { if (el.textContent.includes('Входящий звонок') || el.textContent.includes('Принять')) return true }
     return false
   })
   console.log('Overlay:', overlay)

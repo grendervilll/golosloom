@@ -169,6 +169,7 @@ export const useCallStore = defineStore('calls', {
       const settings = useSettingsStore()
       const call = this.currentCall
       if (call) {
+        call.inCall = false
         await settings.api.leaveCall(call.id)
       }
       await this.disconnectRoom()
@@ -600,6 +601,10 @@ export const useCallStore = defineStore('calls', {
       this.calls = this.calls.filter((c) => c.id !== data.call_id)
       sounds.stopAll()
       if (this.connectedCallId === data.call_id) void this.disconnectRoom()
+    },
+    handleCallDeclined(data: { call_id: number; user_id: number }) {
+      const c = this.calls.find((x) => x.id === data.call_id)
+      if (c) c.participants = c.participants.filter((id) => id !== data.user_id)
     },
     handleCallCreated() {
       // Обновляем список звонков канала (для кнопки «Войти в звонок»):

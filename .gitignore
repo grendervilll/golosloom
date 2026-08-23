@@ -45,3 +45,4 @@ agconnect-services.json
 **/agconnect-services.json
 mobile/android/app/google-services.json
 mobile/android/app/agconnect-services.json
+server/server

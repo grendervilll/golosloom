@@ -13,6 +13,7 @@ import (
 type createCallReq struct {
 	ChannelID int64   `json:"channel_id"`
 	TargetIDs []int64 `json:"target_ids"`
+	DeviceID  string  `json:"device_id"`
 }
 
 // handleCreateCall — инициация звонка одному, нескольким или всем пользователям канала.
@@ -152,7 +153,7 @@ func (s *Server) handleCreateCall(w http.ResponseWriter, r *http.Request) {
 	})
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
 		"call": call,
-		"token": s.livekitToken(call, userIDFrom(r), deviceIDFromRequest(r)),
+		"token": s.livekitToken(call, userIDFrom(r), req.DeviceID),
 	})
 }
 
@@ -279,7 +280,11 @@ func (s *Server) handleAcceptCall(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusGone, "звонок завершён")
 		return
 	}
-	u, _ := s.Store.GetUserByID(userIDFrom(r))
+	u, err := s.Store.GetUserByID(userIDFrom(r))
+	if err != nil {
+		writeErr(w, http.StatusUnauthorized, "пользователь не найден")
+		return
+	}
 	if !u.IsServerAdmin {
 		inv, err := s.Store.GetCallInvite(callID, userIDFrom(r))
 		if err != nil {
@@ -364,7 +369,11 @@ func (s *Server) handleJoinCall(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusGone, "звонок завершён")
 		return
 	}
-	u, _ := s.Store.GetUserByID(userIDFrom(r))
+	u, err := s.Store.GetUserByID(userIDFrom(r))
+	if err != nil {
+		writeErr(w, http.StatusUnauthorized, "пользователь не найден")
+		return
+	}
 	if !u.IsServerAdmin && call.InitiatorID != userIDFrom(r) {
 		inv, err := s.Store.GetCallInvite(callID, userIDFrom(r))
 		if err != nil {
@@ -512,14 +521,20 @@ func (s *Server) handleCallPunch(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.publishUser(c.InitiatorID, centrifugoEvent{
-		Type: "punch",
-		Data: map[string]interface{}{
-			"call_id":    callID,
-			"by_user_id": userID,
-			"by_nick":    u.Nick,
-		},
-	})
+	participants, _ := s.Store.CallParticipantIDs(callID)
+	for _, pid := range participants {
+		if pid == userID {
+			continue // не пнуть самого себя
+		}
+		s.publishUser(pid, centrifugoEvent{
+			Type: "punch",
+			Data: map[string]interface{}{
+				"call_id":    callID,
+				"by_user_id": userID,
+				"by_nick":    u.Nick,
+			},
+		})
+	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 

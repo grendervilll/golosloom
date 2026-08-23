@@ -48,6 +48,8 @@ function wireWs() {
     c.on('invite.updated', () => void channels.refreshInvites()),
     c.on('call.invite', (d: any) => calls.handleCallInvite(d)),
     c.on('call.started', (d: any) => calls.handleCallStarted(d.call_id)),
+    c.on('call.declined', (d: any) => calls.handleCallDeclined(d)),
+    c.on('call.created', () => calls.handleCallCreated()),
     c.on('call.ended', (d: any) => {
       calls.handleCallEnded(d)
       const dur = calls.callDurationText()
