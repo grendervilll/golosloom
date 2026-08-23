@@ -42,6 +42,7 @@ export const useCallStore = defineStore('calls', {
     punchCooldown: 0 as number,
     lastPunch: 0,
     audioScanTimer: null as number | null,
+    callPollTimer: null as number | null,
     // Слежение за выключенным микрофоном: чтобы предупреждать пользователя,
     // когда он пытается говорить, но микрофон выключен.
     micMonitor: null as { stream: MediaStream; ctx: AudioContext; analyser: AnalyserNode; warned: boolean } | null,
@@ -71,10 +72,12 @@ export const useCallStore = defineStore('calls', {
       const merged: ActiveCall[] = []
       for (const c of calls) {
         const prev = this.calls.find((x) => x.id === c.id)
+        // Звонок «входящий» если: я НЕ инициатор И статус ringing.
+        const isIncoming = c.initiator_id !== auth.user!.id && c.status === 'ringing'
         merged.push({
           ...c,
-          incoming: prev?.incoming ?? false,
-          ringing: prev?.ringing ?? false,
+          incoming: prev?.incoming ?? isIncoming,
+          ringing: prev?.ringing ?? (c.status === 'ringing' && !isIncoming),
           inCall: c.participants.includes(auth.user!.id),
         })
       }
@@ -183,6 +186,20 @@ export const useCallStore = defineStore('calls', {
       this.calls = this.calls.filter((c) => c.channel_id !== channelId)
       sounds.stopAll()
       void this.disconnectRoom()
+    },
+    // Polling активных звонков: fallback если Centrifugo не доставляет события.
+    startCallPoll(channelId: number) {
+      this.stopCallPoll()
+      console.log('[calls] startCallPoll for channel', channelId)
+      this.callPollTimer = window.setInterval(() => {
+        void this.refresh(channelId)
+      }, 5000)
+    },
+    stopCallPoll() {
+      if (this.callPollTimer !== null) {
+        clearInterval(this.callPollTimer)
+        this.callPollTimer = null
+      }
     },
     // Текст длительности звонка для системного сообщения («12:34»).
     callDurationText(): string | null {

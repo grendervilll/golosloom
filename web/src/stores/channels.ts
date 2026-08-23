@@ -100,6 +100,7 @@ export const useChannelsStore = defineStore('channels', {
       await this.openChannel(channelId)
     },
     async openChannel(channelId: number) {
+      console.log('[channels] openChannel START', channelId)
       const settings = useSettingsStore()
       const auth = useAuthStore()
       const chat = useChatStore()
@@ -118,15 +119,19 @@ export const useChannelsStore = defineStore('channels', {
       this.members = await settings.api.listMembers(channelId)
       await this.loadBanned(channelId)
       console.log(`[channels] openChannel ${channelId}: loading history...`)
-      await chat.loadHistory(channelId)
+      try { await chat.loadHistory(channelId) } catch (e) { console.error('[channels] loadHistory error:', e) }
       // Немедленно синхронизируем ключи (распределяем новым устройствам)
-      await this.syncKeys(channelId)
+      try { await this.syncKeys(channelId) } catch (e) { console.error('[channels] syncKeys error:', e) }
       this.startKeyPoll()
       // Повторяем через 1 сек для быстрого распределения ключей новым участникам
       setTimeout(() => { if (this.currentId === channelId) void this.syncKeys(channelId) }, 1000)
       try {
-        await useCallStore().refresh(channelId)
-      } catch { /* ignore */ }
+        const calls = useCallStore()
+        console.log('[channels] refreshing calls for channel', channelId)
+        await calls.refresh(channelId)
+        console.log('[channels] starting call poll for channel', channelId)
+        calls.startCallPoll(channelId)
+      } catch (e) { console.error('[channels] call error:', e) }
     },
     async loadBanned(channelId: number) {
       const settings = useSettingsStore()

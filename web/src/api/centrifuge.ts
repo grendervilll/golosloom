@@ -92,13 +92,14 @@ export class CentrifugeClient {
 
     sub.on('publication', (ctx: any) => {
       const ev = ctx?.data || ctx?.pub?.data
+      console.log('[centrifuge] publication on', channel, ':', JSON.stringify(ev).slice(0, 100))
       if (ev && typeof ev === 'object' && ev.type) {
         this.dispatch(ev.type, ev.data)
       }
     })
 
-    sub.on('subscribed', () => {
-      // Channel subscription confirmed
+    sub.on('subscribed', (ctx) => {
+      console.log('[centrifuge] SUBSCRIBED to', channel, ctx)
     })
 
     sub.subscribe()
