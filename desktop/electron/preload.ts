@@ -16,4 +16,24 @@ contextBridge.exposeInMainWorld('__ELECTRON__', {
       return () => ipcRenderer.removeListener('notify:clicked', handler)
     },
   },
+  updater: {
+    check: (): Promise<{ version: string; assetName: string } | null> => ipcRenderer.invoke('update:check'),
+    dismiss: (version: string): Promise<boolean> => ipcRenderer.invoke('update:dismiss', version),
+    download: (): Promise<boolean> => ipcRenderer.invoke('update:download'),
+    onAvailable: (cb: (version: string, assetName?: string) => void) => {
+      const handler = (_e: unknown, v: string, a?: string) => cb(v, a)
+      ipcRenderer.on('update:available', handler)
+      return () => ipcRenderer.removeListener('update:available', handler)
+    },
+    onProgress: (cb: (pct: number) => void) => {
+      const handler = (_e: unknown, pct: number) => cb(pct)
+      ipcRenderer.on('update:progress', handler)
+      return () => ipcRenderer.removeListener('update:progress', handler)
+    },
+    onError: (cb: (msg: string) => void) => {
+      const handler = (_e: unknown, msg: string) => cb(msg)
+      ipcRenderer.on('update:error', handler)
+      return () => ipcRenderer.removeListener('update:error', handler)
+    },
+  },
 })

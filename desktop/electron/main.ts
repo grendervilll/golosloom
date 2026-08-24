@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, safeStorage, nativeTheme, Menu, Tray, nativeImage, Notification } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
+import * as updater from './updater'
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
@@ -122,6 +123,24 @@ ipcMain.handle('notify:focus', async () => {
   return true
 })
 
+// ---- IPC: обновления (GitHub Releases, Windows/macOS/Linux) ----
+
+ipcMain.handle('update:check', async () => {
+  return updater.handleUpdateCheck(mainWindow)
+})
+
+ipcMain.handle('update:dismiss', async (_e, version: string) => {
+  updater.dismissVersion(version)
+  return true
+})
+
+ipcMain.handle('update:download', async () => {
+  const pending = updater.getPendingUpdate()
+  if (!pending) throw new Error('no pending update')
+  await updater.downloadAndInstall(mainWindow, pending.asset)
+  return true
+})
+
 // ---- IPC: secureStorage (safeStorage from Electron) ----
 
 ipcMain.handle('secure:get', async (_event, key: string) => {
@@ -152,11 +171,25 @@ function getSecurePath(key: string): string {
   return path.join(dir, Buffer.from(key).toString('hex'))
 }
 
-// ---- App lifecycle ----
+// ---- App lifecycle + автообновление ----
+
+async function checkAndNotify() {
+  try {
+    const res = await updater.checkForUpdates(mainWindow)
+    if (res && mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update:available', res.version, res.asset.name)
+    }
+  } catch {}
+}
 
 app.whenReady().then(() => {
   createWindow()
   if (process.platform !== 'darwin') createTray()
+
+  // Проверка обновлений через GitHub Releases (Windows/macOS/Linux)
+  // Сравнение версий, arch-выбор через process.arch, dismissed до следующей версии
+  setTimeout(checkAndNotify, 8000)
+  setInterval(checkAndNotify, 6 * 60 * 60 * 1000)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
