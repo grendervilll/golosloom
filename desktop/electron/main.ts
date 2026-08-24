@@ -14,6 +14,9 @@ function createWindow() {
     height: 800,
     minWidth: 420,
     minHeight: 320,
+    frame: true,
+    autoHideMenuBar: false,
+    backgroundColor: '#1e1f22',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -22,6 +25,7 @@ function createWindow() {
     },
     icon: path.join(__dirname, '..', 'resources', process.platform === 'win32' ? 'icon.ico' : 'icon.png'),
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    trafficLightPosition: process.platform === 'darwin' ? { x: 12, y: 12 } : undefined,
     show: false,
   })
 

@@ -361,3 +361,14 @@ select:focus {
   --normal-border: #26282c;
   --normal-text: #dbdee1;
 }
+
+/* Electron: системная рамка уже есть (frame:true), но для hiddenInset на mac делаем шапку перетаскиваемой */
+.is-electron .chat-head {
+  -webkit-app-region: drag;
+  padding-top: 6px;
+}
+.is-electron .chat-head button,
+.is-electron .chat-head input,
+.is-electron .chat-head .head-title {
+  -webkit-app-region: no-drag;
+}

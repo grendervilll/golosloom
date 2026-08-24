@@ -37,6 +37,35 @@ const mediaMenuEl = ref<HTMLElement | null>(null)
 const messages = computed(() => chat.messages.get(channels.currentId) || [])
 const channelName = computed(() => channels.current?.name || '')
 const canModerate = computed(() => chat.canSeeDeleted())
+// Кнопка "вниз" — показывается когда пользователь прокрутил на 5 сообщений вверх.
+const showScrollButton = ref(false)
+const isAtBottom = ref(true)
+const hiddenCount = ref(0)
+const SCROLL_THRESHOLD_PX = 350 // ~5 сообщений
+function onScroll() {
+  const el = listEl.value
+  if (!el) return
+  const distance = el.scrollHeight - el.scrollTop - el.clientHeight
+  isAtBottom.value = distance < 80
+  showScrollButton.value = distance > SCROLL_THRESHOLD_PX
+  if (isAtBottom.value) hiddenCount.value = 0
+}
+// Дата сообщения — плашка как в Telegram.
+function formatDateHeader(dateStr: string): string {
+  const d = new Date(dateStr)
+  const now = new Date()
+  const sameYear = d.getFullYear() === now.getFullYear()
+  const opts: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'long' }
+  if (!sameYear) (opts as any).year = 'numeric'
+  const s = d.toLocaleDateString('ru-RU', opts)
+  return s.charAt(0).toUpperCase() + s.slice(1)
+}
+function isNewDate(msg: ChatMessage, index: number): boolean {
+  if (index === 0) return true
+  const prev = messages.value[index - 1]
+  if (!prev) return true
+  return new Date(msg.createdAt).toDateString() !== new Date(prev.createdAt).toDateString()
+}
 // Приглашение на регистрацию — только админ сервера или админ канала.
 const canCreateRegInvite = computed(
   () => auth.isServerAdmin || channels.currentRole === 'channel_admin',
@@ -164,7 +193,12 @@ function mediaJump(msg: ChatMessage) {
 
 async function scrollBottom() {
   await nextTick()
-  if (listEl.value) listEl.value.scrollTop = listEl.value.scrollHeight
+  if (listEl.value) {
+    listEl.value.scrollTop = listEl.value.scrollHeight
+    hiddenCount.value = 0
+    showScrollButton.value = false
+    isAtBottom.value = true
+  }
 }
 
 // Авторасширение поля ввода: растёт до 13 строк, дальше — прокрутка.
@@ -177,24 +211,33 @@ function autoResize() {
 }
 
 watch(messages, async (list, old) => {
-  // Прокручиваем вниз только если были у нижнего края (иначе догрузка
-  // старой истории при поиске не будет дёргать чат).
   await nextTick()
   const el = listEl.value
   if (!el) return
-  const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
-  if (nearBottom || (old && old.length === 0)) void scrollBottom()
+  if (isAtBottom.value || (old && old.length === 0)) {
+    void scrollBottom()
+  } else {
+    const added = list.length - (old?.length || 0)
+    if (added > 0) {
+      hiddenCount.value += added
+      const distance = el.scrollHeight - el.scrollTop - el.clientHeight
+      if (distance > SCROLL_THRESHOLD_PX || hiddenCount.value > 0) showScrollButton.value = true
+    }
+  }
   void list
 }, { deep: true })
 onMounted(() => {
   void scrollBottom()
   window.addEventListener('dragover', onWindowDragOver)
   window.addEventListener('drop', onWindowDrop)
+  listEl.value?.addEventListener('scroll', onScroll)
+  void nextTick(onScroll)
 })
 
 onUnmounted(() => {
   window.removeEventListener('dragover', onWindowDragOver)
   window.removeEventListener('drop', onWindowDrop)
+  listEl.value?.removeEventListener('scroll', onScroll)
   if (rec.value) cancelRec()
 })
 // При изменении текста (ввод, начало редактирования, очистка) — подгоняем высоту.
@@ -202,12 +245,19 @@ watch(
   () => chat.draft,
   () => void nextTick(autoResize),
 )
-// При переключении канала — считаем его прочитанным.
+// При переключении канала — считаем его прочитанным и сбрасываем скролл.
 watch(
   () => channels.currentId,
   (id) => {
     if (id) chat.markRead(id)
     showTypersList.value = false
+    hiddenCount.value = 0
+    showScrollButton.value = false
+    isAtBottom.value = true
+    void nextTick(() => {
+      void scrollBottom()
+      onScroll()
+    })
   },
 )
 
@@ -899,19 +949,31 @@ function onKeydown(e: KeyboardEvent) {
     </div>
     <!-- Плеер голосового сообщения: вверху рабочей зоны канала. -->
     <AudioPlayer />
-    <div ref="listEl" class="chat-list">
-      <MessageItem
-        v-for="m in messages"
-        :key="m.id"
-        :msg="m"
-        :my-id="auth.user?.id || 0"
-        :can-moderate="canModerate"
-        :highlight="m.id === highlightId"
-        @contextmenu="(e) => openMenu(e, m)"
-        @reply="setReply(m)"
-        @jump="scrollToMessage"
-      />
+    <div ref="listEl" class="chat-list" @scroll="onScroll">
+      <template v-for="(m, idx) in messages" :key="m.id">
+        <div v-if="isNewDate(m, idx)" class="date-sep">
+          <span class="date-pill">{{ formatDateHeader(m.createdAt) }}</span>
+        </div>
+        <MessageItem
+          :msg="m"
+          :my-id="auth.user?.id || 0"
+          :can-moderate="canModerate"
+          :highlight="m.id === highlightId"
+          @contextmenu="(e) => openMenu(e, m)"
+          @reply="setReply(m)"
+          @jump="scrollToMessage"
+        />
+      </template>
       <p v-if="messages.length === 0" class="muted empty">Сообщений пока нет</p>
+      <button
+        v-if="showScrollButton"
+        class="scroll-down-btn"
+        title="Вниз"
+        @click="scrollBottom"
+      >
+        <svg class="scroll-ico" viewBox="0 0 384 512"><path d="M169.4 470.6c12.5 12.5 32.8 12.5 45.3 0l160-160c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L192 397.7 54.6 265.3c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3l160 160z" /></svg>
+        <span v-if="hiddenCount > 0" class="scroll-badge">{{ hiddenCount > 99 ? '99+' : hiddenCount }}</span>
+      </button>
     </div>
     <div class="chat-input">
       <!-- Панель ответа на сообщение. -->
@@ -1387,6 +1449,77 @@ function onKeydown(e: KeyboardEvent) {
   flex-direction: column;
   gap: 6px;
   background: var(--bg2);
+  position: relative;
+  scroll-behavior: smooth;
+}
+.date-sep {
+  display: flex;
+  justify-content: center;
+  margin: 12px 0 8px;
+}
+.date-pill {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 12px;
+  border-radius: 999px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+.scroll-down-btn {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.12s ease;
+  z-index: 10;
+}
+.scroll-down-btn:hover {
+  transform: scale(1.12);
+  background: var(--bg4);
+}
+.scroll-down-btn:active {
+  background: var(--accent);
+  transform: scale(0.96);
+}
+.scroll-down-btn:active .scroll-ico {
+  fill: #fff;
+}
+.scroll-ico {
+  width: 16px;
+  height: 16px;
+  fill: var(--text-dim);
+  transition: fill 0.12s ease;
+}
+.scroll-down-btn:hover .scroll-ico {
+  fill: var(--text);
+}
+.scroll-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--bg2);
 }
 .empty {
   text-align: center;

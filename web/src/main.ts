@@ -21,6 +21,11 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   })
 }
 
+// Electron: добавляем класс для перетаскивания окна за шапку (hiddenInset на mac)
+if (typeof window !== 'undefined' && (window as any).__ELECTRON__) {
+  document.documentElement.classList.add('is-electron')
+}
+
 const app = createApp(App)
 app.use(createPinia())
 app.use(router)

@@ -156,13 +156,20 @@ export class CentrifugeClient {
   // Re-subscribe all channels after reconnection with fresh tokens.
   private async resubscribeAll() {
     for (const [channel, provider] of this.channelTokens) {
+      // If already subscribed, skip — Centrifuge will automatically
+      // resubscribe existing Subscription objects on reconnect.
+      // We only need to refresh tokens if they expired (handled via getToken).
+      if (this.subscriptions.has(channel)) {
+        console.log('[centrifuge] already subscribed to', channel, 'skipping resubscribe')
+        continue
+      }
       try {
         const freshToken = await provider(channel)
         if (!freshToken) {
           console.error('[centrifuge] resubscribeAll: no token for', channel)
           continue
         }
-        // Remove old subscription
+        // Remove old subscription if any
         const old = this.subscriptions.get(channel)
         if (old) {
           try { old.unsubscribe() } catch {}

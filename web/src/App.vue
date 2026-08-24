@@ -51,10 +51,30 @@ function wireWs() {
     c.on('call.declined', (d: any) => calls.handleCallDeclined(d)),
     c.on('call.created', () => calls.handleCallCreated()),
     c.on('call.ended', (d: any) => {
+      const startAt = calls.connectedAt
+      const startStr = startAt ? new Date(startAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : null
+      const endStr = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
       const dur = calls.callDurationText()
+      const call = calls.calls.find((x) => x.id === d.call_id)
+      const channelId = (call?.channel_id as number) || channels.currentId || (d as any).channel_id
       calls.handleCallEnded(d)
-      if (dur && channels.currentId) {
-        chat.pushSystem(channels.currentId, 'Звонок завершён, время звонка ' + dur)
+      if (channelId) {
+        let text: string
+        if (startStr && endStr && dur) {
+          text = `Звонок: ${startStr} — ${endStr} (${dur})`
+        } else if (dur) {
+          text = `Звонок завершён, длительность ${dur}`
+        } else if (startStr) {
+          text = `Звонок завершён в ${endStr}, начался в ${startStr}`
+        } else {
+          text = `Звонок завершён в ${endStr}`
+        }
+        // Если звонок не был отвечен (нет connectedAt и нет длительности) — показываем "не отвечен"
+        if (!startAt && !dur) {
+          const chName = channels.channels.find((c) => c.id === channelId)?.name || ''
+          text = chName ? `Пропущенный звонок в «${chName}» в ${endStr}` : `Пропущенный звонок в ${endStr}`
+        }
+        chat.pushSystem(channelId, text)
       }
     }),
     c.on('call.participants', (d: any) => {
