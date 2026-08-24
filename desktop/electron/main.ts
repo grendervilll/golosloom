@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, safeStorage, nativeTheme, Menu, Tray, nativeImage } from 'electron'
+import { app, BrowserWindow, ipcMain, safeStorage, nativeTheme, Menu, Tray, nativeImage, Notification } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
 
@@ -6,6 +6,11 @@ let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 
 const isDev = !app.isPackaged
+
+// Windows: нужен AppUserModelID для системных тостов
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.golosloom.golosloom')
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -71,6 +76,51 @@ function createTray() {
   tray.setContextMenu(contextMenu)
   tray.on('double-click', () => mainWindow?.show())
 }
+
+// ---- IPC: системные пуши (Windows/macOS/Linux) ----
+
+ipcMain.handle('notify:show', async (_event, opts: { title: string; body: string; tag?: string }) => {
+  const title = (opts.title || 'Golosloom').slice(0, 128)
+  const body = (opts.body || '').slice(0, 256)
+  // Не спамим, если окно в фокусе — решает рендерер, но на всякий случай
+  // показываем всегда, когда пришло событие из main (вызов уже отфильтрован)
+  if (!Notification.isSupported()) return false
+  const iconPath = path.join(__dirname, '..', 'resources', process.platform === 'win32' ? 'icon.ico' : 'icon.png')
+  const n = new Notification({
+    title,
+    body,
+    icon: fs.existsSync(iconPath) ? nativeImage.createFromPath(iconPath) : undefined,
+    urgency: 'normal',
+    // tag для группировки (Windows/macOS схлопывают по tag)
+    ...(opts.tag ? { tag: opts.tag } as any : {}),
+  })
+  n.on('click', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      if (!mainWindow.isVisible()) mainWindow.show()
+      mainWindow.focus()
+      mainWindow.webContents.send('notify:clicked', opts.tag || '')
+    } else {
+      createWindow()
+    }
+  })
+  n.show()
+  // На Windows/Linux — мигание таскбара, на macOS — бейдж
+  if (process.platform === 'win32' && mainWindow && !mainWindow.isFocused()) {
+    mainWindow.flashFrame(true)
+    n.on('close', () => mainWindow?.flashFrame(false))
+  }
+  return true
+})
+
+ipcMain.handle('notify:focus', async () => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    if (!mainWindow.isVisible()) mainWindow.show()
+    mainWindow.focus()
+  }
+  return true
+})
 
 // ---- IPC: secureStorage (safeStorage from Electron) ----
 

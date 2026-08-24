@@ -9,6 +9,7 @@ import { useCallStore } from './stores/calls'
 import { toast } from 'vue-sonner'
 import { sounds } from './audio/sounds'
 import { Toaster } from './components/ui/sonner'
+import { showElectronNotification, shouldShowNotification, onElectronNotificationClicked, isElectron } from './utils/electronPush'
 
 const auth = useAuthStore()
 const settings = useSettingsStore()
@@ -17,6 +18,7 @@ const chat = useChatStore()
 const calls = useCallStore()
 
 let unsubs: (() => void)[] = []
+let electronUnsub: (() => void) | null = null
 
 // Применяем тему сразу (до первого рендера) и следим за переключением.
 settings.applyTheme()
@@ -24,6 +26,19 @@ watch(
   () => settings.theme,
   () => settings.applyTheme(),
 )
+
+function notifyElectron(title: string, body: string, tag?: string) {
+  if (!isElectron()) return
+  // Для сообщений — не спамим, если смотришь этот канал и окно в фокусе
+  if (tag?.startsWith('ch-')) {
+    const chId = parseInt(tag.slice(3), 10)
+    if (!shouldShowNotification() && channels.currentId === chId) return
+  } else if (!shouldShowNotification()) {
+    // Для системных — тоже проверяем, но звонки важнее — показываем всегда
+    if (!tag?.startsWith('call-') && !tag?.startsWith('invite-')) return
+  }
+  void showElectronNotification(title, body, tag)
+}
 
 function wireWs() {
   unsubs.forEach((u) => u())
@@ -38,15 +53,34 @@ function wireWs() {
       auth.refreshUsers()
       void d
     }),
-    c.on('message.new', (d: any) => void chat.handleNew(d)),
+    c.on('message.new', (d: any) => {
+      void chat.handleNew(d)
+      const chId = d.channel_id as number
+      const isSelf = d.sender_id === auth.user?.id
+      if (!isSelf) {
+        const chName = channels.channels.find((x) => x.id === chId)?.name || 'канале'
+        notifyElectron(`💬 ${d.sender_nick || 'Новое сообщение'}`, `Новое сообщение в «${chName}»`, `ch-${chId}`)
+      }
+    }),
     c.on('message.edited', (d: any) => void chat.handleEdited(d)),
     c.on('message.deleted', (d: any) => chat.handleDeleted(d)),
     c.on('attachment.deleted', (d: any) => chat.handleAttachmentDeleted(d)),
     c.on('typing', (d: any) => chat.handleTyping(d)),
-    c.on('invite.new', (d: any) => void channels.handleInviteEvent(d)),
+    c.on('invite.new', (d: any) => {
+      void channels.handleInviteEvent(d)
+      const chName = (d as any).channel_name || (d as any).channelName || ''
+      notifyElectron('📨 Приглашение', chName ? `Вас пригласили в «${chName}»` : 'Вас пригласили в канал', `invite-${(d as any).id || (d as any).invite_id || Date.now()}`)
+    }),
     c.on('invite.pending', (d: any) => void channels.handleInviteEvent(d)),
     c.on('invite.updated', () => void channels.refreshInvites()),
-    c.on('call.invite', (d: any) => calls.handleCallInvite(d)),
+    c.on('call.invite', (d: any) => {
+      calls.handleCallInvite(d)
+      const chId = (d as any).channel_id
+      const chName = channels.channels.find((x) => x.id === chId)?.name || ''
+      const who = (d as any).initiator_nick || 'Кто-то'
+      notifyElectron(`📞 ${who} звонит`, chName ? `Входящий звонок в «${chName}»` : 'Входящий звонок', `call-${(d as any).call_id || chId}`)
+      sounds.playRing()
+    }),
     c.on('call.started', (d: any) => calls.handleCallStarted(d.call_id)),
     c.on('call.declined', (d: any) => calls.handleCallDeclined(d)),
     c.on('call.created', () => calls.handleCallCreated()),
@@ -75,6 +109,7 @@ function wireWs() {
           text = chName ? `Пропущенный звонок в «${chName}» в ${endStr}` : `Пропущенный звонок в ${endStr}`
         }
         chat.pushSystem(channelId, text)
+        notifyElectron('📞 Звонок завершён', text, `ch-${channelId}`)
       }
     }),
     c.on('call.participants', (d: any) => {
@@ -85,26 +120,35 @@ function wireWs() {
       // Для исходящего — гасит гудки, для входящего — гасит звонок.
       calls.handleInviteTimeout(d.call_id)
       toast.info('Вызов не принят, звонок отклонён автоматически')
+      notifyElectron('⏰ Вызов не принят', 'Звонок отклонён автоматически', `call-${d.call_id}`)
     }),
-    c.on('punch', (d: any) => calls.handlePunch(d)),
+    c.on('punch', (d: any) => {
+      calls.handlePunch(d)
+      const who = (d as any).from_nick || (d as any).nick || 'Кто-то'
+      notifyElectron('👊 Толчок', `${who} толкнул вас`, `ch-${(d as any).channel_id || channels.currentId || ''}`)
+    }),
     c.on('device.registered', () => void channels.syncAllKeys()),
     c.on('kicked', (d: any) => {
       sounds.warning()
       toast.warning(`Вас кикнули из канала: ${d.reason || 'без причины'}`)
+      notifyElectron('⚠️ Кик', `Вас кикнули из канала`, `ch-${(d as any).channel_id || ''}`)
     }),
     c.on('banned', (d: any) => {
       sounds.warning()
       toast.warning(`Вас забанили в канале: ${d.reason || 'без причины'}`)
       void channels.refresh()
+      notifyElectron('⛔ Бан', `Вас забанили в канале`, `ch-${(d as any).channel_id || ''}`)
     }),
     c.on('server_banned', (d: any) => {
       sounds.warning()
       toast.warning(`Вы забанены на сервере: ${d.reason || 'без причины'}`)
+      notifyElectron('⛔ Бан на сервере', `Вы забанены: ${d.reason || ''}`, 'server-banned')
       auth.logout()
     }),
     c.on('channel.deleted', (d: any) => {
       calls.endAllInChannel(d.channel_id)
       void channels.refresh()
+      notifyElectron('🗑️ Канал удалён', 'Канал был удалён', `ch-${d.channel_id}`)
     }),
     c.on('role.changed', () => void channels.refresh()),
     c.on('member.banned', () => void channels.refresh()),
@@ -116,6 +160,17 @@ function wireWs() {
 
 onMounted(async () => {
   await settings.loadConfig().catch(() => undefined)
+  // Electron: клик по системному уведомлению — фокус окна и переход к каналу
+  if (isElectron()) {
+    electronUnsub = onElectronNotificationClicked((tag) => {
+      if (tag.startsWith('ch-')) {
+        const id = parseInt(tag.slice(3), 10)
+        if (id && channels.currentId !== id) {
+          void channels.openChannel(id)
+        }
+      }
+    })
+  }
   // Токен живёт сутки: при 401 (истёк/сменили пароль) — на экран входа.
   settings.api.onUnauthorized = () => {
     auth.logout()
@@ -145,6 +200,7 @@ watch(
 )
 
 onUnmounted(() => {
+  electronUnsub?.()
   unsubs.forEach((u) => u())
 })
 </script>

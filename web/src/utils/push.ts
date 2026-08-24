@@ -31,8 +31,11 @@ async function registerSubscription(api: PushApi, reg: ServiceWorkerRegistration
 // initPush вызывается после входа: создаёт подписку (если нужно) и
 // регистрирует её на сервере. При смене ключей (переустановка SW) —
 // переподписывается. Ошибки молча пропускаются: пуши не критичны.
+// В Electron используем нативные пуши main process, Web Push не нужен.
 export async function initPush(api: PushApi, vapidPublicKey: string | undefined): Promise<void> {
   try {
+    // Electron: нативные системные пуши, Web Push не нужен
+    if (typeof window !== 'undefined' && (window as any).__ELECTRON__?.notify) return
     if (!vapidPublicKey) return
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) return
     const reg = await navigator.serviceWorker.ready
