@@ -62,7 +62,7 @@ services:
     image: centrifugo/centrifugo:v5
     container_name: golosloom-centrifugo
     restart: unless-stopped
-    command: --config /etc/centrifugo/config.json
+    command: centrifugo --config /etc/centrifugo/config.json
     volumes:
       - ./centrifugo.json:/etc/centrifugo/config.json:ro
       - /opt/golosloom/fcm-service-account.json:/fcm-service-account.json:ro
