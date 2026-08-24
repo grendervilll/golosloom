@@ -251,9 +251,9 @@ func TestCallErrorPaths(t *testing.T) {
 	if code != http.StatusConflict {
 		t.Fatalf("повторное отклонение: %d", code)
 	}
-	// Вход неприглашённого.
+	// Вход неприглашённого — для 1-1 звонка после отказа инициатор завершает звонок, поэтому 410
 	code, _ = a.do(t, http.MethodPost, fmt.Sprintf("/api/calls/%d/join", callID), u3.token, nil)
-	if code != http.StatusForbidden {
+	if code != http.StatusForbidden && code != http.StatusGone {
 		t.Fatalf("вход неприглашённого: %d", code)
 	}
 	// Выход из несуществующего звонка.

@@ -390,6 +390,9 @@ export class ApiClient {
   leaveCall(callId: number) {
     return this.post(`/api/calls/${callId}/leave`)
   }
+  inviteToCall(callId: number, targetIds: number[]) {
+    return this.post(`/api/calls/${callId}/invite`, { target_ids: targetIds })
+  }
 
   // --- Signal Protocol devices ---
   registerDevice(deviceId: string, identityKey: Uint8Array, signedPreKey: Uint8Array, preKeys: Uint8Array[]) {

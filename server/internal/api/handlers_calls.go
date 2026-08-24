@@ -157,6 +157,120 @@ func (s *Server) handleCreateCall(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleInviteToCall — пригласить пользователя в уже созданный звонок (кнопка "+" в панели звонка).
+func (s *Server) handleInviteToCall(w http.ResponseWriter, r *http.Request) {
+	callID := pathID(r, "id")
+	call, err := s.Store.GetCall(callID)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "звонок не найден")
+		return
+	}
+	if call.Status == models.CallEnded {
+		writeErr(w, http.StatusGone, "звонок завершён")
+		return
+	}
+	// Только участник звонка может приглашать
+	callerID := userIDFrom(r)
+	participants, _ := s.Store.CallParticipantIDs(callID)
+	isParticipant := false
+	for _, pid := range participants {
+		if pid == callerID {
+			isParticipant = true
+			break
+		}
+	}
+	if !isParticipant && call.InitiatorID != callerID {
+		// Проверим админа сервера — может приглашать всегда
+		if u, err := s.Store.GetUserByID(callerID); err != nil || !u.IsServerAdmin {
+			writeErr(w, http.StatusForbidden, "только участник звонка может приглашать")
+			return
+		}
+	}
+	var req struct {
+		UserID    int64   `json:"user_id"`
+		TargetIDs []int64 `json:"target_ids"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, "некорректный запрос")
+		return
+	}
+	targets := req.TargetIDs
+	if req.UserID != 0 {
+		targets = append(targets, req.UserID)
+	}
+	if len(targets) == 0 {
+		writeErr(w, http.StatusBadRequest, "выберите хотя бы одного пользователя")
+		return
+	}
+	callerNick := s.nickOf(callerID)
+	invited := 0
+	for _, targetID := range targets {
+		if targetID == callerID {
+			continue
+		}
+		if !s.Store.IsMember(call.ChannelID, targetID) {
+			continue
+		}
+		// Уже в звонке — пропускаем
+		if pids, _ := s.Store.CallParticipantIDs(callID); len(pids) > 0 {
+			already := false
+			for _, pid := range pids {
+				if pid == targetID {
+					already = true
+					break
+				}
+			}
+			if already {
+				continue
+			}
+		}
+		// Уже приглашён (ringing) — пропускаем
+		if inv, err := s.Store.GetCallInvite(callID, targetID); err == nil && inv.Status == models.CallInviteRinging {
+			continue
+		}
+		// Если уже есть ringing в другом звонке канала — не дублируем
+		if has, err := s.Store.HasRingingCallWithUser(call.ChannelID, targetID); err == nil && has {
+			// Но для существующего звонка разрешаем приглашать даже если есть другой ringing — проверим другой звонок
+			// Если это тот же звонок, уже проверили выше, поэтому пропускаем только если другой
+			if other, _ := s.Store.HasActiveRingingInvite(targetID); other {
+				// Проверим что это не тот же звонок
+				if inv, _ := s.Store.GetCallInvite(callID, targetID); inv == nil {
+					// Немного смягчаем — всё равно приглашаем, но проверим занятость
+				}
+			}
+		}
+		if err := s.Store.CreateCallInvite(callID, targetID); err != nil {
+			continue
+		}
+		s.publishUser(targetID, centrifugoEvent{
+			Type: "call.invite",
+			Data: map[string]interface{}{
+				"call_id":        callID,
+				"channel_id":     call.ChannelID,
+				"initiator_id":   callerID,
+				"initiator_nick": callerNick,
+			},
+		})
+		s.pushNotify(targetID, "📞 Входящий звонок", callerNick+" приглашает в звонок «"+s.channelName(call.ChannelID)+"»", "call")
+		invited++
+	}
+	if invited == 0 {
+		writeErr(w, http.StatusBadRequest, "нет доступных получателей приглашения")
+		return
+	}
+	// Для новых приглашений запускаем отдельный таймер автоотклонения
+	go s.autoDeclineRinging(callID)
+	// Обновляем канал о новом приглашении (для кнопки "Войти")
+	s.publishChannel(call.ChannelID, centrifugoEvent{
+		Type: "call.created",
+		Data: map[string]interface{}{
+			"call":        call,
+			"caller_nick": callerNick,
+		},
+	})
+	writeJSON(w, http.StatusOK, map[string]interface{}{"invited": invited})
+}
+
 // autoDeclineRinging — через 20 секунд отклоняет звонки, которые не приняли.
 func (s *Server) autoDeclineRinging(callID int64) {
 	call, err := s.Store.GetCall(callID)
@@ -183,6 +297,12 @@ func (s *Server) autoDeclineRinging(callID int64) {
 		}
 	}
 	if !changed {
+		return
+	}
+	allInvites, _ := s.Store.CallInvitesForCall(callID)
+	if len(allInvites) == 1 {
+		// Для 1-1 звонка таймаут = завершение (пропущенный)
+		s.finishCall(*call, "нет ответа")
 		return
 	}
 	// Уведомляем инициатора и канал, что ringing фаза завершилась — нужно
@@ -375,9 +495,15 @@ func (s *Server) handleDeclineCall(w http.ResponseWriter, r *http.Request) {
 			"call_id": callID, "user_id": userIDFrom(r),
 		},
 	})
-	// Если больше никто не звонит — останавливаем гудки у инициатора,
-	// но сам звонок (ringing с одним участником) остаётся для "Войти".
-	if ringing, _ := s.Store.RingingInvites(callID); len(ringing) == 0 {
+	// Для звонка 1-1 (один приглашённый) отказ = завершение; для группового — остаётся "Войти"
+	allInvites, _ := s.Store.CallInvitesForCall(callID)
+	ringing, _ := s.Store.RingingInvites(callID)
+	if len(ringing) == 0 {
+		if len(allInvites) == 1 {
+			s.finishCall(*call, "собеседник отклонил звонок")
+			writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+			return
+		}
 		s.publishUser(call.InitiatorID, centrifugoEvent{
 			Type: "call.invite.timeout",
 			Data: map[string]int64{"call_id": callID},

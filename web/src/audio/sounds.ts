@@ -54,9 +54,14 @@ class SoundManager {
     if (this.ringTimer !== null) return // не даём двум вызовам звучать одновременно
     this.ringTimer = 1 // guard: звонок активен
     if (typeof window !== 'undefined') {
-      // В Electron file:// protocol нужен абсолютный URL.
-      const base = window.location.origin !== 'null' ? window.location.origin : ''
-      const src = base ? base + '/sounds/zvonok.mp3' : 'sounds/zvonok.mp3'
+      // Универсальный URL для web (https://) и Electron (file://)
+      let src = 'sounds/zvonok.mp3'
+      try {
+        src = new URL('sounds/zvonok.mp3', window.location.href).href
+      } catch {
+        const base = window.location.origin !== 'null' && !window.location.origin.startsWith('file') ? window.location.origin : ''
+        src = base ? base + '/sounds/zvonok.mp3' : 'sounds/zvonok.mp3'
+      }
       const audio = new Audio(src)
       audio.loop = true
       audio.volume = 0.8

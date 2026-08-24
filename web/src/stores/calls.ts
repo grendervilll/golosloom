@@ -520,6 +520,12 @@ export const useCallStore = defineStore('calls', {
       if (!call) return
       settings.api.post(`/api/calls/${call.id}/punch`).catch(() => {})
     },
+    async inviteToCall(targetIds: number[]) {
+      const settings = useSettingsStore()
+      const call = this.currentCall
+      if (!call) throw new Error('Нет активного звонка')
+      await settings.api.inviteToCall(call.id, targetIds)
+    },
     // Громкость конкретного участника (сохраняется и применяется к его трекам).
     async setParticipantVolume(userId: number, volume: number) {
       const settings = useSettingsStore()

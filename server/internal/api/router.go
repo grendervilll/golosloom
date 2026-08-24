@@ -115,6 +115,7 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("POST /api/calls/{id}/join", s.requireAuth(s.handleJoinCall))
 	mux.HandleFunc("POST /api/calls/{id}/leave", s.requireAuth(s.handleLeaveCall))
 	mux.HandleFunc("POST /api/calls/{id}/punch", s.requireAuth(s.handleCallPunch))
+	mux.HandleFunc("POST /api/calls/{id}/invite", s.requireAuth(s.handleInviteToCall))
 
 	// Typing indicator
 	mux.HandleFunc("POST /api/channels/{id}/typing", s.requireAuth(s.handleSendTyping))

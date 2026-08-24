@@ -1,15 +1,18 @@
 // Плашка активного звонка внизу экрана: длительность, аватары участников,
-// зелёная подсветка говорящего, тап — вернуться к звонку.
+// зелёная подсветка говорящего, тап — вернуться к звонку + пригласить.
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { useCallStore } from '../stores/calls'
 import { useChannelsStore } from '../stores/channels'
 import Avatar from './Avatar.vue'
+import InviteToCallModal from './InviteToCallModal.vue'
 
 const emit = defineEmits<{ (e: 'return'): void }>()
 
 const calls = useCallStore()
 const channels = useChannelsStore()
+
+const showInvite = ref(false)
 
 const now = ref(Date.now())
 const timer = window.setInterval(() => (now.value = Date.now()), 1000)
@@ -64,7 +67,9 @@ function isSpeaking(identity: string): boolean {
       <span v-if="extra" class="extra">+{{ extra }}</span>
       <span v-if="!participants.length" class="waiting">ждём собеседников…</span>
     </span>
+    <span class="invite-plus" title="Пригласить в звонок" @click.stop="showInvite = true">+</span>
   </button>
+  <InviteToCallModal v-if="showInvite" @close="showInvite = false" />
 </template>
 
 <style scoped>
@@ -109,6 +114,24 @@ function isSpeaking(identity: string): boolean {
 .waiting {
   font-size: 12px;
   color: var(--text-dim);
+}
+.invite-plus {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 700;
+  margin-left: 8px;
+  flex-shrink: 0;
+  transition: background 0.12s;
+}
+.invite-plus:hover {
+  background: var(--accent-hover);
 }
 
 </style>

@@ -881,10 +881,12 @@ func TestCallAutoDecline(t *testing.T) {
 	a := newTestApp(t, nil)
 	caller := a.register(t, "Caller")
 	u2 := a.register(t, "User2")
+	u3 := a.register(t, "User3")
 	ch := a.mustChannel(t, caller.token, "Канал", false)
 	a.join(t, u2.token, ch)
+	a.join(t, u3.token, ch)
 	code, body := a.do(t, http.MethodPost, "/api/calls", caller.token,
-		map[string]interface{}{"channel_id": ch, "target_ids": []int64{u2.id}})
+		map[string]interface{}{"channel_id": ch, "target_ids": []int64{u2.id, u3.id}})
 	if code != http.StatusCreated {
 		t.Fatalf("создание звонка: %d", code)
 	}

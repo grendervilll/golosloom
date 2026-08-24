@@ -135,8 +135,8 @@ func TestCallEdgeTwoCallsSameChannel(t *testing.T) {
 
 // 8) Отклонил — потом решил войти (Войти в звонок).
 func TestCallEdgeDeclineThenJoinLater(t *testing.T) {
-	a, us, ch := setupCallScenario(t, 2, 30*time.Second)
-	callID := a.createCallT(t, us[0].token, ch, []int64{us[1].id})
+	a, us, ch := setupCallScenario(t, 3, 30*time.Second)
+	callID := a.createCallT(t, us[0].token, ch, []int64{us[1].id, us[2].id})
 	a.do(t, http.MethodPost, fmt.Sprintf("/api/calls/%d/decline", callID), us[1].token, nil)
 	code, body := a.do(t, http.MethodPost, fmt.Sprintf("/api/calls/%d/join", callID), us[1].token, map[string]string{"device_id": "dev"})
 	if code != http.StatusOK || body["token"] == nil {

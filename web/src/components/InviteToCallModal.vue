@@ -1,4 +1,4 @@
-// Выбор пользователей для звонка: конкретный, несколько, "Выбрать всех", "Снять всех".
+// Приглашение в уже созданный звонок: кнопка "+" в панели звонка.
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useChannelsStore } from '../stores/channels'
@@ -26,7 +26,6 @@ const settings = useSettingsStore()
 const selected = ref<number[]>([])
 const busy = ref(false)
 
-// Список участников канала всегда актуален: обновляем при открытии окна.
 onMounted(async () => {
   if (channels.currentId) {
     try {
@@ -37,7 +36,24 @@ onMounted(async () => {
   }
 })
 
-const candidates = computed(() => channels.members.filter((m) => m.user_id !== auth.user?.id))
+// Уже в звонке — не показываем
+const currentCall = computed(() => calls.currentCall)
+const participants = computed(() => {
+  const call = currentCall.value
+  if (!call) return new Set<number>()
+  const s = new Set<number>(call.participants || [])
+  s.add(call.initiator_id)
+  // Добавляем remoteParticipants из LiveKit
+  for (const p of calls.remoteParticipants) {
+    const uid = Number(p.identity.split(':')[0])
+    if (uid) s.add(uid)
+  }
+  return s
+})
+
+const candidates = computed(() =>
+  channels.members.filter((m) => m.user_id !== auth.user?.id && !participants.value.has(m.user_id))
+)
 
 function toggle(id: number) {
   if (selected.value.includes(id)) {
@@ -54,17 +70,18 @@ function clearAll() {
   selected.value = []
 }
 
-async function start() {
+async function invite() {
   if (selected.value.length === 0) {
     toast.warning('Выберите хотя бы одного пользователя')
     return
   }
   busy.value = true
   try {
-    await calls.initiate(channels.currentId, selected.value)
+    await calls.inviteToCall(selected.value)
+    toast.success('Приглашение отправлено')
     emit('close')
   } catch (e: any) {
-    toast.error(e.message)
+    toast.error(e.message || 'Не удалось пригласить')
   } finally {
     busy.value = false
   }
@@ -75,7 +92,7 @@ async function start() {
   <Dialog :open="true" @update:open="(o) => { if (!o) emit('close') }">
     <DialogContent class="max-w-[420px]">
       <DialogHeader class="text-center">
-        <DialogTitle class="text-center">Кому позвонить?</DialogTitle>
+        <DialogTitle class="text-center">Пригласить в звонок</DialogTitle>
       </DialogHeader>
       <div class="toolbar">
         <Button variant="secondary" size="sm" @click="selectAll">Выбрать всех</Button>
@@ -88,11 +105,11 @@ async function start() {
           <span class="nick">{{ u.nick }}</span>
           <span class="muted small">ID: {{ u.user_id }}</span>
         </div>
-        <p v-if="candidates.length === 0" class="muted center">В канале нет других участников</p>
+        <p v-if="candidates.length === 0" class="muted center">Нет доступных пользователей для приглашения</p>
       </div>
       <DialogFooter class="grid-cols-2">
         <Button variant="secondary" @click="emit('close')">Отмена</Button>
-        <Button :disabled="busy" @click="start">Начать вызов</Button>
+        <Button :disabled="busy" @click="invite">Пригласить</Button>
       </DialogFooter>
     </DialogContent>
   </Dialog>
