@@ -161,11 +161,20 @@ class CallService extends ChangeNotifier {
           ringing = ci;
           // кэш как в web
           final idx = calls.indexWhere((x) => x.id == ci.id);
-          if (idx >= 0) calls[idx] = ci; else calls.add(ci);
+          if (idx >= 0) {
+            calls[idx] = ci;
+          } else {
+            calls.add(ci);
+          }
           notifyListeners();
         }
       case 'call.started':
         if (ringing != null) ringing = ringing!.copyWith(status: 'active');
+        final startedId = (e.data['call_id'] as num?)?.toInt();
+        if (startedId != null) {
+          final idxS = calls.indexWhere((x) => x.id == startedId);
+          if (idxS >= 0) calls[idxS] = calls[idxS].copyWith(status: 'active');
+        }
         _connectedAt ??= DateTime.now();
         _startedAt = DateTime.now();
         notifyListeners();
@@ -204,7 +213,13 @@ class CallService extends ChangeNotifier {
           } else {
             text = 'Звонок завершён в $endStr';
           }
-          if (startAt == null && dur.isEmpty) {
+          // Защита от гонки: если звонок был active или имел участников — не считаем пропущенным,
+          // даже если _connectedAt ещё не успел выставиться (быстрый decline).
+          bool isMissed = startAt == null && dur.isEmpty;
+          if (isMissed && call != null && (call.status == 'active' || call.participants.isNotEmpty)) {
+            isMissed = false;
+          }
+          if (isMissed) {
             String chName = '';
             try {
               final ch = session.channels.firstWhere((c) => (c['id'] as num?)?.toInt() == channelId);

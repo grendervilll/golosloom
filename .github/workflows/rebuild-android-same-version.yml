@@ -41,7 +41,7 @@ jobs:
         with:
           channel: stable
 
-      - name: Подготовка google-services.json (из секрета или из репо)
+      - name: Подготовка google-services.json (из секрета или заглушки)
         env:
           GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
         run: |
@@ -51,7 +51,15 @@ jobs:
           elif [ -f mobile/android/app/google-services.json ]; then
             echo "используется существующий файл из репозитория"
           else
-            echo "::warning::google-services.json отсутствует — сборка без Firebase"
+            echo "::warning::google-services.json отсутствует — создаётся заглушка (push не будут работать)"
+            mkdir -p mobile/android/app
+            cat > mobile/android/app/google-services.json <<'JSON'
+          {
+            "project_info": {"project_number": "0", "project_id": "dummy", "storage_bucket": "dummy.appspot.com"},
+            "client": [{"client_info": {"mobilesdk_app_id": "1:0:android:dummy", "android_client_info": {"package_name": "com.golosloom.golosloom_mobile"}}, "oauth_client": [], "api_key": [{"current_key": "dummy"}], "services": {"appinvite_service": {"other_platform_oauth_client": []}}}],
+            "configuration_version": "1"
+          }
+          JSON
           fi
           ls -l mobile/android/app/google-services.json || true
 

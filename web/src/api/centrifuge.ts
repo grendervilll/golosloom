@@ -135,8 +135,8 @@ export class CentrifugeClient {
       console.log('[centrifuge] SUBSCRIBED to', channel, ctx)
     })
 
-    sub.on('subscriptionError', (ctx: any) => {
-      console.error('[centrifuge] subscriptionError on', channel, ctx)
+    sub.on('error', (ctx: any) => {
+      console.error('[centrifuge] subscription error on', channel, ctx)
     })
 
     sub.subscribe()

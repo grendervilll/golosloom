@@ -1,9 +1,9 @@
+// ignore_for_file: unnecessary_underscores
 // Сессия приложения: Centrifugo, Signal Protocol, каналы.
 // Заменяет WebSocket на Centrifugo, старые ключи каналов на Signal Protocol.
 library;
 
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
@@ -127,8 +127,7 @@ class Session extends ChangeNotifier {
 
   void connectCentrifuge() {
     try {
-      // Fetch server config if not cached
-      final doConnect = (ServerConfig cfg) {
+      void doConnect(ServerConfig cfg) {
         if (_stopped) return;
         final centrifugoUrl = cfg.centrifugoUrl;
         if (centrifugoUrl == null || centrifugoUrl.isEmpty) return;
@@ -147,10 +146,10 @@ class Session extends ChangeNotifier {
           notifyListeners();
 
           _subscribeToUserChannel();
-        }).catchError((_) {
+        }).catchError((Object e, StackTrace s) {
           _onCentrifugeClosed();
         });
-      };
+      }
 
       if (_serverConfig != null) {
         doConnect(_serverConfig!);
@@ -158,7 +157,9 @@ class Session extends ChangeNotifier {
         api.config().then((cfg) {
           _serverConfig = cfg;
           doConnect(cfg);
-        }).catchError((_) => _onCentrifugeClosed());
+        }).catchError((Object e, StackTrace s) {
+          _onCentrifugeClosed();
+        });
       }
     } catch (_) {
       _onCentrifugeClosed();

@@ -1,3 +1,4 @@
+// ignore_for_file: unnecessary_underscores
 // Пикер смайликов и GIF — Flutter-версия web/src/components/EmojiPicker.vue
 library;
 

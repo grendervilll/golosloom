@@ -37,7 +37,15 @@ jobs:
           elif [ -f mobile/android/app/google-services.json ]; then
             echo "используется существующий google-services.json из репозитория — сборка продолжится"
           else
-            echo "::warning::google-services.json отсутствует — сборка продолжится без Firebase (push не будут работать)"
+            echo "::warning::google-services.json отсутствует — создаётся заглушка для сборки (push не будут работать)"
+            mkdir -p mobile/android/app
+            cat > mobile/android/app/google-services.json <<'JSON'
+          {
+            "project_info": {"project_number": "0", "project_id": "dummy", "storage_bucket": "dummy.appspot.com"},
+            "client": [{"client_info": {"mobilesdk_app_id": "1:0:android:dummy", "android_client_info": {"package_name": "com.golosloom.golosloom_mobile"}}, "oauth_client": [], "api_key": [{"current_key": "dummy"}], "services": {"appinvite_service": {"other_platform_oauth_client": []}}}],
+            "configuration_version": "1"
+          }
+          JSON
           fi
 
       - name: Сборка APK (по архитектурам)

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import MainView from './views/MainView.vue'
@@ -6,6 +6,17 @@ import { useAuthStore } from './stores/auth'
 import { useSettingsStore } from './stores/settings'
 import { useCallStore } from './stores/calls'
 import { router } from './router'
+
+function mockSettingsApi() {
+  return {
+    startFileTokenRefresh: vi.fn(),
+    setToken: vi.fn(),
+    loadConfig: vi.fn().mockResolvedValue(undefined),
+    onUnauthorized: null,
+    get: vi.fn(),
+    post: vi.fn(),
+  } as any
+}
 
 describe('мобильная навигация', () => {
   it('кнопка ✕ закрывает шторку участников', async () => {
@@ -15,7 +26,7 @@ describe('мобильная навигация', () => {
     auth.token = 't'
     auth.user = { id: 1, nick: 'me', is_server_admin: false, server_banned: false, created_at: '' } as any
     const settings = useSettingsStore()
-    settings.api = {} as any
+    settings.api = mockSettingsApi()
     const wrapper = mount(MainView, { global: { plugins: [pinia, router] }, attachTo: document.body })
     await router.isReady()
     await wrapper.vm.$nextTick()
@@ -43,7 +54,7 @@ describe('мобильная навигация', () => {
     auth.token = 't'
     auth.user = { id: 1, nick: 'me', is_server_admin: false, server_banned: false, created_at: '' } as any
     const settings = useSettingsStore()
-    settings.api = {} as any
+    settings.api = mockSettingsApi()
     const calls = useCallStore()
     calls.connectedCallId = 5
     const wrapper = mount(MainView, { global: { plugins: [pinia, router] }, attachTo: document.body })
@@ -85,7 +96,7 @@ describe('мобильная навигация', () => {
     auth.token = 't'
     auth.user = { id: 1, nick: 'me', is_server_admin: false, server_banned: false, created_at: '' } as any
     const settings = useSettingsStore()
-    settings.api = {} as any
+    settings.api = mockSettingsApi()
     const wrapper = mount(MainView, { global: { plugins: [pinia, router] }, attachTo: document.body })
     await router.isReady()
     await wrapper.vm.$nextTick()

@@ -3,7 +3,6 @@
 library;
 
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 
@@ -180,11 +179,14 @@ class ChatStore extends ChangeNotifier {
   }
 
   bool searchBusy = false;
+  int _searchGen = 0;
 
   /// Поиск как в web chat.ts — скан расшифрованного текста+имени файла, до 12 страниц, макс 100 результатов.
+  /// С yield каждые 10 сообщений, чтобы не блокировать UI, и отмена предыдущего поиска.
   Future<List<ChatMessage>> searchMessages(int channelId, String query) async {
     final q = query.trim().toLowerCase();
     if (q.isEmpty) return [];
+    final gen = ++_searchGen;
     searchBusy = true;
     notifyListeners();
     try {
@@ -205,12 +207,14 @@ class ChatStore extends ChangeNotifier {
       // Догружаем страницы по beforeId (как web)
       int? beforeId = all.isNotEmpty ? all.first.id : null;
       for (var page = 0; page < 12 && res.length < 100; page++) {
+        if (gen != _searchGen) return [];
         try {
           final raw = (await session.api.messages(channelId, beforeId: beforeId, limit: 50)).cast<Map<String, dynamic>>();
           if (raw.isEmpty) break;
           final msgs = <ChatMessage>[];
-          for (final d in raw) {
-            msgs.add(await _toMessage(d));
+          for (var i = 0; i < raw.length; i++) {
+            if (i % 10 == 0) await Future<void>.delayed(Duration.zero);
+            msgs.add(await _toMessage(raw[i]));
           }
           if (msgs.isEmpty) break;
           for (final m in msgs) {
@@ -230,12 +234,15 @@ class ChatStore extends ChangeNotifier {
           break;
         }
       }
+      if (gen != _searchGen) return [];
       // Сортируем по времени (старые первые как в web)
       res.sort((a, b) => a.createdAt.compareTo(b.createdAt));
       return res;
     } finally {
-      searchBusy = false;
-      notifyListeners();
+      if (gen == _searchGen) {
+        searchBusy = false;
+        notifyListeners();
+      }
     }
   }
 

@@ -1,3 +1,4 @@
+// ignore_for_file: unnecessary_underscores
 // Рендер markdown — Flutter-версия web/src/utils/markdown.ts
 // Поддержка: ```lang code```, `inline`, **жирный**, *курсив*, ~~зачёрк~~, [ссылка](https://…)
 library;
@@ -134,7 +135,6 @@ class _CodeBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = AppColors.of(context);
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.symmetric(vertical: 4),

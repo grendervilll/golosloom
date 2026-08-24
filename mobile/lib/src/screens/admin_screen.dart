@@ -1,3 +1,4 @@
+// ignore_for_file: unnecessary_underscores
 // Админ-панель сервера: статистика, пользователи, каналы, регистрация.
 library;
 
@@ -66,14 +67,17 @@ class _AdminScreenState extends State<AdminScreen> {
       final stats = await _api.adminStats();
       final users = await _api.adminUsers();
       final channels = await _api.adminChannels();
-      final files = await _api.adminListFiles().catchError((_) => <dynamic>[]);
+      List<dynamic> files = [];
+      try {
+        files = await _api.adminListFiles();
+      } catch (_) {}
       final reg = await _api.adminGetRegistration();
       if (mounted) {
         setState(() {
           _stats = stats;
           _users = users;
           _channels = channels;
-          _files = files as List<dynamic>;
+          _files = files;
           _registrationEnabled = reg;
           _error = null;
         });

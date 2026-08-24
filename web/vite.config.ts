@@ -5,6 +5,7 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   plugins: [vue(), tailwindcss()],
+  base: '',
   server: {
     port: 5173,
     proxy: {
@@ -15,7 +16,6 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: false,
-    base: '',
   },
   test: {
     environment: 'jsdom',

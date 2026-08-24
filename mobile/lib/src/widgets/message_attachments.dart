@@ -1,3 +1,4 @@
+// ignore_for_file: use_build_context_synchronously, unnecessary_underscores
 // Отображение вложений — Flutter-версия web MessageItem/FileViewer/VideoPopup/TextPreview
 library;
 
@@ -320,7 +321,6 @@ class _TextPreviewDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = AppColors.of(context);
     return Dialog(
       backgroundColor: const Color(0xFF161B22),
       insetPadding: const EdgeInsets.all(12),
