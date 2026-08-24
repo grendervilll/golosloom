@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import '../call_service.dart';
 import '../chat_store.dart';
 import '../session.dart';
+import '../theme.dart';
 import '../screens/call_screen.dart';
 import 'avatar.dart';
 
@@ -56,6 +57,7 @@ class _MiniCallBarState extends State<MiniCallBar> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     final calls = widget.calls;
     if (!calls.inCall) return const SizedBox.shrink();
     final participants = calls.remoteParticipants;
@@ -65,7 +67,7 @@ class _MiniCallBarState extends State<MiniCallBar> {
     return SafeArea(
       top: false,
       child: Material(
-        color: const Color(0xFF2B2D31),
+        color: colors.bg2,
         child: InkWell(
           onTap: () {
             Navigator.of(context).push(
@@ -76,23 +78,23 @@ class _MiniCallBarState extends State<MiniCallBar> {
           },
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: const BoxDecoration(
-              border: Border(top: BorderSide(color: Color(0xFF26282C))),
+            decoration: BoxDecoration(
+              border: Border(top: BorderSide(color: colors.border)),
             ),
             child: Row(
               children: [
-                const Icon(Icons.call, color: Color(0xFF23A55A), size: 20),
+                Icon(Icons.call, color: colors.green, size: 20),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     'Разговор · ${_fmt(calls.callDuration)}',
-                    style: const TextStyle(color: Color(0xFFDBDEE1), fontSize: 13, fontWeight: FontWeight.w600),
+                    style: TextStyle(color: colors.text, fontSize: 13, fontWeight: FontWeight.w600),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
                 if (shown.isEmpty)
-                  const Text('ждём собеседников…',
-                      style: TextStyle(color: Color(0xFF949BA4), fontSize: 12))
+                  Text('ждём собеседников…',
+                      style: TextStyle(color: colors.textDim, fontSize: 12))
                 else
                   Row(
                     children: [
@@ -110,7 +112,7 @@ class _MiniCallBarState extends State<MiniCallBar> {
                         Padding(
                           padding: const EdgeInsets.only(left: 6),
                           child: Text('+$extra',
-                              style: const TextStyle(color: Color(0xFF949BA4), fontSize: 12)),
+                              style: TextStyle(color: colors.textDim, fontSize: 12)),
                         ),
                     ],
                   ),

@@ -3,6 +3,7 @@ library;
 
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class StoredUser {
@@ -24,7 +25,7 @@ class StoredUser {
   }
 }
 
-class AppSettings {
+class AppSettings extends ChangeNotifier {
   static const _serverKey = 'server_url';
   static const _tokenKey = 'auth_token';
   static const _userKey = 'auth_user';
@@ -39,7 +40,10 @@ class AppSettings {
 
   /// Тёмная тема (по умолчанию — светлая); выбор запоминается.
   bool get darkTheme => _prefs.getBool(_darkKey) ?? false;
-  Future<void> setDarkTheme(bool v) => _prefs.setBool(_darkKey, v);
+  Future<void> setDarkTheme(bool v) async {
+    await _prefs.setBool(_darkKey, v);
+    notifyListeners();
+  }
 
   Future<void> setServerUrl(String url) => _prefs.setString(_serverKey, url);
 

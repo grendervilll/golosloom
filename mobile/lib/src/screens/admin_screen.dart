@@ -20,12 +20,33 @@ class _AdminScreenState extends State<AdminScreen> {
   Map<String, dynamic> _stats = {};
   List<dynamic> _users = [];
   List<dynamic> _channels = [];
+  List<dynamic> _files = [];
+  String _fileCat = 'all'; // all | photo | video | text
+  bool _selecting = false;
+  final Set<int> _selected = {};
   bool _registrationEnabled = true;
   String? _error;
   final _newNick = TextEditingController();
   final _newPass = TextEditingController();
 
   ApiClient get _api => widget.session.api;
+
+  bool _catOf(Map<String, dynamic> f, String cat) {
+    final mime = (f['mime'] as String?) ?? '';
+    final name = (f['filename'] as String?) ?? '';
+    if (cat == 'photo') return mime.startsWith('image/');
+    if (cat == 'video') return mime.startsWith('video/');
+    if (cat == 'text') {
+      final ext = name.toLowerCase().split('.').last;
+      return {'txt','md','json','yaml','yml','log','csv','js','ts','dart','go','py','java','kt','c','cpp','h','sh','bash','html','css'}.contains(ext);
+    }
+    return true;
+  }
+
+  List<dynamic> get _filteredFiles {
+    if (_fileCat == 'all') return _files;
+    return _files.where((f) => _catOf(f as Map<String, dynamic>, _fileCat)).toList();
+  }
 
   @override
   void initState() {
@@ -45,12 +66,14 @@ class _AdminScreenState extends State<AdminScreen> {
       final stats = await _api.adminStats();
       final users = await _api.adminUsers();
       final channels = await _api.adminChannels();
+      final files = await _api.adminListFiles().catchError((_) => <dynamic>[]);
       final reg = await _api.adminGetRegistration();
       if (mounted) {
         setState(() {
           _stats = stats;
           _users = users;
           _channels = channels;
+          _files = files as List<dynamic>;
           _registrationEnabled = reg;
           _error = null;
         });
@@ -58,6 +81,42 @@ class _AdminScreenState extends State<AdminScreen> {
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     }
+  }
+
+  Future<void> _deleteFile(int id) async {
+    try {
+      await _api.adminDeleteFile(id);
+      setState(() {
+        _files.removeWhere((f) => (f['id'] as num?)?.toInt() == id);
+        _selected.remove(id);
+      });
+      _snack('Файл удалён');
+    } catch (e) {
+      _snack('Ошибка: $e');
+    }
+  }
+
+  Future<void> _deleteSelected() async {
+    if (_selected.isEmpty) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Удалить выбранные?'),
+        content: Text('Будет удалено файлов: ${_selected.length}'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
+          FilledButton(style: FilledButton.styleFrom(backgroundColor: const Color(0xFFDA373C)), onPressed: () => Navigator.pop(ctx, true), child: const Text('Удалить')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    for (final id in _selected.toList()) {
+      await _deleteFile(id);
+    }
+    setState(() {
+      _selecting = false;
+      _selected.clear();
+    });
   }
 
   void _snack(String msg) {
@@ -152,17 +211,17 @@ class _AdminScreenState extends State<AdminScreen> {
             padding: const EdgeInsets.all(10),
             child: Row(
               children: [
-                for (final t in [('users', 'Пользователи'), ('channels', 'Каналы'), ('server', 'Сервер')])
+                for (final t in [('users', 'Пользователи'), ('channels', 'Каналы'), ('files', 'Файлы'), ('server', 'Сервер')])
                   Expanded(
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 3),
                       child: FilledButton(
                         style: FilledButton.styleFrom(
                           backgroundColor: _tab == t.$1 ? accent : const Color(0xFF383A40),
-                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          padding: const EdgeInsets.symmetric(vertical: 8),
                         ),
                         onPressed: () => setState(() => _tab = t.$1),
-                        child: Text(t.$2, style: const TextStyle(color: Colors.white, fontSize: 13)),
+                        child: Text(t.$2, style: const TextStyle(color: Colors.white, fontSize: 11)),
                       ),
                     ),
                   ),
@@ -174,7 +233,15 @@ class _AdminScreenState extends State<AdminScreen> {
               padding: const EdgeInsets.all(10),
               child: Text(_error!, style: const TextStyle(color: Color(0xFFDA373C))),
             ),
-          Expanded(child: _tab == 'users' ? _usersTab() : _tab == 'channels' ? _channelsTab() : _serverTab()),
+          Expanded(
+            child: _tab == 'users'
+                ? _usersTab()
+                : _tab == 'channels'
+                    ? _channelsTab()
+                    : _tab == 'files'
+                        ? _filesTab()
+                        : _serverTab(),
+          ),
         ],
       ),
     );
@@ -300,6 +367,120 @@ class _AdminScreenState extends State<AdminScreen> {
             ),
         ],
       ),
+    );
+  }
+
+  Widget _filesTab() {
+    const text = Color(0xFFDBDEE1);
+    const dim = Color(0xFF949BA4);
+    final cats = [('all','Все'),('photo','Фото'),('video','Видео'),('text','Текст')];
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          child: Row(
+            children: [
+              for (final c in cats)
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 2),
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(backgroundColor: _fileCat == c.$1 ? const Color(0xFF2AABEE) : const Color(0xFF383A40), padding: const EdgeInsets.symmetric(vertical: 8)),
+                      onPressed: () => setState(() => _fileCat = c.$1),
+                      child: Text(c.$2, style: const TextStyle(color: Colors.white, fontSize: 11)),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Row(
+            children: [
+              TextButton(
+                onPressed: () => setState(() {
+                  _selecting = !_selecting;
+                  if (!_selecting) _selected.clear();
+                }),
+                child: Text(_selecting ? 'Отменить' : 'Выбрать', style: const TextStyle(color: Color(0xFF2AABEE))),
+              ),
+              if (_selecting) ...[
+                TextButton(
+                  onPressed: () {
+                    final all = _filteredFiles.map((f) => (f['id'] as num).toInt()).toSet();
+                    setState(() => _selected.addAll(all));
+                  },
+                  child: const Text('Все', style: TextStyle(color: Color(0xFF949BA4))),
+                ),
+                const Spacer(),
+                FilledButton(
+                  style: FilledButton.styleFrom(backgroundColor: const Color(0xFFDA373C)),
+                  onPressed: _selected.isEmpty ? null : _deleteSelected,
+                  child: Text('Удалить (${_selected.length})', style: const TextStyle(color: Colors.white, fontSize: 12)),
+                ),
+              ] else
+                const Spacer(),
+              Text('${_filteredFiles.length} файлов', style: const TextStyle(color: dim, fontSize: 12)),
+            ],
+          ),
+        ),
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: _load,
+            child: _filteredFiles.isEmpty
+                ? ListView(physics: const AlwaysScrollableScrollPhysics(), children: [Padding(padding: const EdgeInsets.all(24), child: Center(child: Text('Нет файлов', style: const TextStyle(color: dim))))])
+                : GridView.builder(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.all(8),
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, childAspectRatio: 0.85, crossAxisSpacing: 6, mainAxisSpacing: 6),
+                    itemCount: _filteredFiles.length,
+                    itemBuilder: (_, i) {
+                      final f = _filteredFiles[i] as Map<String, dynamic>;
+                      final id = (f['id'] as num).toInt();
+                      final name = (f['filename'] as String?) ?? 'файл';
+                      final mime = (f['mime'] as String?) ?? '';
+                      final sel = _selected.contains(id);
+                      return GestureDetector(
+                        onTap: () {
+                          if (_selecting) {
+                            setState(() => sel ? _selected.remove(id) : _selected.add(id));
+                          } else {
+                            // превью
+                            if (mime.startsWith('image/')) {
+                              showDialog(context: context, builder: (ctx) => Dialog(backgroundColor: Colors.black, child: InteractiveViewer(child: Image.network(widget.session.api.fileUrl(id), errorBuilder: (_,__,___) => const Text('Ошибка', style: TextStyle(color: Colors.white))))));
+                            }
+                          }
+                        },
+                        onLongPress: () {
+                          showModalBottomSheet(context: context, builder: (ctx) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
+                            ListTile(leading: const Icon(Icons.delete, color: Color(0xFFDA373C)), title: const Text('Удалить файл', style: TextStyle(color: Color(0xFFDA373C))), onTap: () { Navigator.pop(ctx); _deleteFile(id); }),
+                            ListTile(leading: const Icon(Icons.open_in_new), title: const Text('Открыть'), onTap: () { Navigator.pop(ctx); }),
+                          ])));
+                        },
+                        child: Container(
+                          decoration: BoxDecoration(color: sel ? const Color(0xFF2AABEE).withValues(alpha: 0.3) : const Color(0xFF2B2D31), borderRadius: BorderRadius.circular(8), border: sel ? Border.all(color: const Color(0xFF2AABEE), width: 2) : null),
+                          child: Column(
+                            children: [
+                              Expanded(
+                                child: ClipRRect(
+                                  borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+                                  child: mime.startsWith('image/')
+                                      ? Image.network(widget.session.api.fileUrl(id), fit: BoxFit.cover, width: double.infinity, errorBuilder: (_,__,___) => Container(color: const Color(0xFF1E1F22), child: const Icon(Icons.image, color: dim)))
+                                      : Container(color: const Color(0xFF1E1F22), child: Center(child: Text(mime.startsWith('video/') ? '🎬' : '📄', style: const TextStyle(fontSize: 28)))),
+                                ),
+                              ),
+                              Padding(padding: const EdgeInsets.all(4), child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: text, fontSize: 10))),
+                              Padding(padding: const EdgeInsets.only(bottom: 4), child: Text('${(f['size'] as num?) ?? 0} Б', style: const TextStyle(color: dim, fontSize: 9))),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ),
+      ],
     );
   }
 

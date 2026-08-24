@@ -12,6 +12,7 @@ import 'package:livekit_client/livekit_client.dart' hide Session;
 
 import 'api_client.dart';
 import 'session.dart';
+import 'chat_store.dart';
 
 class CallInfo {
   final int id;
@@ -58,6 +59,7 @@ class CallService extends ChangeNotifier {
   static CallService? instance;
 
   final Session session;
+  ChatStore? chat; // для системных сообщений (как web App.vue)
   ServerConfig? _config;
 
   StreamSubscription<WsEvent>? _sub;
@@ -70,11 +72,26 @@ class CallService extends ChangeNotifier {
   String? callError;
   int _lastPunch = 0;
   bool _disposed = false;
+  // Для системного сообщения call.ended (как web calls.connectedAt)
+  DateTime? _connectedAt;
+  final List<CallInfo> calls = []; // кэш для поиска channel_id как в web
 
-  CallService(this.session) {
+  CallService(this.session, {this.chat}) {
     _sub = session.events.listen(_onEvent);
     session.addListener(_onSessionChanged);
     instance = this;
+  }
+
+  void setChatStore(ChatStore c) => chat = c;
+
+  String callDurationText() {
+    if (_connectedAt == null) return '';
+    final d = DateTime.now().difference(_connectedAt!);
+    final h = d.inHours;
+    final m = d.inMinutes % 60;
+    final s = d.inSeconds % 60;
+    if (h > 0) return '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 
   bool _wasConnected = false;
@@ -139,24 +156,70 @@ class CallService extends ChangeNotifier {
         // Инициатор: звонок создан, ждём ответа.
         final call = e.data['call'] as Map<String, dynamic>?;
         if (call != null) {
-          ringing = CallInfo.fromJson(call)
+          final ci = CallInfo.fromJson(call)
               .copyWith(initiatorNick: e.data['caller_nick'] as String?);
+          ringing = ci;
+          // кэш как в web
+          final idx = calls.indexWhere((x) => x.id == ci.id);
+          if (idx >= 0) calls[idx] = ci; else calls.add(ci);
           notifyListeners();
         }
       case 'call.started':
         if (ringing != null) ringing = ringing!.copyWith(status: 'active');
+        _connectedAt ??= DateTime.now();
+        _startedAt = DateTime.now();
         notifyListeners();
       case 'call.ended':
         final id = (e.data['call_id'] as num?)?.toInt();
+        // Системное сообщение как в web/src/App.vue:56-77
+        final startAt = _connectedAt;
+        final startStr = startAt != null
+            ? '${startAt.hour.toString().padLeft(2, '0')}:${startAt.minute.toString().padLeft(2, '0')}'
+            : null;
+        final endStr = '${DateTime.now().hour.toString().padLeft(2, '0')}:${DateTime.now().minute.toString().padLeft(2, '0')}';
+        final dur = callDurationText();
+        CallInfo? call;
+        try {
+          call = calls.firstWhere((x) => x.id == id);
+        } catch (_) {}
+        call ??= ringing?.id == id ? ringing : currentCall?.id == id ? currentCall : null;
+        final channelId = call?.channelId ?? (e.data['channel_id'] as num?)?.toInt() ?? 0;
         if (ringing?.id == id) ringing = null;
         if (currentCall?.id == id) {
           _disconnectRoom();
+        } else {
+          // убрать из кэша
+          calls.removeWhere((x) => x.id == id);
         }
+        _connectedAt = null;
         notifyListeners();
+        if (channelId != 0 && chat != null) {
+          String text;
+          if (startStr != null && dur.isNotEmpty) {
+            text = 'Звонок: $startStr — $endStr ($dur)';
+          } else if (dur.isNotEmpty) {
+            text = 'Звонок завершён, длительность $dur';
+          } else if (startStr != null) {
+            text = 'Звонок завершён в $endStr, начался в $startStr';
+          } else {
+            text = 'Звонок завершён в $endStr';
+          }
+          if (startAt == null && dur.isEmpty) {
+            String chName = '';
+            try {
+              final ch = session.channels.firstWhere((c) => (c['id'] as num?)?.toInt() == channelId);
+              chName = (ch['name'] as String?) ?? '';
+            } catch (_) {}
+            text = chName.isNotEmpty ? 'Пропущенный звонок в «$chName» в $endStr' : 'Пропущенный звонок в $endStr';
+          }
+          chat!.pushSystem(channelId, text);
+        }
       case 'call.participants':
         final id = (e.data['call_id'] as num?)?.toInt();
         final list = (e.data['participants'] as List?)?.cast<num>().map((x) => x.toInt()).toList() ?? const <int>[];
         if (currentCall?.id == id) currentCall = currentCall!.copyWith(participants: list);
+        final idx = calls.indexWhere((x) => x.id == id);
+        if (idx >= 0) calls[idx] = calls[idx].copyWith(participants: list);
         notifyListeners();
       case 'call.invite.timeout':
         final id = (e.data['call_id'] as num?)?.toInt();
@@ -282,6 +345,28 @@ class CallService extends ChangeNotifier {
     }
   }
 
+  Future<void> inviteToCall(List<int> targetIds) async {
+    final c = currentCall ?? ringing;
+    if (c == null || targetIds.isEmpty) return;
+    try {
+      await session.api.inviteToCall(c.id, targetIds);
+    } catch (e) {
+      callError = e.toString();
+      notifyListeners();
+    }
+  }
+
+  Future<void> punch() async {
+    final c = currentCall;
+    if (c == null) return;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (now - _lastPunch < 10000) return;
+    _lastPunch = now;
+    try {
+      await session.api.punchCall(c.id);
+    } catch (_) {}
+  }
+
   // ---------- LiveKit ----------
 
   Future<ServerConfig> _getConfig() async => _config ??= await session.api.config();
@@ -293,6 +378,7 @@ class CallService extends ChangeNotifier {
     _room = room;
     try {
       _startedAt = DateTime.now();
+      _connectedAt ??= _startedAt;
       // Фоновый сервис: звук звонка не прерывается при свёрнутом приложении.
       try {
         await FlutterForegroundTask.startService(

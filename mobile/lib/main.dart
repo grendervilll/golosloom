@@ -38,29 +38,32 @@ class GolosloomApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Golosloom',
-      debugShowCheckedModeBanner: false,
-      theme: lightTheme(),
-      darkTheme: darkTheme(),
-      themeMode: settings.darkTheme ? ThemeMode.dark : ThemeMode.light,
-      initialRoute: settings.token == null ? '/login' : '/home',
-      routes: {
-        '/login': (_) => LoginScreen(settings: settings),
-        '/home': (_) => HomeScreen(settings: settings),
-      },
-      // Плашка звонка поверх любого экрана (и навигация из неё).
-      builder: (context, child) {
-        final calls = CallService.instance;
-        final session = Session.instance;
-        if (calls == null || session == null || !calls.inCall) return child ?? const SizedBox.shrink();
-        return Stack(
-          children: [
-            child ?? const SizedBox.shrink(),
-            Positioned(left: 0, right: 0, bottom: 0, child: MiniCallBar(calls: calls, session: session, chat: HomeScreen.globalChat!)),
-          ],
-        );
-      },
+    return ListenableBuilder(
+      listenable: settings,
+      builder: (context, _) => MaterialApp(
+        title: 'Golosloom',
+        debugShowCheckedModeBanner: false,
+        theme: lightTheme(),
+        darkTheme: darkTheme(),
+        themeMode: settings.darkTheme ? ThemeMode.dark : ThemeMode.light,
+        initialRoute: settings.token == null ? '/login' : '/home',
+        routes: {
+          '/login': (_) => LoginScreen(settings: settings),
+          '/home': (_) => HomeScreen(settings: settings),
+        },
+        // Плашка звонка поверх любого экрана (и навигация из неё).
+        builder: (context, child) {
+          final calls = CallService.instance;
+          final session = Session.instance;
+          if (calls == null || session == null || !calls.inCall) return child ?? const SizedBox.shrink();
+          return Stack(
+            children: [
+              child ?? const SizedBox.shrink(),
+              Positioned(left: 0, right: 0, bottom: 0, child: MiniCallBar(calls: calls, session: session, chat: HomeScreen.globalChat!)),
+            ],
+          );
+        },
+      ),
     );
   }
 }

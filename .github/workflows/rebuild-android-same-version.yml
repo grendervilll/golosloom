@@ -1,0 +1,80 @@
+# Пересборка Android на той же версии (без нового тега).
+# Запускается вручную: Actions → rebuild-android-same-version → Run workflow → tag=v2.5.2
+# Берёт код из выбранной ветки (по умолчанию текущая), собирает APK и прикрепляет к существующему релизу v2.5.2.
+# Полезно, когда Flutter-фичи были доделаны после релиза десктопа и нужно добавить APK к тому же релизу.
+name: rebuild-android-same-version
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Тег релиза, к которому прикрепить APK (например v2.5.2)'
+        required: true
+        default: 'v2.5.2'
+      ref:
+        description: 'Ветка/коммит для сборки (пусто = текущая ветка по умолчанию)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk-same-version:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref != '' && inputs.ref || '' }}
+          fetch-depth: 0
+
+      - name: Показать версию для лога
+        run: |
+          echo "tag=${{ inputs.tag }} ref=${{ inputs.ref }}"
+          echo "mobile pubspec:"; grep '^version:' mobile/pubspec.yaml || true
+          echo "desktop:"; grep '"version"' desktop/package.json | head -1 || true
+          git log --oneline -3
+          git describe --tags --always || true
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Подготовка google-services.json (из секрета или из репо)
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -n "$GOOGLE_SERVICES_JSON" ]; then
+            echo "$GOOGLE_SERVICES_JSON" | base64 -d > mobile/android/app/google-services.json
+            echo "использован секрет GOOGLE_SERVICES_JSON"
+          elif [ -f mobile/android/app/google-services.json ]; then
+            echo "используется существующий файл из репозитория"
+          else
+            echo "::warning::google-services.json отсутствует — сборка без Firebase"
+          fi
+          ls -l mobile/android/app/google-services.json || true
+
+      - name: Flutter pub get
+        working-directory: mobile
+        run: flutter pub get
+
+      - name: Сборка APK (split per ABI)
+        working-directory: mobile
+        run: flutter build apk --release --split-per-abi
+
+      - name: Список APK
+        run: ls -lh mobile/build/app/outputs/flutter-apk/*.apk
+
+      - name: Артефакт
+        uses: actions/upload-artifact@v5
+        with:
+          name: golosloom-apk-${{ inputs.tag }}-rebuild
+          path: mobile/build/app/outputs/flutter-apk/*.apk
+
+      - name: Прикрепить к существующему релизу
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag }}
+          files: mobile/build/app/outputs/flutter-apk/*.apk
+          fail_on_unmatched_files: false

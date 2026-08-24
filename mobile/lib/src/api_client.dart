@@ -186,6 +186,22 @@ class ApiClient {
     await _request('DELETE', '/api/channels/$channelId/messages/$messageId');
   }
 
+  Future<void> sendTyping(int channelId) async {
+    await _request('POST', '/api/channels/$channelId/typing');
+  }
+
+  Future<Map<String, dynamic>> gifSearch(String q, {int limit = 24}) async {
+    return await _request('GET', '/api/gifs/search?q=${Uri.encodeComponent(q)}&limit=$limit') as Map<String, dynamic>;
+  }
+
+  Future<void> inviteToCall(int callId, List<int> targetIds) async {
+    await _request('POST', '/api/calls/$callId/invite', {'target_ids': targetIds});
+  }
+
+  Future<void> punchCall(int callId) async {
+    await _request('POST', '/api/calls/$callId/punch');
+  }
+
   // --- Ключи ---
   Future<void> uploadKey(String deviceId, String publicKey) async {
     await _request('POST', '/api/users/key', {
@@ -416,5 +432,37 @@ class ApiClient {
 
   Future<void> adminDeleteChannel(int channelId) async {
     await _request('DELETE', '/api/channels/$channelId');
+  }
+
+  Future<List<dynamic>> adminListFiles() async {
+    return await _request('GET', '/api/admin/files') as List<dynamic>;
+  }
+
+  Future<void> adminDeleteFile(int fileId) async {
+    await _request('DELETE', '/api/admin/files/$fileId');
+  }
+
+  Future<void> inviteToChannel(int channelId, int userId) async {
+    await _request('POST', '/api/channels/$channelId/invites', {'user_id': userId});
+  }
+
+  Future<void> setMemberRole(int channelId, int userId, String role) async {
+    await _request('POST', '/api/channels/$channelId/members/$userId/role', {'role': role});
+  }
+
+  Future<void> kickMember(int channelId, int userId, String reason) async {
+    await _request('POST', '/api/channels/$channelId/members/$userId/kick', {'reason': reason});
+  }
+
+  Future<void> banMember(int channelId, int userId, String reason) async {
+    await _request('POST', '/api/channels/$channelId/members/$userId/ban', {'reason': reason});
+  }
+
+  Future<void> unbanMember(int channelId, int userId) async {
+    await _request('DELETE', '/api/channels/$channelId/members/$userId/ban');
+  }
+
+  Future<List<dynamic>> bannedMembers(int channelId) async {
+    return await _request('GET', '/api/channels/$channelId/banned') as List<dynamic>;
   }
 }

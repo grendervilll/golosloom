@@ -26,16 +26,18 @@ jobs:
       # GOOGLE_SERVICES_JSON — это его содержимое в base64:
       #   base64 -i mobile/android/app/google-services.json | pbcopy
       # (Settings → Secrets and variables → Actions)
-      - name: Подготовка google-services.json из секрета
+      # Если секрет не задан, используется файл из репозитория (если есть) — сборка не падает.
+      - name: Подготовка google-services.json из секрета (если задан)
         env:
           GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
         run: |
           if [ -n "$GOOGLE_SERVICES_JSON" ]; then
             echo "$GOOGLE_SERVICES_JSON" | base64 -d > mobile/android/app/google-services.json
-            echo "google-services.json подготовлен"
+            echo "google-services.json подготовлен из секрета"
+          elif [ -f mobile/android/app/google-services.json ]; then
+            echo "используется существующий google-services.json из репозитория — сборка продолжится"
           else
-            echo "::error::Секрет GOOGLE_SERVICES_JSON не задан — сборка невозможна без Firebase-конфига"
-            exit 1
+            echo "::warning::google-services.json отсутствует — сборка продолжится без Firebase (push не будут работать)"
           fi
 
       - name: Сборка APK (по архитектурам)

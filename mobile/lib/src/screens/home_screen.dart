@@ -42,6 +42,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String _query = '';
   final Map<int, ChatMessage?> _last = {};
   bool _loadingLast = false;
+  List<dynamic> _invites = [];
 
   static const _avatarColors = [
     Color(0xFF2AABEE), Color(0xFFEC4899), Color(0xFFEF4444),
@@ -69,13 +70,20 @@ class _HomeScreenState extends State<HomeScreen> {
     _session = Session(widget.settings, _api);
     _chat = ChatStore(_session);
     HomeScreen.globalChat = _chat;
-    _calls = CallService(_session);
+    _calls = CallService(_session, chat: _chat);
     _push = PushService(_api);
     _session.addListener(_onSessionChanged);
     _calls.addListener(_onCallsChanged);
     _session.start();
     _push.init();
     _checkUpdate();
+    _loadInvites();
+    // слушать инвайты через WS как web channels.handleInviteEvent
+    _session.events.listen((e) {
+      if (e.type == 'invite.new' || e.type == 'invite.pending' || e.type == 'invite.updated') {
+        _loadInvites();
+      }
+    });
   }
 
   @override
@@ -158,6 +166,33 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _loadInvites() async {
+    try {
+      final inv = await _api.invites();
+      if (mounted) setState(() => _invites = inv);
+    } catch (_) {}
+  }
+
+  Future<void> _acceptInvite(int id) async {
+    try {
+      await _api.acceptInvite(id);
+      await _session.refreshChannels();
+      await _loadInvites();
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Приглашение принято')));
+    } catch (e) {
+      _showError(e.toString());
+    }
+  }
+
+  Future<void> _declineInvite(int id) async {
+    try {
+      await _api.declineInvite(id);
+      await _loadInvites();
+    } catch (e) {
+      _showError(e.toString());
+    }
+  }
+
   Future<void> _checkUpdate() async {
     try {
       final pkg = await PackageInfo.fromPlatform();
@@ -176,6 +211,83 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _toggleTheme() async {
     await widget.settings.setDarkTheme(!widget.settings.darkTheme);
     if (mounted) setState(() {});
+  }
+
+  Future<void> _showCreateChannel() async {
+    final colors = AppColors.of(context);
+    final nameCtrl = TextEditingController();
+    var isPrivate = false;
+    var busy = false;
+    String? error;
+    final created = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(builder: (ctx2, setSt) => AlertDialog(
+            title: const Text('Новый чат', textAlign: TextAlign.center),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameCtrl,
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    hintText: 'Название',
+                    fillColor: colors.bg3,
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Checkbox(
+                        value: isPrivate,
+                        activeColor: colors.accent,
+                        onChanged: (v) => setSt(() => isPrivate = v ?? false)),
+                    const Text('Приватный'),
+                  ],
+                ),
+                if (error != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(error!, style: TextStyle(color: colors.danger, fontSize: 12)),
+                  ),
+              ],
+            ),
+            actionsAlignment: MainAxisAlignment.center,
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx2, false), child: const Text('Отмена')),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: colors.accent),
+                onPressed: busy
+                    ? null
+                    : () async {
+                        final n = nameCtrl.text.trim();
+                        if (n.isEmpty) {
+                          setSt(() => error = 'Введите название');
+                          return;
+                        }
+                        setSt(() => busy = true);
+                        try {
+                          await _api.createChannel(n, isPrivate);
+                          await _session.refreshChannels();
+                          if (ctx2.mounted) Navigator.pop(ctx2, true);
+                        } catch (e) {
+                          setSt(() {
+                            error = e.toString();
+                            busy = false;
+                          });
+                        }
+                      },
+                child: busy
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Text('Создать'),
+              ),
+            ],
+          )),
+    );
+    if (created == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Чат создан')));
+    }
   }
 
   /// Меню аватара: сменить (до 5 МБ) или удалить.
@@ -271,6 +383,16 @@ class _HomeScreenState extends State<HomeScreen> {
             style: TextStyle(color: colors.text, fontSize: 18, fontWeight: FontWeight.w700)),
         actions: [
           IconButton(
+            onPressed: _showCreateChannel,
+            tooltip: 'Создать чат',
+            icon: Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(color: colors.accent, shape: BoxShape.circle),
+              child: const Icon(Icons.add, color: Colors.white, size: 20),
+            ),
+          ),
+          IconButton(
             onPressed: _toggleTheme,
             tooltip: widget.settings.darkTheme ? 'Светлая тема' : 'Тёмная тема',
             icon: Icon(
@@ -290,7 +412,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           if (widget.settings.user?.isServerAdmin == true)
             IconButton(
-              icon: const Icon(Icons.admin_panel_settings, color: Color(0xFFF0B232)),
+              icon: Icon(Icons.admin_panel_settings, color: colors.yellow),
               tooltip: 'Админ панель',
               onPressed: () {
                 Navigator.of(context).push(
@@ -324,19 +446,60 @@ class _HomeScreenState extends State<HomeScreen> {
             )
           : Column(
               children: [
-                // Поиск по чатам.
+                // Поиск по чатам — как в web ChannelSidebar (bg3, radius18, 36px).
                 Padding(
                   padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
                   child: TextField(
                     onChanged: (v) => setState(() => _query = v),
+                    style: TextStyle(color: colors.text, fontSize: 15),
                     decoration: InputDecoration(
                       hintText: 'Поиск',
-                      prefixIcon: Icon(Icons.search, color: colors.textDim, size: 20),
+                      hintStyle: TextStyle(color: colors.textDim, fontSize: 15),
+                      prefixIcon: Icon(Icons.search, color: colors.textDim, size: 19),
+                      filled: true,
+                      fillColor: colors.bg3,
                       isDense: true,
                       contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(18), borderSide: BorderSide.none),
                     ),
                   ),
                 ),
+                if (_invites.isNotEmpty)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    color: colors.bg2,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Приглашения', style: TextStyle(color: colors.textDim, fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.5)),
+                        const SizedBox(height: 4),
+                        for (final inv in _invites)
+                          Container(
+                            margin: const EdgeInsets.only(bottom: 6),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            decoration: BoxDecoration(color: colors.bg, border: Border.all(color: colors.border), borderRadius: BorderRadius.circular(8)),
+                            child: Row(
+                              children: [
+                                Expanded(child: Text(inv['channel_name']?.toString() ?? 'Приглашение #${inv['id']}', style: TextStyle(color: colors.text, fontSize: 13, fontWeight: FontWeight.w600))),
+                                const SizedBox(width: 8),
+                                FilledButton(
+                                  style: FilledButton.styleFrom(backgroundColor: colors.green, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), minimumSize: Size.zero),
+                                  onPressed: () => _acceptInvite((inv['id'] as num).toInt()),
+                                  child: const Text('Принять', style: TextStyle(color: Colors.white, fontSize: 12)),
+                                ),
+                                const SizedBox(width: 6),
+                                OutlinedButton(
+                                  style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), minimumSize: Size.zero, side: BorderSide(color: colors.border)),
+                                  onPressed: () => _declineInvite((inv['id'] as num).toInt()),
+                                  child: Text('Отклонить', style: TextStyle(color: colors.textDim, fontSize: 12)),
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
                 Expanded(
                   child: RefreshIndicator(
                     onRefresh: _session.refreshChannels,
@@ -370,6 +533,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 last: last,
                                 unread: unread,
                                 color: _avatarColors[id % _avatarColors.length],
+                                myId: widget.settings.user?.id ?? 0,
                                 onTap: () => _openChat(ch),
                               );
                             },
@@ -388,6 +552,7 @@ class _ChatRow extends StatelessWidget {
   final ChatMessage? last;
   final int unread;
   final Color color;
+  final int myId;
   final VoidCallback onTap;
 
   const _ChatRow({
@@ -396,6 +561,7 @@ class _ChatRow extends StatelessWidget {
     required this.last,
     required this.unread,
     required this.color,
+    required this.myId,
     required this.onTap,
   });
 
@@ -412,13 +578,13 @@ class _ChatRow extends StatelessWidget {
     } else if (last!.deleted) {
       preview = '🗑 Сообщение удалено';
     } else {
-      preview = last!.text ?? '';
+      final isMine = last!.senderId == myId;
+      final raw = last!.text ?? '';
+      preview = isMine ? 'Вы: $raw' : raw;
       dim = false;
     }
 
-    final divider = Theme.of(context).brightness == Brightness.dark
-        ? colors.border
-        : const Color(0xFFE4E9EC);
+    final divider = colors.border;
 
     return InkWell(
       onTap: onTap,

@@ -1,23 +1,25 @@
-// Выбор участников для звонка (из участников канала).
+// Выбор участников для звонка (из участников канала) — как web CallModal/InviteToCallModal.
 library;
 
 import 'package:flutter/material.dart';
 
 import '../session.dart';
+import '../theme.dart';
 
-Future<List<int>?> showCallPicker(BuildContext context, Session session, int channelId) {
+Future<List<int>?> showCallPicker(BuildContext context, Session session, int channelId, {Set<int>? excludeIds}) {
   return showModalBottomSheet<List<int>>(
     context: context,
-    backgroundColor: const Color(0xFF2B2D31),
-    builder: (ctx) => _CallPicker(session: session, channelId: channelId),
+    backgroundColor: AppColors.of(context).bg2,
+    builder: (ctx) => _CallPicker(session: session, channelId: channelId, excludeIds: excludeIds),
   );
 }
 
 class _CallPicker extends StatefulWidget {
   final Session session;
   final int channelId;
+  final Set<int>? excludeIds;
 
-  const _CallPicker({required this.session, required this.channelId});
+  const _CallPicker({required this.session, required this.channelId, this.excludeIds});
 
   @override
   State<_CallPicker> createState() => _CallPickerState();
@@ -53,13 +55,26 @@ class _CallPickerState extends State<_CallPicker> {
     });
   }
 
+  String _roleIcon(Map m) {
+    if (m['is_server_admin'] == true) return '👑';
+    final r = (m['role'] as String?) ?? 'user';
+    if (r == 'channel_admin') return '🛡️';
+    if (r == 'channel_moderator') return '⚔️';
+    return '👤';
+  }
+
   @override
   Widget build(BuildContext context) {
-    const text = Color(0xFFDBDEE1);
-    const dim = Color(0xFF949BA4);
-    const accent = Color(0xFF5865F2);
+    final colors = AppColors.of(context);
+    final text = colors.text;
+    final dim = colors.textDim;
+    final accent = colors.accent;
     final myId = widget.session.settings.user?.id;
-    final candidates = _members.where((m) => (m['user_id'] as num?)?.toInt() != myId).toList();
+    final exclude = widget.excludeIds ?? const <int>{};
+    final candidates = _members.where((m) {
+      final id = (m['user_id'] as num?)?.toInt() ?? 0;
+      return id != myId && !exclude.contains(id);
+    }).toList();
 
     return SafeArea(
       child: Padding(
@@ -67,18 +82,18 @@ class _CallPickerState extends State<_CallPicker> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('Кому позвонить?', style: TextStyle(color: text, fontSize: 18, fontWeight: FontWeight.bold)),
+            Text('Кому позвонить?', style: TextStyle(color: text, fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
                 TextButton(
                   onPressed: () => setState(() => _selected.addAll(candidates.map((m) => (m['user_id'] as num).toInt()))),
-                  child: const Text('Выбрать всех', style: TextStyle(color: dim)),
+                  child: Text('Выбрать всех', style: TextStyle(color: dim)),
                 ),
                 TextButton(
                   onPressed: () => setState(() => _selected.clear()),
-                  child: const Text('Снять всех', style: TextStyle(color: dim)),
+                  child: Text('Снять всех', style: TextStyle(color: dim)),
                 ),
               ],
             ),
@@ -95,15 +110,17 @@ class _CallPickerState extends State<_CallPicker> {
                     CheckboxListTile(
                       value: _selected.contains((m['user_id'] as num?)?.toInt()),
                       onChanged: (_) => _toggle((m['user_id'] as num).toInt()),
-                      title: Text((m['nick'] as String?) ?? '?', style: const TextStyle(color: text)),
+                      title: Text('${_roleIcon(m)} ${(m['nick'] as String?) ?? '?'}', style: TextStyle(color: text)),
                       subtitle: Text('ID: ${m['user_id']}',
-                          style: const TextStyle(color: dim, fontSize: 12)),
+                          style: TextStyle(color: dim, fontSize: 12)),
                       activeColor: accent,
                     ),
                   if (candidates.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.all(16),
-                      child: Center(child: Text('В канале нет других участников', style: TextStyle(color: dim))),
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Center(child: Text(
+                          exclude.isNotEmpty ? 'Нет доступных пользователей' : 'В канале нет других участников',
+                          style: TextStyle(color: dim))),
                     ),
                 ],
               ),

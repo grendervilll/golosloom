@@ -114,10 +114,10 @@ export function initRatchetAsAlice(sharedSecret: Uint8Array, bobRatchetPublic: U
   const [rootKey, sendingChainKey] = chainKeyDerive(sharedSecret, toBytes(x25519.getSharedSecret(kp.privateKey, bobRatchetPublic)))
   return { rootKey, sendingChainKey, receivingChainKey: new Uint8Array(32), sendingRatchetKeyPair: kp, receivingRatchetPublic: bobRatchetPublic, sendingMessageNumber: 0, receivingMessageNumber: 0 }
 }
-export function initRatchetAsBob(sharedSecret: Uint8Array, aliceRatchetPublic: Uint8Array): RatchetState {
-  const kp = { privateKey: x25519.utils.randomPrivateKey(), publicKey: new Uint8Array(0) as Uint8Array }
-  kp.publicKey = toBytes(x25519.getPublicKey(kp.privateKey))
-  const [rootKey, receivingChainKey] = chainKeyDerive(sharedSecret, toBytes(x25519.getSharedSecret(kp.privateKey, aliceRatchetPublic)))
+export function initRatchetAsBob(sharedSecret: Uint8Array, aliceRatchetPublic: Uint8Array, bobRatchetPrivate: Uint8Array): RatchetState {
+  const bobRatchetPublic = toBytes(x25519.getPublicKey(bobRatchetPrivate))
+  const kp = { privateKey: bobRatchetPrivate, publicKey: bobRatchetPublic }
+  const [rootKey, receivingChainKey] = chainKeyDerive(sharedSecret, toBytes(x25519.getSharedSecret(bobRatchetPrivate, aliceRatchetPublic)))
   return { rootKey, sendingChainKey: new Uint8Array(32), receivingChainKey, sendingRatchetKeyPair: kp, receivingRatchetPublic: aliceRatchetPublic, sendingMessageNumber: 0, receivingMessageNumber: 0 }
 }
 export async function ratchetEncrypt(state: RatchetState, plaintext: string): Promise<{ ciphertext: Uint8Array; iv: Uint8Array; msgNumber: number; ratchetPublic: Uint8Array }> {

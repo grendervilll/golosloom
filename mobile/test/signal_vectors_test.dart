@@ -18,11 +18,11 @@ void main() {
     final bobSPK = await generateSignedPreKey();
     final bobOPKs = await generateOneTimePreKeys(1);
 
-    final result = await x3dhInit(alice, bob.publicKey, bobSPK.publicKey, bobOPKs[0].publicKey);
-    final bobSS = await x3dhRespond(bob, bobSPK.privateKey, bobOPKs[0].privateKey, result.message);
+    final (sharedSecret, message) = await x3dhInit(alice, bob.publicKey, bobSPK.publicKey, bobOneTimePreKey: bobOPKs[0].publicKey);
+    final bobSS = await x3dhRespond(bob, bobSPK.privateKey, bobOPKs[0].privateKey, message);
 
-    expect(result.sharedSecret.length, 32);
-    expect(result.sharedSecret, bobSS);
+    expect(sharedSecret.length, 32);
+    expect(sharedSecret, bobSS);
   });
 
   test('X3DH: without one-time pre-key', () async {
@@ -30,10 +30,10 @@ void main() {
     final bob = await generateIdentityKeyPair();
     final bobSPK = await generateSignedPreKey();
 
-    final result = await x3dhInit(alice, bob.publicKey, bobSPK.publicKey);
-    final bobSS = await x3dhRespond(bob, bobSPK.privateKey, null, result.message);
+    final (sharedSecret, message) = await x3dhInit(alice, bob.publicKey, bobSPK.publicKey);
+    final bobSS = await x3dhRespond(bob, bobSPK.privateKey, null, message);
 
-    expect(result.sharedSecret, bobSS);
+    expect(sharedSecret, bobSS);
   });
 
   test('Double Ratchet: encrypt/decrypt round-trip', () async {
@@ -42,22 +42,28 @@ void main() {
     final bobSPK = await generateSignedPreKey();
     final bobOPKs = await generateOneTimePreKeys(1);
 
-    final result = await x3dhInit(alice, bob.publicKey, bobSPK.publicKey, bobOPKs[0].publicKey);
-    final bobSS = await x3dhRespond(bob, bobSPK.privateKey, bobOPKs[0].privateKey, result.message);
+    final (sharedSecret, message) = await x3dhInit(alice, bob.publicKey, bobSPK.publicKey, bobOneTimePreKey: bobOPKs[0].publicKey);
+    final bobSS = await x3dhRespond(bob, bobSPK.privateKey, bobOPKs[0].privateKey, message);
 
     final bobRatchet = await generateIdentityKeyPair();
-    final aliceState = await initRatchetAsAlice(result.sharedSecret, bobRatchet.publicKey);
+    final aliceState = await initRatchetAsAlice(sharedSecret, bobRatchet.publicKey);
     final enc1 = await ratchetEncrypt(aliceState, 'Hello Signal!');
     expect(enc1.msgNumber, 0);
 
-    final bobState = await initRatchetAsBob(bobSS, enc1.ratchetPublic);
+    final bobState = await initRatchetAsBob(bobSS, enc1.ratchetPublic, bobRatchet.privateKey);
     final plain1 = await ratchetDecrypt(
       bobState, enc1.ciphertext, enc1.iv, enc1.msgNumber, enc1.ratchetPublic,
     );
     expect(plain1, 'Hello Signal!');
 
+    // Bob replies — triggers DH ratchet on Alice's side in decrypt
+    final encBob = await ratchetEncrypt(bobState, 'Reply from Bob');
+    final plainBob = await ratchetDecrypt(
+      aliceState, encBob.ciphertext, encBob.iv, encBob.msgNumber, encBob.ratchetPublic,
+    );
+    expect(plainBob, 'Reply from Bob');
+
     final enc2 = await ratchetEncrypt(aliceState, 'Second message');
-    expect(enc2.msgNumber, 1);
     final plain2 = await ratchetDecrypt(
       bobState, enc2.ciphertext, enc2.iv, enc2.msgNumber, enc2.ratchetPublic,
     );

@@ -65,10 +65,9 @@ Uint8List _hkdfExpand(Uint8List prk, int length) {
   final okm = Uint8List(length);
   var previous = Uint8List(0);
   for (var i = 1; i <= n; i++) {
-    final input = Uint8List(previous.length + prk.length + 1)
+    final input = Uint8List(previous.length + 1)
       ..setRange(0, previous.length, previous)
-      ..[previous.length] = i
-      ..setRange(previous.length + 1, previous.length + 1 + prk.length, prk);
+      ..[previous.length] = i;
     final t = _hmacSha256(prk, input);
     final take = min(hashLen, length - (i - 1) * hashLen);
     okm.setRange((i - 1) * hashLen, (i - 1) * hashLen + take, t.sublist(0, take));
@@ -570,19 +569,22 @@ Future<RatchetState> initRatchetAsAlice(
 
 /// Bob side: he received Alice's ratchet public key in the first message
 /// combined with the shared secret from X3DH.
+/// [bobRatchetPrivate] must be the private key whose public was given to Alice
+/// as `bobRatchetPublic` in [initRatchetAsAlice] — otherwise DH outputs diverge.
 Future<RatchetState> initRatchetAsBob(
   Uint8List sharedSecret,
   Uint8List aliceRatchetPublic,
+  Uint8List bobRatchetPrivate,
 ) async {
-  final (kpPriv, kpPub) = await _x25519RandomKeyPair();
-  final dh = await _x25519SharedSecret(kpPriv, aliceRatchetPublic);
+  final bobRatchetPublic = await _x25519PublicKey(bobRatchetPrivate);
+  final dh = await _x25519SharedSecret(bobRatchetPrivate, aliceRatchetPublic);
   final (rootKey, receivingChainKey) = _chainKeyDerive(sharedSecret, dh);
   return RatchetState(
     rootKey: rootKey,
     sendingChainKey: Uint8List(32),
     receivingChainKey: receivingChainKey,
-    sendingRatchetPrivateKey: kpPriv,
-    sendingRatchetPublicKey: kpPub,
+    sendingRatchetPrivateKey: bobRatchetPrivate,
+    sendingRatchetPublicKey: bobRatchetPublic,
     receivingRatchetPublic: aliceRatchetPublic,
     sendingMessageNumber: 0,
     receivingMessageNumber: 0,

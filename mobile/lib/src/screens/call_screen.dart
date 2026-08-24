@@ -9,7 +9,9 @@ import 'package:livekit_client/livekit_client.dart' hide Session;
 import '../call_service.dart';
 import '../chat_store.dart';
 import '../session.dart';
+import '../theme.dart';
 import '../widgets/avatar.dart';
+import 'call_picker.dart';
 import 'chat_screen.dart';
 
 class CallScreen extends StatefulWidget {
@@ -144,25 +146,53 @@ class _CallScreenState extends State<CallScreen> {
     if (mounted) Navigator.of(context).pop();
   }
 
+  Future<void> _showInvite() async {
+    final call = widget.calls.currentCall ?? widget.calls.ringing;
+    if (call == null) return;
+    final exclude = <int>{
+      widget.session.settings.user?.id ?? 0,
+      ...widget.calls.remoteParticipants.map((p) => int.tryParse(p.identity.split(':').first) ?? -1),
+      ...call.participants,
+      call.channelId, // not a user, ignore
+    }..removeWhere((x) => x <= 0);
+    final ids = await showCallPicker(context, widget.session, call.channelId, excludeIds: exclude);
+    if (ids != null && ids.isNotEmpty) {
+      await widget.calls.inviteToCall(ids);
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Приглашение отправлено')));
+    }
+  }
+
+  Future<void> _punch() async {
+    await widget.calls.punch();
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('👊 Толчок отправлен!'), duration: Duration(seconds: 1)));
+  }
+
   @override
   Widget build(BuildContext context) {
-    const text = Color(0xFFDBDEE1);
-    const dim = Color(0xFF949BA4);
-    const accent = Color(0xFF5865F2);
-    const red = Color(0xFFDA373C);
-
+    final colors = AppColors.of(context);
+    final text = colors.text;
+    final dim = colors.textDim;
+    final accent = colors.accent;
+    final red = colors.danger;
     final calls = widget.calls;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF1E1F22),
+      backgroundColor: colors.bg,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF2B2D31),
+        backgroundColor: colors.bg2,
         automaticallyImplyLeading: false,
         title: Text(
           calls.inCall ? 'Разговор · ${_fmt(calls.callDuration)}' : 'Звонок',
-          style: const TextStyle(color: text, fontSize: 18),
+          style: TextStyle(color: text, fontSize: 16, fontWeight: FontWeight.w700),
         ),
         actions: [
+          if (calls.inCall)
+            IconButton(
+              icon: const Icon(Icons.group_add),
+              color: colors.textDim,
+              tooltip: 'Пригласить участников',
+              onPressed: _showInvite,
+            ),
           _RoundIcon(
             icon: Icons.call_end,
             background: red,
@@ -178,7 +208,7 @@ class _CallScreenState extends State<CallScreen> {
           if (calls.callError != null)
             Padding(
               padding: const EdgeInsets.all(12),
-              child: Text(calls.callError!, style: const TextStyle(color: red, fontSize: 13)),
+              child: Text(calls.callError!, style: TextStyle(color: red, fontSize: 13)),
             ),
           Expanded(
             child: calls.inCall
@@ -215,26 +245,26 @@ class _CallScreenState extends State<CallScreen> {
                                 ),
                                 const SizedBox(width: 8),
                                 Text(p.name.isEmpty ? p.identity : p.name,
-                                    style: const TextStyle(color: text)),
+                                    style: TextStyle(color: text)),
                                 const SizedBox(width: 8),
                                 _MicState(p: p),
                               ],
                             ),
                           ),
                       if (widget.calls.remoteParticipants.isEmpty)
-                        const Padding(
-                          padding: EdgeInsets.only(top: 60),
+                        Padding(
+                          padding: const EdgeInsets.only(top: 60),
                           child: Center(
                             child: Text('Ждём собеседников…', style: TextStyle(color: dim)),
                           ),
                         ),
                     ],
                   )
-                : const Center(child: Text('Соединение…', style: TextStyle(color: dim))),
+                : Center(child: Text('Соединение…', style: TextStyle(color: dim))),
           ),
           Container(
-            color: const Color(0xFF2B2D31),
-            padding: const EdgeInsets.symmetric(vertical: 14),
+            color: colors.bg2,
+            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -246,7 +276,7 @@ class _CallScreenState extends State<CallScreen> {
                   tooltip: 'Микрофон',
                   onTap: calls.toggleMic,
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 8),
                 _IconToggle(
                   active: calls.camEnabled,
                   iconOn: Icons.videocam,
@@ -255,25 +285,43 @@ class _CallScreenState extends State<CallScreen> {
                   tooltip: 'Веб-камера',
                   onTap: calls.toggleCam,
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 8),
                 _IconToggle(
                   active: !calls.speakersMuted,
                   iconOn: Icons.volume_up,
                   iconOff: Icons.volume_off,
-                  color: const Color(0xFF23A55A),
+                  color: colors.green,
                   tooltip: 'Звук собеседников',
                   onTap: calls.toggleSpeakers,
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 8),
+                _IconToggle(
+                  active: false,
+                  iconOn: Icons.person_add,
+                  iconOff: Icons.person_add,
+                  color: accent,
+                  tooltip: 'Пригласить участников',
+                  onTap: _showInvite,
+                ),
+                const SizedBox(width: 8),
+                _IconToggle(
+                  active: false,
+                  iconOn: Icons.front_hand,
+                  iconOff: Icons.front_hand,
+                  color: colors.yellow,
+                  tooltip: 'Толкнуть',
+                  onTap: _punch,
+                ),
+                const SizedBox(width: 8),
                 _IconToggle(
                   active: false,
                   iconOn: Icons.chat,
                   iconOff: Icons.chat,
-                  color: const Color(0xFF949BA4),
+                  color: colors.textDim,
                   tooltip: 'Чат',
                   onTap: _openChat,
                 ),
-                const SizedBox(width: 20),
+                const SizedBox(width: 14),
                 _RoundIcon(
                   icon: Icons.call_end,
                   background: red,

@@ -46,6 +46,9 @@ class ChatMessage {
   final bool pending;
   final List<Attachment> attachments;
   final bool attachmentDeleted;
+  final bool system;
+  final int? replyToId;
+  final String? original;
 
   const ChatMessage({
     required this.id,
@@ -60,6 +63,9 @@ class ChatMessage {
     this.pending = false,
     this.attachments = const [],
     this.attachmentDeleted = false,
+    this.system = false,
+    this.replyToId,
+    this.original,
   });
 
   ChatMessage copyWith({
@@ -70,6 +76,9 @@ class ChatMessage {
     bool? pending,
     List<Attachment>? attachments,
     bool? attachmentDeleted,
+    bool? system,
+    int? replyToId,
+    String? original,
   }) {
     return ChatMessage(
       id: id,
@@ -84,6 +93,9 @@ class ChatMessage {
       pending: pending ?? this.pending,
       attachments: attachments ?? this.attachments,
       attachmentDeleted: attachmentDeleted ?? this.attachmentDeleted,
+      system: system ?? this.system,
+      replyToId: replyToId ?? this.replyToId,
+      original: original ?? this.original,
     );
   }
 }
@@ -96,6 +108,11 @@ class ChatStore extends ChangeNotifier {
   StreamSubscription<WsEvent>? _sub;
   int _lastTempId = 0;
 
+  // Typing: channel -> userId -> until
+  final Map<int, Map<int, TypingEntry>> _typers = {};
+  int _typingLastSent = 0;
+  final Map<int, Timer> _typingTimers = {};
+
   ChatStore(this.session) {
     _sub = session.events.listen(_onEvent);
   }
@@ -104,6 +121,129 @@ class ChatStore extends ChangeNotifier {
 
   /// Непрочитанные сообщения канала (сбрасываются при открытии/загрузке).
   int unread(int channelId) => _unread[channelId] ?? 0;
+
+  /// Пользователи, которые печатают в канале (отсортированы по нику).
+  List<TypingEntry> typingUsers(int channelId) {
+    final m = _typers[channelId];
+    if (m == null) return const [];
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final list = m.values.where((e) => e.until > now).toList()
+      ..sort((a, b) => a.nick.compareTo(b.nick));
+    return list;
+  }
+
+  /// Отправить событие typing (троттлинг 2.5с как в web).
+  void typing(int channelId) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (now - _typingLastSent < 2500) return;
+    _typingLastSent = now;
+    session.api.sendTyping(channelId).catchError((_) {});
+  }
+
+  void handleTyping(Map<String, dynamic> d) {
+    final channelId = (d['channel_id'] as num?)?.toInt();
+    final userId = (d['user_id'] as num?)?.toInt();
+    final nick = d['nick'] as String? ?? d['user_nick'] as String? ?? '?';
+    if (channelId == null || userId == null) return;
+    // Не показываем себя
+    if (userId == session.settings.user?.id) return;
+    final until = DateTime.now().millisecondsSinceEpoch + 5000;
+    final map = _typers.putIfAbsent(channelId, () => {});
+    map[userId] = TypingEntry(userId: userId, nick: nick, until: until);
+    notifyListeners();
+    _typingTimers[channelId]?.cancel();
+    _typingTimers[channelId] = Timer(const Duration(milliseconds: 5100), () {
+      final mm = _typers[channelId];
+      if (mm != null) {
+        mm.removeWhere((_, v) => v.until <= DateTime.now().millisecondsSinceEpoch);
+        if (mm.isEmpty) _typers.remove(channelId);
+      }
+      notifyListeners();
+    });
+  }
+
+  void pushSystem(int channelId, String text) {
+    final list = _byChannel[channelId] ?? [];
+    // Дедуп по тексту и времени (как в web)
+    if (list.isNotEmpty && list.last.system && list.last.text == text) return;
+    final msg = ChatMessage(
+      id: --_lastTempId,
+      channelId: channelId,
+      senderId: 0,
+      senderNick: '',
+      text: text,
+      createdAt: DateTime.now(),
+      system: true,
+    );
+    _byChannel[channelId] = [...list, msg];
+    notifyListeners();
+  }
+
+  bool searchBusy = false;
+
+  /// Поиск как в web chat.ts — скан расшифрованного текста+имени файла, до 12 страниц, макс 100 результатов.
+  Future<List<ChatMessage>> searchMessages(int channelId, String query) async {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return [];
+    searchBusy = true;
+    notifyListeners();
+    try {
+      final res = <ChatMessage>[];
+      // Собираем всё: уже загруженное + догружаем страницы
+      final seen = <int>{};
+      List<ChatMessage> all = [...(_byChannel[channelId] ?? const <ChatMessage>[])];
+      // Текущий список уже есть, проверим его
+      for (final m in all) {
+        if (res.length >= 100) break;
+        if (m.encrypted || m.deleted || m.system) continue;
+        final txt = (m.text ?? '').toLowerCase();
+        final filenames = m.attachments.map((a) => a.filename.toLowerCase()).join(' ');
+        if (txt.contains(q) || filenames.contains(q)) {
+          if (seen.add(m.id)) res.add(m);
+        }
+      }
+      // Догружаем страницы по beforeId (как web)
+      int? beforeId = all.isNotEmpty ? all.first.id : null;
+      for (var page = 0; page < 12 && res.length < 100; page++) {
+        try {
+          final raw = (await session.api.messages(channelId, beforeId: beforeId, limit: 50)).cast<Map<String, dynamic>>();
+          if (raw.isEmpty) break;
+          final msgs = <ChatMessage>[];
+          for (final d in raw) {
+            msgs.add(await _toMessage(d));
+          }
+          if (msgs.isEmpty) break;
+          for (final m in msgs) {
+            if (res.length >= 100) break;
+            if (m.encrypted || m.deleted || m.system) continue;
+            final txt = (m.text ?? '').toLowerCase();
+            final filenames = m.attachments.map((a) => a.filename.toLowerCase()).join(' ');
+            if (txt.contains(q) || filenames.contains(q)) {
+              if (seen.add(m.id)) res.add(m);
+            }
+          }
+          // добавляем в all для дальнейшей пагинации
+          all = [...msgs, ...all];
+          beforeId = msgs.first.id;
+          if (raw.length < 50) break;
+        } catch (_) {
+          break;
+        }
+      }
+      // Сортируем по времени (старые первые как в web)
+      res.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      return res;
+    } finally {
+      searchBusy = false;
+      notifyListeners();
+    }
+  }
+
+  /// Медиа канала (фото+видео) для вкладки как в web ChannelSidebar media
+  List<ChatMessage> mediaMessages(int channelId) {
+    final list = _byChannel[channelId] ?? const [];
+    return list.where((m) => m.attachments.any((a) => a.mime.startsWith('image/') || a.mime.startsWith('video/'))).toList();
+  }
 
   /// Последнее сообщение канала (для превью в списке чатов).
   Future<ChatMessage?> fetchLast(int channelId) async {
@@ -120,6 +260,10 @@ class ChatStore extends ChangeNotifier {
   @override
   void dispose() {
     _sub?.cancel();
+    for (final t in _typingTimers.values) {
+      t.cancel();
+    }
+    _typingTimers.clear();
     super.dispose();
   }
 
@@ -165,7 +309,7 @@ class ChatStore extends ChangeNotifier {
 
   /// Оптимистичная отправка: своё сообщение появляется сразу (pending).
   /// attachments — уже загруженные на сервер вложения.
-  Future<bool> send(int channelId, String text, {List<Attachment> attachments = const []}) async {
+  Future<bool> send(int channelId, String text, {List<Attachment> attachments = const [], int? replyToId}) async {
     String ciphertext;
     String iv;
     int protocolVersion = 2;
@@ -195,6 +339,7 @@ class ChatStore extends ChangeNotifier {
       createdAt: DateTime.now(),
       pending: true,
       attachments: attachments,
+      replyToId: replyToId,
     );
     final list = [...(_byChannel[channelId] ?? const <ChatMessage>[]), pending];
     _byChannel[channelId] = list;
@@ -203,7 +348,8 @@ class ChatStore extends ChangeNotifier {
       final res = await session.api.sendMessage(
           channelId, ciphertext, iv,
           attachmentIds: attachments.map((a) => a.id).toList(),
-          protocolVersion: protocolVersion);
+          protocolVersion: protocolVersion,
+          replyToId: replyToId ?? 0);
       final real = await _toMessage(res);
       final cur = _byChannel[channelId] ?? [];
       final idx = cur.indexWhere((m) => m.id == pending.id);
@@ -267,6 +413,8 @@ class ChatStore extends ChangeNotifier {
         _applyMessage(_byChannel[channelIdOf(e.data)], e.data);
       case 'attachment.deleted':
         _handleAttachmentDeleted(e.data);
+      case 'typing':
+        handleTyping(e.data);
       case 'key.granted':
         final ch = e.data['channel_id'];
         if (ch is int) loadHistory(ch, force: true);
@@ -383,6 +531,16 @@ class ChatStore extends ChangeNotifier {
       createdAt: DateTime.tryParse((d['created_at'] as String?) ?? '') ?? DateTime.now(),
       attachments: attachments,
       attachmentDeleted: (d['attachment_deleted'] as bool?) ?? false,
+      system: (d['system'] as bool?) ?? false,
+      replyToId: (d['reply_to_id'] as num?)?.toInt(),
+      original: d['original'] as String?,
     );
   }
+}
+
+class TypingEntry {
+  final int userId;
+  final String nick;
+  final int until;
+  const TypingEntry({required this.userId, required this.nick, required this.until});
 }

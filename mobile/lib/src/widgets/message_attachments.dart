@@ -1,15 +1,18 @@
-// Отображение вложений сообщения на мобильном: фото (полноэкранный
-// просмотр), видео (плеер), голосовые (audioplayers), остальные файлы.
+// Отображение вложений — Flutter-версия web MessageItem/FileViewer/VideoPopup/TextPreview
 library;
+
+import 'dart:convert';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 
 import '../api_client.dart';
 import '../chat_store.dart';
 import '../theme.dart';
+import '../utils/text_file.dart';
 
 class MessageAttachments extends StatelessWidget {
   final ChatMessage m;
@@ -48,6 +51,21 @@ class MessageAttachments extends StatelessWidget {
     );
   }
 
+  Future<void> _openTextPreview(BuildContext context, int fileId, String filename) async {
+    try {
+      final url = api.fileUrl(fileId);
+      final res = await http.get(Uri.parse(url));
+      final text = utf8.decode(res.bodyBytes, allowMalformed: true);
+      if (!context.mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => _TextPreviewDialog(filename: filename, content: text, lang: extLang(filename)),
+      );
+    } catch (_) {
+      await _downloadFile(context, fileId);
+    }
+  }
+
   Future<void> _downloadFile(BuildContext context, int fileId) async {
     final url = api.fileUrl(fileId);
     try {
@@ -84,6 +102,28 @@ class MessageAttachments extends StatelessWidget {
     }
     if (m.attachments.isEmpty) return const SizedBox.shrink();
 
+    // Множественные вложения — сетка как в web (wrap gap6)
+    if (m.attachments.length > 1) {
+      return Wrap(
+        spacing: 6,
+        runSpacing: 6,
+        children: [
+          for (final a in m.attachments)
+            _AttachmentItem(
+              key: ValueKey('att-${m.id}-${a.id}'),
+              att: a,
+              mine: mine,
+              api: api,
+              onImage: () => _openImage(context, a.id, a.filename),
+              onVideo: () => _openVideo(context, a.id, a.filename),
+              onTextPreview: () => _openTextPreview(context, a.id, a.filename),
+              onDownload: () => _downloadFile(context, a.id),
+              sizeText: _size(a.size),
+              compact: true,
+            ),
+        ],
+      );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -98,6 +138,7 @@ class MessageAttachments extends StatelessWidget {
               api: api,
               onImage: () => _openImage(context, a.id, a.filename),
               onVideo: () => _openVideo(context, a.id, a.filename),
+              onTextPreview: () => _openTextPreview(context, a.id, a.filename),
               onDownload: () => _downloadFile(context, a.id),
               sizeText: _size(a.size),
             ),
@@ -113,8 +154,10 @@ class _AttachmentItem extends StatelessWidget {
   final ApiClient api;
   final VoidCallback onImage;
   final VoidCallback onVideo;
+  final VoidCallback onTextPreview;
   final VoidCallback onDownload;
   final String sizeText;
+  final bool compact;
 
   const _AttachmentItem({
     super.key,
@@ -123,15 +166,48 @@ class _AttachmentItem extends StatelessWidget {
     required this.api,
     required this.onImage,
     required this.onVideo,
+    required this.onTextPreview,
     required this.onDownload,
     required this.sizeText,
+    this.compact = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final mime = att.mime;
 
-    // Фото: миниатюра с открытием на весь экран.
+    // Текстовые файлы — превью как в web TextPreview (tap → просмотр)
+    if (isTextFile(att.filename)) {
+      return InkWell(
+        onTap: onTextPreview,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          width: compact ? 140 : 240,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: mine ? Colors.white.withValues(alpha: 0.14) : AppColors.of(context).bg3,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: AppColors.of(context).border),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('📄', style: TextStyle(fontSize: 22)),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                  Text(att.filename, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: mine ? Colors.white : AppColors.of(context).text, fontSize: 13, fontWeight: FontWeight.w600)),
+                  Text(sizeText, style: TextStyle(color: mine ? Colors.white70 : AppColors.of(context).textDim, fontSize: 11)),
+                ]),
+              ),
+              Icon(Icons.visibility, color: mine ? Colors.white : AppColors.of(context).accent, size: 18),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Фото: миниатюра 280x200 как в web (max 320)
     if (mime.startsWith('image/')) {
       return GestureDetector(
         onTap: onImage,
@@ -139,8 +215,8 @@ class _AttachmentItem extends StatelessWidget {
           borderRadius: BorderRadius.circular(10),
           child: Image.network(
             api.fileUrl(att.id),
-            width: 220,
-            height: 160,
+            width: compact ? 140 : 280,
+            height: compact ? 140 : 200,
             fit: BoxFit.cover,
             errorBuilder: (_, _, _) => _fileCard(context),
           ),
@@ -148,31 +224,28 @@ class _AttachmentItem extends StatelessWidget {
       );
     }
 
-    // Видео: превью с иконкой, открывает плеер.
+    // Видео: превью 280x160 с overlay ▶
     if (mime.startsWith('video/')) {
       return InkWell(
         onTap: onVideo,
         borderRadius: BorderRadius.circular(10),
         child: Container(
-          width: 220,
-          height: 130,
+          width: compact ? 140 : 280,
+          height: compact ? 100 : 160,
           decoration: BoxDecoration(
             color: Colors.black,
             borderRadius: BorderRadius.circular(10),
+            image: DecorationImage(image: NetworkImage(api.fileUrl(att.id)), fit: BoxFit.cover, opacity: 0.5),
           ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+          child: Stack(
+            alignment: Alignment.center,
             children: [
-              const Icon(Icons.play_circle_fill, color: Colors.white, size: 44),
-              const SizedBox(height: 6),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: Text(
-                  att.filename,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Colors.white70, fontSize: 11),
-                ),
+              const Icon(Icons.play_circle_fill, color: Colors.white, size: 48),
+              Positioned(
+                bottom: 6,
+                left: 6,
+                right: 6,
+                child: Text(att.filename, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 11, shadows: [Shadow(blurRadius: 4, color: Colors.black)])),
               ),
             ],
           ),
@@ -234,6 +307,44 @@ class _AttachmentItem extends StatelessWidget {
             onPressed: onDownload,
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _TextPreviewDialog extends StatelessWidget {
+  final String filename;
+  final String content;
+  final String lang;
+  const _TextPreviewDialog({required this.filename, required this.content, required this.lang});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    return Dialog(
+      backgroundColor: const Color(0xFF161B22),
+      insetPadding: const EdgeInsets.all(12),
+      child: Container(
+        width: double.infinity,
+        height: MediaQuery.of(context).size.height * 0.7,
+        decoration: BoxDecoration(color: const Color(0xFF161B22), borderRadius: BorderRadius.circular(12)),
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.05), borderRadius: const BorderRadius.vertical(top: Radius.circular(12))),
+              child: Row(
+                children: [
+                  Expanded(child: Text(filename, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis)),
+                  Container(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2), decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(999)), child: Text(lang, style: const TextStyle(color: Color(0xFF8B949E), fontSize: 11))),
+                  const SizedBox(width: 8),
+                  IconButton(icon: const Icon(Icons.close, color: Colors.white70, size: 20), onPressed: () => Navigator.pop(context)),
+                ],
+              ),
+            ),
+            Expanded(child: SingleChildScrollView(padding: const EdgeInsets.all(12), child: SelectableText(content, style: const TextStyle(fontFamily: 'monospace', fontSize: 12.5, height: 1.5, color: Color(0xFFE6EDF3))))),
+          ],
+        ),
       ),
     );
   }

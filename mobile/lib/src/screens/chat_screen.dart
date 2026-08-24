@@ -17,6 +17,8 @@ import '../call_service.dart';
 import '../chat_store.dart';
 import '../session.dart';
 import '../theme.dart';
+import '../widgets/emoji_picker.dart';
+import '../widgets/markdown.dart';
 import '../widgets/message_attachments.dart';
 import 'call_picker.dart';
 import 'call_screen.dart';
@@ -49,6 +51,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final _scroll = ScrollController();
   final AudioRecorder _audioRecorder = AudioRecorder();
   int? _editingId;
+  ChatMessage? _replyTo;
   bool _sending = false;
   String? _sendError;
 
@@ -60,7 +63,62 @@ class _ChatScreenState extends State<ChatScreen> {
   Timer? _recTimer;
   int _recMs = 0;
 
+  // Scroll / дата-плашка (как в web ChatPanel.vue)
+  static const _scrollThresholdPx = 350.0;
+  bool _showScrollButton = false;
+  int _hiddenCount = 0;
+  int _prevMessageCount = 0;
+  bool _isAtBottom = true;
+  bool _showPicker = false;
+
   int get _channelId => (widget.channel['id'] as num?)?.toInt() ?? 0;
+
+  String _formatDateHeader(DateTime d) {
+    final now = DateTime.now();
+    final sameYear = d.year == now.year;
+    const months = [
+      'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+      'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'
+    ];
+    final s = sameYear
+        ? '${d.day} ${months[d.month - 1]}'
+        : '${d.day} ${months[d.month - 1]} ${d.year}';
+    return s[0].toUpperCase() + s.substring(1);
+  }
+
+  bool _isNewDate(ChatMessage msg, int index, List<ChatMessage> list) {
+    if (index == 0) return true;
+    final prev = list[index - 1];
+    return msg.createdAt.year != prev.createdAt.year ||
+        msg.createdAt.month != prev.createdAt.month ||
+        msg.createdAt.day != prev.createdAt.day;
+  }
+
+  void _scrollBottom() {
+    if (!_scroll.hasClients) return;
+    _scroll.animateTo(
+      _scroll.position.maxScrollExtent,
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOut,
+    );
+    setState(() {
+      _hiddenCount = 0;
+      _showScrollButton = false;
+      _isAtBottom = true;
+    });
+  }
+
+  String _typingSummary() {
+    final t = widget.chat.typingUsers(_channelId);
+    if (t.isEmpty) return '';
+    final visible = t.take(4).map((e) => e.nick).join(', ');
+    final verb = t.length == 1 ? 'печатает' : 'печатают';
+    if (t.length > 4) {
+      final rest = t.length - 4;
+      return '$visible и ещё $rest ${rest == 1 ? 'печатает' : 'печатают'}…';
+    }
+    return '$visible $verb…';
+  }
 
   @override
   void initState() {
@@ -70,6 +128,11 @@ class _ChatScreenState extends State<ChatScreen> {
     widget.chat.addListener(_onChatChanged);
     widget.chat.loadHistory(_channelId);
     _scroll.addListener(_onScroll);
+    _input.addListener(() {
+      if (_input.text.trim().isNotEmpty) {
+        widget.chat.typing(_channelId);
+      }
+    });
   }
 
   @override
@@ -89,27 +152,35 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _onChatChanged() {
     if (!mounted) return;
-    setState(() {});
-    // Автопрокрутка вниз, если мы и так у нижнего края.
-    final pos = _scroll.position;
-    if (pos.hasContentDimensions &&
-        pos.maxScrollExtent - pos.pixels < 80) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _scroll.hasClients) {
-          _scroll.animateTo(
-            _scroll.position.maxScrollExtent,
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeOut,
-          );
-        }
-      });
+    final list = widget.chat.messages(_channelId);
+    final count = list.length;
+    final wasAtBottom = _isAtBottom;
+    final oldEmpty = _prevMessageCount == 0;
+    if (wasAtBottom || oldEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollBottom());
+    } else if (count > _prevMessageCount) {
+      setState(() => _hiddenCount += count - _prevMessageCount);
     }
+    _prevMessageCount = count;
+    setState(() {});
   }
 
   void _onScroll() {
-    // У самой верхней части списка — подгружаем более старые сообщения.
-    if (_scroll.position.pixels < 120) {
+    if (!_scroll.hasClients) return;
+    final pos = _scroll.position;
+    // пагинация
+    if (pos.pixels < 120) {
       widget.chat.loadOlder(_channelId);
+    }
+    final distance = pos.maxScrollExtent - pos.pixels;
+    final atBottom = distance < 80;
+    final showBtn = distance > _scrollThresholdPx;
+    if (atBottom != _isAtBottom || showBtn != _showScrollButton) {
+      setState(() {
+        _isAtBottom = atBottom;
+        _showScrollButton = showBtn;
+        if (atBottom) _hiddenCount = 0;
+      });
     }
   }
 
@@ -123,14 +194,31 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
     setState(() => _sending = true);
-    final ok = await widget.chat.send(_channelId, text);
+    final ok = await widget.chat.send(_channelId, text, replyToId: _replyTo?.id);
     if (mounted) {
       setState(() {
         _sending = false;
         _sendError = ok ? null : 'Ключ канала ещё не получен, повторите позже';
+        if (ok) _replyTo = null;
       });
       if (ok) _input.clear();
     }
+  }
+
+  void _insertEmoji(String e) {
+    final t = _input.text;
+    final sel = _input.selection;
+    final pos = sel.isValid ? sel.baseOffset : t.length;
+    final nt = t.substring(0, pos < 0 ? t.length : pos) + e + t.substring(pos < 0 ? t.length : pos);
+    _input.text = nt;
+    _input.selection = TextSelection.collapsed(offset: (pos < 0 ? t.length : pos) + e.length);
+    setState(() {});
+  }
+
+  Future<void> _sendGif(String url) async {
+    setState(() => _showPicker = false);
+    final ok = await widget.chat.send(_channelId, '![gif]($url)');
+    if (!ok && mounted) setState(() => _sendError = 'Ключ канала ещё не получен');
   }
 
   // ---------- Голосовые и видео-сообщения ----------
@@ -273,11 +361,12 @@ class _ChatScreenState extends State<ChatScreen> {
         size: bytes.length,
       );
       final text = _input.text.trim();
-      final ok = await widget.chat.send(_channelId, text, attachments: [att]);
+      final ok = await widget.chat.send(_channelId, text, attachments: [att], replyToId: _replyTo?.id);
       if (mounted) {
         setState(() {
           _sending = false;
           _sendError = ok ? null : 'Ключ канала ещё не получен, повторите позже';
+          if (ok) _replyTo = null;
         });
         if (ok) _input.clear();
       }
@@ -327,45 +416,198 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  /// Инфо о канале (по макету contact-profile): аватар, имя, ID, звонок.
+  String _roleIcon(Map m) {
+    if (m['is_server_admin'] == true) return '👑';
+    final r = (m['role'] as String?) ?? 'user';
+    if (r == 'channel_admin') return '🛡️';
+    if (r == 'channel_moderator') return '⚔️';
+    return '👤';
+  }
+
+  /// Инфо о канале — как web ParticipantsPanel + ChannelSidebar header.
   Future<void> _showInfo() async {
     final colors = AppColors.of(context);
     final name = (widget.channel['name'] as String?) ?? '?';
     final created = widget.channel['created_at'] as String?;
+    List<dynamic> members = [];
+    List<dynamic> banned = [];
+    try {
+      members = await widget.session.api.members(_channelId);
+      banned = await widget.session.api.bannedMembers(_channelId).catchError((_) => <dynamic>[]);
+    } catch (_) {}
+    if (!mounted) return;
+    final myId = widget.session.settings.user?.id ?? 0;
+    final isServerAdmin = widget.session.settings.user?.isServerAdmin ?? false;
     await showModalBottomSheet<void>(
       context: context,
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _LetterAvatar(name: name, size: 100),
-              const SizedBox(height: 16),
-              Text(name, textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700)),
-              const SizedBox(height: 4),
-              Text('Канал · ID: $_channelId', style: TextStyle(color: colors.textDim, fontSize: 14)),
-              if (created != null)
-                Text(
-                  'Создан: ${DateTime.tryParse(created)?.toLocal().toString().substring(0, 10) ?? ''}',
-                  style: TextStyle(color: colors.textDim, fontSize: 13),
-                ),
-              const SizedBox(height: 20),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+      isScrollControlled: true,
+      backgroundColor: colors.bg2,
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.65,
+        minChildSize: 0.4,
+        maxChildSize: 0.92,
+        expand: false,
+        builder: (_, ctrl) => Column(
+          children: [
+            const SizedBox(height: 8),
+            Container(width: 36, height: 4, decoration: BoxDecoration(color: colors.textDim.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(2))),
+            Expanded(
+              child: ListView(
+                controller: ctrl,
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
                 children: [
-                  _QuickAction(icon: Icons.call, label: 'Звонок', onTap: () {
-                    Navigator.pop(ctx);
-                    _startCall();
-                  }),
+                  Center(child: _LetterAvatar(name: name, size: 88)),
+                  const SizedBox(height: 12),
+                  Center(child: Text(name, textAlign: TextAlign.center, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700))),
+                  const SizedBox(height: 4),
+                  Center(child: Text('Канал · ID: $_channelId', style: TextStyle(color: colors.textDim, fontSize: 13))),
+                  if (created != null)
+                    Center(child: Text('Создан: ${DateTime.tryParse(created)?.toLocal().toString().substring(0, 10) ?? ''}', style: TextStyle(color: colors.textDim, fontSize: 12))),
+                  const SizedBox(height: 16),
+                  Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    _QuickAction(icon: Icons.call, label: 'Звонок', onTap: () { Navigator.pop(ctx); _startCall(); }),
+                    const SizedBox(width: 12),
+                    _QuickAction(icon: Icons.person_add, label: 'Пригласить', onTap: () { Navigator.pop(ctx); _showInviteToChannel(members); }),
+                    const SizedBox(width: 12),
+                    _QuickAction(icon: Icons.search, label: 'Поиск', onTap: () { Navigator.pop(ctx); _showSearch(); }),
+                  ]),
+                  const Divider(height: 24),
+                  Row(
+                    children: [
+                      Text('Участники', style: TextStyle(color: colors.text, fontSize: 13, fontWeight: FontWeight.w700)),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(color: colors.bg3, borderRadius: BorderRadius.circular(999)),
+                        child: Text('${members.length}', style: TextStyle(color: colors.textDim, fontSize: 11)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  for (final m in members)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 6),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                      decoration: BoxDecoration(color: colors.bg, borderRadius: BorderRadius.circular(8), border: Border.all(color: colors.border)),
+                      child: Row(
+                        children: [
+                          _LetterAvatar(name: (m['nick'] as String?) ?? '?', size: 36),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              Text('${_roleIcon(m)} ${(m['nick'] as String?) ?? '?'}',
+                                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis),
+                              Text('ID: ${m['user_id']} · ${(m['role'] as String?) ?? 'user'}',
+                                  style: TextStyle(color: colors.textDim, fontSize: 11)),
+                            ]),
+                          ),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text((m['online'] == true ? 'Онлайн' : 'Офлайн'),
+                                  style: TextStyle(color: m['online'] == true ? colors.green : colors.textDim, fontSize: 11)),
+                              if (isServerAdmin && (m['user_id'] as num?)?.toInt() != myId)
+                                PopupMenuButton<String>(
+                                  icon: Icon(Icons.more_horiz, color: colors.textDim, size: 18),
+                                  onSelected: (v) async {
+                                    final uid = (m['user_id'] as num).toInt();
+                                    if (v == 'kick') {
+                                      await widget.session.api.kickMember(_channelId, uid, 'кик из мобильного').catchError((e) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e'))));
+                                      if (context.mounted) Navigator.pop(ctx);
+                                    } else if (v == 'ban') {
+                                      await widget.session.api.banMember(_channelId, uid, 'бан из мобильного').catchError((e) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e'))));
+                                      if (context.mounted) Navigator.pop(ctx);
+                                    } else if (v.startsWith('role:')) {
+                                      final role = v.split(':')[1];
+                                      await widget.session.api.setMemberRole(_channelId, uid, role).catchError((e) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e'))));
+                                      if (context.mounted) Navigator.pop(ctx);
+                                    }
+                                  },
+                                  itemBuilder: (_) => [
+                                    const PopupMenuItem(value: 'role:user', child: Text('👤 Пользователь')),
+                                    const PopupMenuItem(value: 'role:channel_moderator', child: Text('⚔️ Модератор')),
+                                    const PopupMenuItem(value: 'role:channel_admin', child: Text('🛡️ Админ канала')),
+                                    const PopupMenuItem(value: 'kick', child: Text('Кик')),
+                                    const PopupMenuItem(value: 'ban', child: Text('Бан')),
+                                  ],
+                                ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  if (members.isEmpty)
+                    Padding(padding: const EdgeInsets.all(16), child: Center(child: Text('Нет участников', style: TextStyle(color: colors.textDim)))),
+                  if (banned.isNotEmpty) ...[
+                    const Divider(height: 24),
+                    Text('Забаненные (${banned.length})', style: TextStyle(color: colors.danger, fontSize: 13, fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 8),
+                    for (final b in banned)
+                      Container(
+                        margin: const EdgeInsets.only(bottom: 6),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                        decoration: BoxDecoration(color: colors.bg3, borderRadius: BorderRadius.circular(8)),
+                        child: Row(
+                          children: [
+                            Expanded(child: Text((b['nick'] as String?) ?? 'ID:${b['user_id']}', style: TextStyle(color: colors.text, fontSize: 13))),
+                            TextButton(onPressed: () async { await widget.session.api.unbanMember(_channelId, (b['user_id'] as num).toInt()); if (context.mounted) Navigator.pop(ctx); }, child: const Text('Разбанить', style: TextStyle(color: Color(0xFF23A55A)))),
+                          ],
+                        ),
+                      ),
+                  ],
                 ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
+  }
+
+  Future<void> _showInviteToChannel(List<dynamic> currentMembers) async {
+    final colors = AppColors.of(context);
+    final memberIds = currentMembers.map((m) => (m['user_id'] as num).toInt()).toSet();
+    List<dynamic> users = [];
+    try {
+      users = await widget.session.api.users();
+    } catch (_) {}
+    final candidates = users.where((u) => !memberIds.contains((u['id'] as num?)?.toInt())).toList();
+    if (!mounted) return;
+    final picked = await showModalBottomSheet<int>(
+      context: context,
+      backgroundColor: colors.bg2,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Text('Пригласить пользователя', style: TextStyle(color: colors.text, fontSize: 16, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 12),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final u in candidates)
+                    ListTile(
+                      title: Text((u['nick'] as String?) ?? '?', style: TextStyle(color: colors.text)),
+                      subtitle: Text('ID: ${u['id']}', style: TextStyle(color: colors.textDim, fontSize: 12)),
+                      onTap: () => Navigator.pop(ctx, (u['id'] as num).toInt()),
+                    ),
+                  if (candidates.isEmpty) Padding(padding: const EdgeInsets.all(16), child: Center(child: Text('Нет пользователей для приглашения', style: TextStyle(color: colors.textDim)))),
+                ],
+              ),
+            ),
+          ]),
+        ),
+      ),
+    );
+    if (picked != null) {
+      try {
+        await widget.session.api.inviteToChannel(_channelId, picked);
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Приглашение отправлено')));
+      } catch (e) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
+      }
+    }
   }
 
   void _startEdit(ChatMessage m) {
@@ -379,7 +621,8 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _onLongPress(ChatMessage m) async {
     final colors = AppColors.of(context);
     final myId = widget.session.settings.user?.id;
-    if (m.senderId != myId) return;
+    final isMine = m.senderId == myId;
+    final canEdit = isMine && !m.deleted && !m.encrypted && !m.system;
     final action = await showModalBottomSheet<String>(
       context: context,
       builder: (ctx) => SafeArea(
@@ -387,25 +630,202 @@ class _ChatScreenState extends State<ChatScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.edit),
-              title: const Text('Изменить сообщение'),
-              onTap: () => Navigator.pop(ctx, 'edit'),
+              leading: const Icon(Icons.reply),
+              title: const Text('Ответить'),
+              onTap: () => Navigator.pop(ctx, 'reply'),
             ),
             ListTile(
-              leading: Icon(Icons.delete, color: colors.danger),
-              title: Text('Удалить сообщение', style: TextStyle(color: colors.danger)),
-              onTap: () => Navigator.pop(ctx, 'delete'),
+              leading: const Icon(Icons.copy),
+              title: const Text('Копировать текст'),
+              onTap: () => Navigator.pop(ctx, 'copy'),
             ),
+            if (canEdit)
+              ListTile(
+                leading: const Icon(Icons.edit),
+                title: const Text('Изменить сообщение'),
+                onTap: () => Navigator.pop(ctx, 'edit'),
+              ),
+            if (isMine && !m.deleted)
+              ListTile(
+                leading: Icon(Icons.delete, color: colors.danger),
+                title: Text('Удалить сообщение', style: TextStyle(color: colors.danger)),
+                onTap: () => Navigator.pop(ctx, 'delete'),
+              ),
+            if (m.deleted && m.original != null)
+              ListTile(
+                leading: const Icon(Icons.visibility),
+                title: const Text('Показать оригинал'),
+                onTap: () => Navigator.pop(ctx, 'original'),
+              ),
           ],
         ),
       ),
     );
     if (!mounted) return;
-    if (action == 'edit') {
+    if (action == 'reply') {
+      setState(() => _replyTo = m);
+    } else if (action == 'copy') {
+      // копирование в буфер — через SnackBar для простоты
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m.text ?? ''), duration: const Duration(seconds: 1)));
+    } else if (action == 'edit') {
       _startEdit(m);
     } else if (action == 'delete') {
       await widget.chat.remove(_channelId, m.id);
+    } else if (action == 'original') {
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Оригинал сообщения'),
+          content: Text(m.original ?? ''),
+          actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Закрыть'))],
+        ),
+      );
     }
+  }
+
+  void _jumpToMessage(int id) {
+    final idx = widget.chat.messages(_channelId).indexWhere((x) => x.id == id);
+    if (idx < 0 || !_scroll.hasClients) return;
+    _scroll.animateTo(
+      (idx / (widget.chat.messages(_channelId).length)) * _scroll.position.maxScrollExtent,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOut,
+    );
+  }
+
+  Future<void> _showSearch() async {
+    final colors = AppColors.of(context);
+    final qCtrl = TextEditingController();
+    List<ChatMessage> results = [];
+    bool loading = false;
+    Timer? debounce;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: colors.bg2,
+      builder: (ctx) => StatefulBuilder(builder: (ctx2, setSt) {
+        Future<void> doSearch(String q) async {
+          if (q.trim().isEmpty) { setSt(() => results = []); return; }
+          setSt(() => loading = true);
+          final r = await widget.chat.searchMessages(_channelId, q);
+          if (ctx2.mounted) setSt(() { results = r; loading = false; });
+        }
+        return Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx2).viewInsets.bottom),
+          child: SafeArea(
+            child: SizedBox(
+              height: MediaQuery.of(ctx2).size.height * 0.75,
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: qCtrl,
+                            autofocus: true,
+                            decoration: InputDecoration(
+                              hintText: 'Поиск сообщений…',
+                              prefixIcon: const Icon(Icons.search, size: 20),
+                              filled: true,
+                              fillColor: colors.bg,
+                              isDense: true,
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(18), borderSide: BorderSide.none),
+                            ),
+                            onChanged: (v) {
+                              debounce?.cancel();
+                              debounce = Timer(const Duration(milliseconds: 300), () => doSearch(v));
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(ctx2)),
+                      ],
+                    ),
+                  ),
+                  if (loading) const LinearProgressIndicator(minHeight: 2),
+                  Expanded(
+                    child: results.isEmpty
+                        ? Center(child: Text(qCtrl.text.trim().isEmpty ? 'Введите запрос' : widget.chat.searchBusy ? 'Поиск…' : 'Ничего не найдено', style: TextStyle(color: colors.textDim)))
+                        : ListView.builder(
+                            itemCount: results.length,
+                            itemBuilder: (_, i) {
+                              final m = results[i];
+                              return ListTile(
+                                title: Text(m.senderNick, style: TextStyle(color: colors.accent, fontSize: 13, fontWeight: FontWeight.w600)),
+                                subtitle: Text(m.text ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: colors.text, fontSize: 13)),
+                                trailing: Text('${m.createdAt.hour.toString().padLeft(2, '0')}:${m.createdAt.minute.toString().padLeft(2, '0')}', style: TextStyle(color: colors.textDim, fontSize: 11)),
+                                onTap: () {
+                                  Navigator.pop(ctx2);
+                                  _jumpToMessage(m.id);
+                                },
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }),
+    );
+    debounce?.cancel();
+    qCtrl.dispose();
+  }
+
+  Future<void> _showMedia() async {
+    final colors = AppColors.of(context);
+    final media = widget.chat.mediaMessages(_channelId);
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: colors.bg2,
+      builder: (ctx) => SafeArea(
+        child: SizedBox(
+          height: MediaQuery.of(ctx).size.height * 0.6,
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  children: [
+                    Text('Медиа', style: TextStyle(color: colors.text, fontSize: 16, fontWeight: FontWeight.w700)),
+                    const Spacer(),
+                    IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(ctx)),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: media.isEmpty
+                    ? Center(child: Text('Нет фото и видео', style: TextStyle(color: colors.textDim)))
+                    : GridView.builder(
+                        padding: const EdgeInsets.all(8),
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, crossAxisSpacing: 4, mainAxisSpacing: 4),
+                        itemCount: media.expand((m) => m.attachments.where((a) => a.mime.startsWith('image/') || a.mime.startsWith('video/'))).length,
+                        itemBuilder: (_, idx) {
+                          final allAtts = media.expand((m) => m.attachments.where((a) => a.mime.startsWith('image/') || a.mime.startsWith('video/'))).toList();
+                          final a = allAtts[idx];
+                          return GestureDetector(
+                            onTap: () {
+                              // открыть соответствующий _MessageAttachments превью
+                              Navigator.pop(ctx);
+                            },
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(6),
+                              child: a.mime.startsWith('image/')
+                                  ? Image.network(widget.session.api.fileUrl(a.id), fit: BoxFit.cover, errorBuilder: (_,__,___) => Container(color: colors.bg3, child: Icon(Icons.broken_image, color: colors.textDim)))
+                                  : Container(color: Colors.black, child: const Center(child: Icon(Icons.play_circle_fill, color: Colors.white, size: 32))),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -413,6 +833,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final colors = AppColors.of(context);
     final messages = widget.chat.messages(_channelId);
     final channelName = (widget.channel['name'] as String?) ?? '?';
+    final typing = _typingSummary();
 
     return Scaffold(
       backgroundColor: colors.bg,
@@ -448,30 +869,128 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         ),
         actions: [
+          IconButton(icon: Icon(Icons.search, color: colors.textDim, size: 20), tooltip: 'Поиск', onPressed: _showSearch),
+          IconButton(icon: Icon(Icons.perm_media, color: colors.textDim, size: 20), tooltip: 'Медиа', onPressed: _showMedia),
           IconButton(
-            icon: Icon(Icons.call, color: colors.online),
+            icon: Icon(Icons.call, color: colors.accent),
             tooltip: 'Позвонить участникам канала',
             onPressed: _startCall,
           ),
+          IconButton(
+            icon: const Icon(Icons.more_vert),
+            tooltip: 'Инфо канала',
+            onPressed: _showInfo,
+          ),
         ],
+        bottom: typing.isNotEmpty
+            ? PreferredSize(
+                preferredSize: const Size.fromHeight(24),
+                child: Container(
+                  width: double.infinity,
+                  color: colors.bg2,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  child: Text(typing,
+                      style: TextStyle(color: colors.accent, fontSize: 12.5, fontStyle: FontStyle.italic),
+                      overflow: TextOverflow.ellipsis),
+                ),
+              )
+            : null,
       ),
       body: Column(
         children: [
           Expanded(
-            child: ListView.builder(
-              controller: _scroll,
-              padding: const EdgeInsets.all(12),
-              itemCount: messages.length,
-              itemBuilder: (ctx, i) {
-                final m = messages[i];
-                final mine = m.senderId == widget.session.settings.user?.id;
-                return _MessageBubble(
-                  m: m,
-                  mine: mine,
-                  onLongPress: () => _onLongPress(m),
-                  api: widget.session.api,
-                );
-              },
+            child: Stack(
+              children: [
+                ListView.builder(
+                  controller: _scroll,
+                  padding: const EdgeInsets.all(12),
+                  itemCount: messages.length,
+                  itemBuilder: (ctx, i) {
+                    final m = messages[i];
+                    final mine = m.senderId == widget.session.settings.user?.id;
+                    final showDate = _isNewDate(m, i, messages);
+                    return Column(
+                      children: [
+                        if (showDate)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: colors.bg3,
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(_formatDateHeader(m.createdAt),
+                                  style: TextStyle(color: colors.textDim, fontSize: 12, fontWeight: FontWeight.w600)),
+                            ),
+                          ),
+                        if (m.system)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: colors.bg3,
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(m.text ?? '',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(color: colors.textDim, fontSize: 12)),
+                            ),
+                          )
+                        else
+                          Builder(builder: (_) {
+                            ChatMessage? replied;
+                            if (m.replyToId != null) {
+                              try {
+                                replied = messages.firstWhere((x) => x.id == m.replyToId);
+                              } catch (_) {}
+                            }
+                            return _MessageBubble(
+                              m: m,
+                              mine: mine,
+                              replied: replied,
+                              onLongPress: () => _onLongPress(m),
+                              onReplyTap: replied != null ? () => _jumpToMessage(replied!.id) : null,
+                              api: widget.session.api,
+                            );
+                          }),
+                      ],
+                    );
+                  },
+                ),
+                if (_showScrollButton)
+                  Positioned(
+                    right: 12,
+                    bottom: 12,
+                    child: GestureDetector(
+                      onTap: _scrollBottom,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: colors.accent,
+                          borderRadius: BorderRadius.circular(999),
+                          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 8, offset: const Offset(0, 2))],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.arrow_downward, color: Colors.white, size: 16),
+                            if (_hiddenCount > 0) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(999)),
+                                child: Text('$_hiddenCount',
+                                    style: TextStyle(color: colors.accent, fontSize: 11, fontWeight: FontWeight.w700)),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
           if (_sendError != null)
@@ -506,6 +1025,25 @@ class _ChatScreenState extends State<ChatScreen> {
                 ],
               ),
             ),
+          if (_replyTo != null)
+            Container(
+              width: double.infinity,
+              color: colors.bg2,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: Row(
+                children: [
+                  Container(width: 3, height: 32, decoration: BoxDecoration(color: colors.accent, borderRadius: BorderRadius.circular(2))),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(_replyTo!.senderNick, style: TextStyle(color: colors.accent, fontSize: 12, fontWeight: FontWeight.w700)),
+                      Text(_replyTo!.text ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: colors.textDim, fontSize: 12)),
+                    ]),
+                  ),
+                  IconButton(icon: Icon(Icons.close, color: colors.textDim, size: 18), onPressed: () => setState(() => _replyTo = null)),
+                ],
+              ),
+            ),
           if (_editingId != null)
             Container(
               width: double.infinity,
@@ -526,27 +1064,50 @@ class _ChatScreenState extends State<ChatScreen> {
                 ],
               ),
             ),
+          if (_showPicker)
+            EmojiPicker(
+              api: widget.session.api,
+              onInsert: _insertEmoji,
+              onSendGif: _sendGif,
+              onClose: () => setState(() => _showPicker = false),
+            ),
           Container(
-            color: colors.surface,
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 14),
+            color: colors.bg,
+            decoration: BoxDecoration(
+              color: colors.bg,
+              border: Border(top: BorderSide(color: colors.border, width: 0.5)),
+            ),
+            padding: const EdgeInsets.fromLTRB(8, 10, 12, 14),
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
+                IconButton(
+                  icon: Icon(_showPicker ? Icons.keyboard : Icons.emoji_emotions_outlined, color: colors.textDim, size: 22),
+                  tooltip: 'Смайлики и GIF',
+                  onPressed: () => setState(() => _showPicker = !_showPicker),
+                  style: IconButton.styleFrom(backgroundColor: _showPicker ? colors.bg3 : Colors.transparent, shape: const CircleBorder(), padding: const EdgeInsets.all(8)),
+                ),
+                const SizedBox(width: 4),
                 Expanded(
                   child: TextField(
                     controller: _input,
                     minLines: 1,
-                    maxLines: 4,
-                    style: TextStyle(color: colors.text, fontSize: 15),
+                    maxLines: 5,
+                    style: TextStyle(color: colors.text, fontSize: 15, height: 1.35),
                     decoration: InputDecoration(
-                      hintText: _editingId != null ? 'Редактирование…' : 'Сообщение…',
-                      hintStyle: TextStyle(color: colors.textDim),
-                      fillColor: colors.bubbleIn,
+                      hintText: _editingId != null ? 'Редактирование…' : 'Сообщение в чат…',
+                      hintStyle: TextStyle(color: colors.textDim, fontSize: 15),
+                      fillColor: colors.bg3,
+                      filled: true,
                       isDense: true,
                       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none),
                     ),
                     onSubmitted: (_) => _send(),
-                    onChanged: (_) => setState(() {}),
+                    onChanged: (_) {
+                      setState(() {});
+                      if (_input.text.trim().isNotEmpty) widget.chat.typing(_channelId);
+                    },
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -602,13 +1163,17 @@ class _ChatScreenState extends State<ChatScreen> {
 class _MessageBubble extends StatelessWidget {
   final ChatMessage m;
   final bool mine;
+  final ChatMessage? replied;
   final VoidCallback onLongPress;
+  final VoidCallback? onReplyTap;
   final ApiClient api;
 
   const _MessageBubble({
     required this.m,
     required this.mine,
+    this.replied,
     required this.onLongPress,
+    this.onReplyTap,
     required this.api,
   });
 
@@ -632,17 +1197,20 @@ class _MessageBubble extends StatelessWidget {
       body = m.text ?? '';
     }
 
+    final isLight = Theme.of(context).brightness == Brightness.light;
     final bubble = Container(
-      constraints: const BoxConstraints(maxWidth: 300),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      constraints: const BoxConstraints(maxWidth: 320),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: mine ? colors.bubbleOut : colors.bubbleIn,
+        color: mine ? colors.bubbleOut : colors.bubble,
         borderRadius: BorderRadius.only(
-          topLeft: Radius.circular(mine ? 16 : 4),
-          topRight: Radius.circular(mine ? 4 : 16),
-          bottomLeft: const Radius.circular(16),
-          bottomRight: const Radius.circular(16),
+          topLeft: Radius.circular(mine ? 14 : 4),
+          topRight: Radius.circular(mine ? 4 : 14),
+          bottomLeft: const Radius.circular(14),
+          bottomRight: const Radius.circular(14),
         ),
+        border: (!mine && isLight) ? Border.all(color: colors.border) : null,
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 2, offset: const Offset(0, 1))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -656,15 +1224,47 @@ class _MessageBubble extends StatelessWidget {
                 fontSize: 13,
               ),
             ),
+          if (replied != null)
+            GestureDetector(
+              onTap: onReplyTap,
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: mine ? Colors.white.withValues(alpha: 0.15) : colors.bg3,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border(left: BorderSide(color: mine ? Colors.white : colors.accent, width: 3)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(replied!.senderNick, style: TextStyle(color: mine ? Colors.white : colors.accent, fontSize: 12, fontWeight: FontWeight.w700)),
+                    Text(replied!.text ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: mine ? Colors.white70 : colors.textDim, fontSize: 12)),
+                  ],
+                ),
+              ),
+            ),
           // Вложения: фото/видео/голос/файлы (одно или несколько).
           MessageAttachments(m: m, mine: mine, api: api),
-          if (body.isNotEmpty) Text(body, style: bodyStyle),
+          if (body.isNotEmpty)
+            m.pending || m.deleted || m.encrypted
+                ? Text(body, style: bodyStyle)
+                : MarkdownView(text: body, mine: mine),
           const SizedBox(height: 3),
           Align(
             alignment: Alignment.centerRight,
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
+                if (m.edited)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: Text('изменено',
+                        style: TextStyle(
+                            color: mine ? Colors.white.withValues(alpha: 0.7) : colors.textDim,
+                            fontSize: 10,
+                            fontStyle: FontStyle.italic)),
+                  ),
                 Text(
                   time,
                   style: TextStyle(
