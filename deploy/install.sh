@@ -591,11 +591,36 @@ do_update() {
 
   cd "$REPO_DIR"
   log "Скачиваю последние изменения с GitHub..."
+  # Сохраняем домашние сервисы Caddyfile (секция после "# --- Домашние сервисы"),
+  # т.к. она хранится только на VPS и отсутствует в репозитории.
+  HOME_SVC_BAK="$INSTALL_DIR/.caddy-home-services.bak"
+  HOME_SVC_TMP="$(mktemp)"
+  if [ -f "$DEPLOY_DIR/Caddyfile" ] && grep -q "# --- Домашние сервисы" "$DEPLOY_DIR/Caddyfile"; then
+    sed -n '/# --- Домашние сервисы/,$p' "$DEPLOY_DIR/Caddyfile" > "$HOME_SVC_TMP"
+    cp "$HOME_SVC_TMP" "$HOME_SVC_BAK"
+    log "Сохранены домашние сервисы Caddyfile ($(wc -l < "$HOME_SVC_TMP") строк)"
+  elif [ -f "$HOME_SVC_BAK" ]; then
+    cp "$HOME_SVC_BAK" "$HOME_SVC_TMP"
+    log "Использован бэкап домашних сервисов ($HOME_SVC_BAK)"
+  else
+    : > "$HOME_SVC_TMP"
+  fi
   # Жёсткая синхронизация с upstream: локальные правки отслеживаемых файлов
   # (например, временные ручные правки Caddyfile) не блокируют обновление.
   # Все данные (БД, .env, сертификаты) лежат вне репозитория и не затрагиваются.
   git fetch origin
   git reset --hard origin/main
+  # Восстанавливаем домашние сервисы, если были
+  if [ -s "$HOME_SVC_TMP" ]; then
+    # Убеждаемся, что в новом Caddyfile есть маркер для вставки
+    if ! grep -q "# --- Локальные" "$DEPLOY_DIR/Caddyfile"; then
+      echo "" >> "$DEPLOY_DIR/Caddyfile"
+      echo "# --- Локальные/домашние сервисы ---" >> "$DEPLOY_DIR/Caddyfile"
+    fi
+    cat "$HOME_SVC_TMP" >> "$DEPLOY_DIR/Caddyfile"
+    log "Восстановлены домашние сервисы в Caddyfile"
+  fi
+  rm -f "$HOME_SVC_TMP"
   gen_livekit_config
   gen_centrifugo_config
   gen_certs
