@@ -1,7 +1,7 @@
 {
   "name": "golosloom-desktop",
   "private": true,
-  "version": "2.5.8",
+  "version": "2.5.9",
   "description": "Golosloom — голосовой сервер с чатом, звонками и демонстрацией экрана",
   "author": {
     "name": "grendervilll",
