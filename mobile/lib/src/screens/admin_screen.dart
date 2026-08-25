@@ -2,6 +2,9 @@
 // Админ-панель сервера: статистика, пользователи, каналы, регистрация.
 library;
 
+import 'dart:typed_data';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../api_client.dart';
@@ -26,6 +29,8 @@ class _AdminScreenState extends State<AdminScreen> {
   bool _selecting = false;
   final Set<int> _selected = {};
   bool _registrationEnabled = true;
+  Map<String, dynamic>? _ringtoneInfo;
+  bool _ringtoneBusy = false;
   String? _error;
   final _newNick = TextEditingController();
   final _newPass = TextEditingController();
@@ -72,6 +77,10 @@ class _AdminScreenState extends State<AdminScreen> {
         files = await _api.adminListFiles();
       } catch (_) {}
       final reg = await _api.adminGetRegistration();
+      Map<String, dynamic>? ringtone;
+      try {
+        ringtone = await _api.ringtoneInfo();
+      } catch (_) {}
       if (mounted) {
         setState(() {
           _stats = stats;
@@ -79,11 +88,70 @@ class _AdminScreenState extends State<AdminScreen> {
           _channels = channels;
           _files = files;
           _registrationEnabled = reg;
+          _ringtoneInfo = ringtone;
           _error = null;
         });
       }
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
+    }
+  }
+
+  Future<void> _uploadRingtone() async {
+    try {
+      final files = await FilePicker.pickFiles(type: FileType.audio);
+      if (files.isEmpty) return;
+      final f = files.first;
+      final bytes = await f.readAsBytes();
+      if (bytes.isEmpty) {
+        _snack('Не удалось прочитать файл');
+        return;
+      }
+      if (bytes.length > 5 * 1024 * 1024) {
+        _snack('Файл слишком большой (макс 5 МБ)');
+        return;
+      }
+      setState(() => _ringtoneBusy = true);
+      final mime = f.name.toLowerCase().endsWith('.mp3')
+          ? 'audio/mpeg'
+          : f.name.toLowerCase().endsWith('.wav')
+              ? 'audio/wav'
+              : 'audio/mpeg';
+      await _api.uploadRingtone(Uint8List.fromList(bytes), f.name, mime);
+      _snack('Мелодия обновлена — у всех заиграет новая');
+      await _load();
+    } catch (e) {
+      _snack('Ошибка: $e');
+    } finally {
+      if (mounted) setState(() => _ringtoneBusy = false);
+    }
+  }
+
+  Future<void> _deleteRingtone() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Сбросить мелодию?'),
+        content: const Text('Будет играть стандартная (zvonok.mp3)'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
+          FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: const Color(0xFFDA373C)),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Сбросить')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      setState(() => _ringtoneBusy = true);
+      await _api.deleteRingtone();
+      _snack('Мелодия сброшена на дефолт');
+      await _load();
+    } catch (e) {
+      _snack('Ошибка: $e');
+    } finally {
+      if (mounted) setState(() => _ringtoneBusy = false);
     }
   }
 
@@ -528,6 +596,46 @@ class _AdminScreenState extends State<AdminScreen> {
           const SizedBox(height: 8),
           Text('Go ${_stats['go'] ?? ''} · goroutines: ${_stats['goroutines'] ?? '—'}',
               style: const TextStyle(color: dim, fontSize: 12)),
+          const SizedBox(height: 12),
+          Card(
+            color: const Color(0xFF2B2D31),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Мелодия звонка (серверная)', style: TextStyle(color: text, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 4),
+                  const Text('Загрузите mp3/wav/ogg/m4a до 5 МБ — будет играть у всех при входящем вызове.',
+                      style: TextStyle(color: dim, fontSize: 12)),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      FilledButton(
+                        style: FilledButton.styleFrom(backgroundColor: const Color(0xFF2AABEE)),
+                        onPressed: _ringtoneBusy ? null : _uploadRingtone,
+                        child: _ringtoneBusy
+                            ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            : const Text('Загрузить мелодию'),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton(
+                        onPressed: (_ringtoneInfo?['exists'] as bool? ?? false) && !_ringtoneBusy ? _deleteRingtone : null,
+                        child: const Text('Сбросить', style: TextStyle(color: Color(0xFFDA373C))),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    (_ringtoneInfo?['exists'] as bool? ?? false)
+                        ? 'Текущая: ${(_ringtoneInfo?['content_type'] ?? 'audio')} · ${((_ringtoneInfo?['size'] as num?) ?? 0) ~/ 1024} КБ · ${((_ringtoneInfo?['hash'] as String?) ?? '').substring(0, 8)}'
+                        : 'Сейчас: дефолт (zvonok.mp3)',
+                    style: const TextStyle(color: dim, fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );

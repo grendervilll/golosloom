@@ -453,6 +453,39 @@ export class ApiClient {
   adminDeleteFile(fileId: number) {
     return this.delete(`/api/admin/files/${fileId}`)
   }
+
+  // --- Рингтон сервера (админ устанавливает, все клиенты играют) ---
+  ringtoneInfo() {
+    return this.get('/api/ringtone/info')
+  }
+  ringtoneUrl(): string {
+    // Для <audio> тега нужен URL без заголовка — используем файловый токен как query
+    // Но основной путь — fetch с Authorization, поэтому возвращаем чистый URL
+    return this.baseUrl + '/api/ringtone'
+  }
+  ringtoneUrlWithToken(): string {
+    const t = this.token
+    if (!t) return this.baseUrl + '/api/ringtone'
+    // Для <audio src> в админке используем токен в query (как fileUrl)
+    return this.baseUrl + `/api/ringtone?token=${encodeURIComponent(t)}`
+  }
+  async uploadRingtone(file: File): Promise<any> {
+    const form = new FormData()
+    form.append('file', file)
+    const headers: Record<string, string> = {}
+    if (this.token) headers['Authorization'] = `Bearer ${this.token}`
+    const res = await fetch(this.baseUrl + '/api/admin/ringtone', { method: 'POST', headers, body: form })
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      let msg = `Ошибка загрузки: ${res.status}`
+      try { const j = JSON.parse(text); if (j?.error) msg = j.error } catch {}
+      throw new Error(msg)
+    }
+    return res.json()
+  }
+  deleteRingtone() {
+    return this.delete('/api/admin/ringtone')
+  }
 }
 
 // Простая типизация ответа /api/config без импорта типов

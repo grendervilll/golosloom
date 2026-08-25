@@ -12,6 +12,9 @@ class SoundManager {
   private dialTimer: number | null = null
   private ringNodes: { osc: OscillatorNode; gain: GainNode }[] = []
   private muted = false
+  private customRingtoneUrl: string | null = null
+  private customRingtoneHash: string | null = null
+  private customRingtoneObjectUrl: string | null = null
 
   private getCtx(): AudioContext | null {
     if (typeof window === 'undefined') return null
@@ -31,6 +34,72 @@ class SoundManager {
     if (ctx && ctx.state === 'suspended') void ctx.resume()
   }
 
+  // Загрузка кастомного рингтона сервера (если админ установил).
+  // Вызывается при старте приложения и при событии ringtone.updated.
+  async loadCustomRingtone(): Promise<void> {
+    try {
+      // Пытаемся получить токен и baseUrl из localStorage (как в auth store)
+      const token = localStorage.getItem('golosloom-token') || ''
+      if (!token) return
+      const base = (window as any).__GOLOSLOOM_API_BASE__ || ''
+      const baseUrl = base || window.location.origin
+      // Сначала info — проверяем хеш
+      const infoRes = await fetch(`${baseUrl}/api/ringtone/info`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!infoRes.ok) {
+        // 404 — кастомного нет, используем дефолт
+        this.clearCustomRingtone()
+        return
+      }
+      const info = await infoRes.json()
+      if (!info.exists || !info.hash) {
+        this.clearCustomRingtone()
+        return
+      }
+      if (info.hash === this.customRingtoneHash && this.customRingtoneUrl) return
+      // Скачиваем файл
+      const fileRes = await fetch(`${baseUrl}/api/ringtone`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!fileRes.ok) {
+        this.clearCustomRingtone()
+        return
+      }
+      const blob = await fileRes.blob()
+      const url = URL.createObjectURL(blob)
+      if (this.customRingtoneObjectUrl) URL.revokeObjectURL(this.customRingtoneObjectUrl)
+      this.customRingtoneObjectUrl = url
+      this.customRingtoneUrl = url
+      this.customRingtoneHash = info.hash
+      // Кэшируем хеш в localStorage для быстрой проверки
+      try { localStorage.setItem('golosloom-ringtone-hash', info.hash) } catch {}
+    } catch {
+      // Тихо — fallback на дефолт
+    }
+  }
+
+  clearCustomRingtone(): void {
+    if (this.customRingtoneObjectUrl) {
+      try { URL.revokeObjectURL(this.customRingtoneObjectUrl) } catch {}
+      this.customRingtoneObjectUrl = null
+    }
+    this.customRingtoneUrl = null
+    this.customRingtoneHash = null
+    try { localStorage.removeItem('golosloom-ringtone-hash') } catch {}
+  }
+
+  handleRingtoneUpdated(data: any): void {
+    const hash = data?.hash || ''
+    if (!hash) {
+      this.clearCustomRingtone()
+      return
+    }
+    // Если хеш совпадает — ничего не делаем
+    if (hash === this.customRingtoneHash) return
+    void this.loadCustomRingtone()
+  }
+
   private beep(freq: number, duration: number, gain = 0.05, type: OscillatorType = 'sine'): void {
     const ctx = this.getCtx()
     if (!ctx || ctx.state === 'suspended') return
@@ -48,19 +117,20 @@ class SoundManager {
   }
 
   // Звук входящего вызова (повторяющийся), максимум 20 секунд.
-  // Играет файл zvonok.mp3 по кругу; если файл не загрузился —
-  // фолбэк на гудки Web Audio API.
+  // Играет кастомный рингтон сервера (если админ установил) или zvonok.mp3.
   playRing(): void {
     if (this.ringTimer !== null) return // не даём двум вызовам звучать одновременно
     this.ringTimer = 1 // guard: звонок активен
     if (typeof window !== 'undefined') {
-      // Универсальный URL для web (https://) и Electron (file://)
-      let src = 'sounds/zvonok.mp3'
-      try {
-        src = new URL('sounds/zvonok.mp3', window.location.href).href
-      } catch {
-        const base = window.location.origin !== 'null' && !window.location.origin.startsWith('file') ? window.location.origin : ''
-        src = base ? base + '/sounds/zvonok.mp3' : 'sounds/zvonok.mp3'
+      // Приоритет — кастомный рингтон сервера (blob URL), иначе дефолт
+      let src = this.customRingtoneUrl || 'sounds/zvonok.mp3'
+      if (!this.customRingtoneUrl) {
+        try {
+          src = new URL('sounds/zvonok.mp3', window.location.href).href
+        } catch {
+          const base = window.location.origin !== 'null' && !window.location.origin.startsWith('file') ? window.location.origin : ''
+          src = base ? base + '/sounds/zvonok.mp3' : 'sounds/zvonok.mp3'
+        }
       }
       const audio = new Audio(src)
       audio.loop = true

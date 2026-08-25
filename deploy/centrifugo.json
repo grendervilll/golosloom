@@ -26,6 +26,21 @@
       "history_size": 0,
       "history_ttl": "0",
       "allow_publish_for_subscriber": false
+    },
+    {
+      "name": "ringtone",
+      "presence": false,
+      "join_leave": false,
+      "history_size": 10,
+      "history_ttl": "24h",
+      "allow_publish_for_subscriber": false
+    },
+    {
+      "name": "online",
+      "presence": true,
+      "join_leave": true,
+      "history_size": 0,
+      "allow_publish_for_subscriber": false
     }
   ],
   "client_connection_limit": 20,

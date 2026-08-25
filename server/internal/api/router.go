@@ -51,6 +51,12 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("GET /api/admin/files", s.requireServerAdmin(s.handleAdminListFiles))
 	mux.HandleFunc("DELETE /api/admin/files/{id}", s.requireServerAdmin(s.handleAdminDeleteFile))
 
+	// Рингтон сервера (админ устанавливает, все клиенты играют)
+	mux.HandleFunc("POST /api/admin/ringtone", s.requireServerAdmin(s.handleAdminUploadRingtone))
+	mux.HandleFunc("DELETE /api/admin/ringtone", s.requireServerAdmin(s.handleAdminDeleteRingtone))
+	mux.HandleFunc("GET /api/ringtone", s.requireAuth(s.handleRingtoneGet))
+	mux.HandleFunc("GET /api/ringtone/info", s.requireAuth(s.handleRingtoneInfo))
+
 	// Пользователи
 	mux.HandleFunc("GET /api/users", s.requireAuth(s.handleListUsers))
 	mux.HandleFunc("GET /api/gifs/search", s.requireAuth(s.handleGifSearch))

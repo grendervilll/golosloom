@@ -465,4 +465,35 @@ class ApiClient {
   Future<List<dynamic>> bannedMembers(int channelId) async {
     return await _request('GET', '/api/channels/$channelId/banned') as List<dynamic>;
   }
+
+  // --- Рингтон сервера (админ устанавливает, все клиенты играют) ---
+  Future<Map<String, dynamic>> ringtoneInfo() async {
+    return await _request('GET', '/api/ringtone/info') as Map<String, dynamic>;
+  }
+
+  Future<void> uploadRingtone(Uint8List bytes, String filename, String mime) async {
+    final req = http.MultipartRequest('POST', _uri('/api/admin/ringtone'));
+    if (token != null) req.headers['Authorization'] = 'Bearer $token';
+    req.files.add(http.MultipartFile.fromBytes('file', bytes, filename: filename, contentType: MediaType.parse(mime)));
+    final streamed = await _http.send(req).timeout(const Duration(seconds: 30));
+    final res = await http.Response.fromStream(streamed);
+    if (res.statusCode >= 400) {
+      throw ApiException(res.statusCode, _errorText(res.body));
+    }
+  }
+
+  Future<void> deleteRingtone() async {
+    await _request('DELETE', '/api/admin/ringtone');
+  }
+
+  String ringtoneUrl() => '$baseUrl/api/ringtone';
+
+  Future<Uint8List> fetchRingtone() async {
+    final req = http.Request('GET', _uri('/api/ringtone'));
+    if (token != null) req.headers['Authorization'] = 'Bearer $token';
+    final streamed = await _http.send(req);
+    final res = await http.Response.fromStream(streamed);
+    if (res.statusCode != 200) throw ApiException(res.statusCode, _errorText(res.body));
+    return res.bodyBytes;
+  }
 }

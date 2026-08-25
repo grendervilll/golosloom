@@ -12,6 +12,7 @@ import 'centrifuge_client.dart';
 import 'crypto.dart';
 import 'key_store.dart';
 import 'settings.dart';
+import 'sounds.dart';
 
 class WsEvent {
   final String type;
@@ -89,6 +90,8 @@ class Session extends ChangeNotifier {
     await refreshChannels();
     await refreshUsers();
     connectCentrifuge();
+    // Загружаем кастомный рингтон сервера (если админ установил)
+    AppSounds().loadCustomRingtone(api);
   }
 
   Future<void> refreshUsers() async {
@@ -146,6 +149,7 @@ class Session extends ChangeNotifier {
           notifyListeners();
 
           _subscribeToUserChannel();
+          _subscribeToRingtone();
         }).catchError((Object e, StackTrace s) {
           _onCentrifugeClosed();
         });
@@ -205,6 +209,21 @@ class Session extends ChangeNotifier {
         _centrifuge?.subscribe('user:$userId', token);
       }
     } catch (_) {}
+  }
+
+  Future<void> _subscribeToRingtone() async {
+    try {
+      final res = await api.centrifugoSubscribe('ringtone');
+      final token = res['token'] as String?;
+      if (token != null && !_stopped) {
+        _centrifuge?.subscribe('ringtone', token);
+      }
+    } catch (_) {
+      // Fallback: пробуем без токена (если allow_subscribe)
+      try {
+        _centrifuge?.subscribe('ringtone', '');
+      } catch (_) {}
+    }
   }
 
   void joinChannel(int channelId) async {

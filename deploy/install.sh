@@ -315,7 +315,9 @@ config = {
     'namespaces': [
         {'name': 'channel', 'presence': True, 'join_leave': True, 'history_size': 100, 'history_ttl': '24h', 'allow_publish_for_subscriber': False},
         {'name': 'user', 'presence': False, 'join_leave': False, 'history_size': 0, 'allow_publish_for_subscriber': False},
-        {'name': 'call', 'presence': True, 'join_leave': True, 'history_size': 0, 'history_ttl': '0', 'allow_publish_for_subscriber': False}
+        {'name': 'call', 'presence': True, 'join_leave': True, 'history_size': 0, 'history_ttl': '0', 'allow_publish_for_subscriber': False},
+        {'name': 'ringtone', 'presence': False, 'join_leave': False, 'history_size': 10, 'history_ttl': '24h', 'allow_publish_for_subscriber': False},
+        {'name': 'online', 'presence': True, 'join_leave': True, 'history_size': 0, 'allow_publish_for_subscriber': False}
     ],
     'client_connection_limit': 20,
     'presence': True,

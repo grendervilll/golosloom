@@ -40,6 +40,14 @@ function notifyElectron(title: string, body: string, tag?: string) {
   void showElectronNotification(title, body, tag)
 }
 
+async function subscribeRingtone() {
+  try {
+    const res = await settings.api.centrifugoSubscribe('ringtone')
+    const token = (res as any)?.token
+    if (token) await auth.centrifuge.subscribeChannel('ringtone', token)
+  } catch {}
+}
+
 function wireWs() {
   unsubs.forEach((u) => u())
   unsubs = []
@@ -155,6 +163,11 @@ function wireWs() {
     c.on('member.unbanned', () => void channels.refresh()),
     c.on('key.needed', (d: any) => void channels.handleKeyNeeded(d)),
     c.on('key.granted', (d: any) => void channels.handleKeyGranted(d.channel_id)),
+    c.on('ringtone.updated', (d: any) => {
+      sounds.handleRingtoneUpdated(d)
+      // Также показываем тост, если не Electron
+      if (!isElectron()) toast.info('Мелодия звонка обновлена')
+    }),
   )
 }
 
@@ -184,6 +197,9 @@ onMounted(async () => {
       // Короткоживущий файловый токен: в URL файлов не попадает основной JWT.
       settings.api.setToken(auth.token)
       settings.api.startFileTokenRefresh()
+      // Загружаем кастомный рингтон сервера (если админ установил) и подписываемся на обновления
+      void sounds.loadCustomRingtone()
+      void subscribeRingtone()
     } catch {
       auth.logout()
       return

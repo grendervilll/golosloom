@@ -13,6 +13,7 @@ import 'package:livekit_client/livekit_client.dart' hide Session;
 import 'api_client.dart';
 import 'session.dart';
 import 'chat_store.dart';
+import 'sounds.dart';
 
 class CallInfo {
   final int id;
@@ -151,7 +152,13 @@ class CallService extends ChangeNotifier {
           initiatorNick: e.data['initiator_nick'] as String?,
         );
         HapticFeedback.heavyImpact();
+        // Кастомный рингтон сервера (если админ установил)
+        AppSounds().playRingtone();
         notifyListeners();
+        break;
+      case 'ringtone.updated':
+        AppSounds().handleRingtoneUpdated(e.data, session.api);
+        break;
       case 'call.created':
         // Инициатор: звонок создан, ждём ответа.
         final call = e.data['call'] as Map<String, dynamic>?;
@@ -169,6 +176,7 @@ class CallService extends ChangeNotifier {
           notifyListeners();
         }
       case 'call.started':
+        AppSounds().stopRingtone();
         if (ringing != null) ringing = ringing!.copyWith(status: 'active');
         final startedId = (e.data['call_id'] as num?)?.toInt();
         if (startedId != null) {
@@ -179,6 +187,7 @@ class CallService extends ChangeNotifier {
         _startedAt = DateTime.now();
         notifyListeners();
       case 'call.ended':
+        AppSounds().stopRingtone();
         final id = (e.data['call_id'] as num?)?.toInt();
         // Системное сообщение как в web/src/App.vue:56-77
         final startAt = _connectedAt;
@@ -237,6 +246,7 @@ class CallService extends ChangeNotifier {
         if (idx >= 0) calls[idx] = calls[idx].copyWith(participants: list);
         notifyListeners();
       case 'call.invite.timeout':
+        AppSounds().stopRingtone();
         final id = (e.data['call_id'] as num?)?.toInt();
         if (ringing?.id == id) {
           ringing = null;

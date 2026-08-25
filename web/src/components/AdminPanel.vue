@@ -103,15 +103,86 @@ async function restoreBackup(e: Event) {
   }
 }
 
+const ringtoneInfo = ref<any>(null)
+const ringtoneBusy = ref(false)
+const ringtonePreviewUrl = ref<string | null>(null)
+
+async function loadRingtoneInfo() {
+  try {
+    ringtoneInfo.value = await settings.api.ringtoneInfo()
+  } catch {
+    ringtoneInfo.value = { exists: false }
+  }
+}
+async function uploadRingtone(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  if (file.size > 5 * 1024 * 1024) {
+    toast.warning('Файл слишком большой (макс 5 МБ)')
+    input.value = ''
+    return
+  }
+  ringtoneBusy.value = true
+  try {
+    await settings.api.uploadRingtone(file)
+    toast.info('Мелодия обновлена — у всех заиграет новая')
+    await loadRingtoneInfo()
+    // Сбросим превью, чтобы подхватил новый
+    if (ringtonePreviewUrl.value) {
+      URL.revokeObjectURL(ringtonePreviewUrl.value)
+      ringtonePreviewUrl.value = null
+    }
+  } catch (err: any) {
+    toast.error('Не удалось загрузить: ' + String(err?.message || err).slice(0, 150))
+  } finally {
+    ringtoneBusy.value = false
+    input.value = ''
+  }
+}
+async function deleteRingtone() {
+  if (!confirm('Сбросить мелодию на стандартную (zvonok.mp3)?')) return
+  ringtoneBusy.value = true
+  try {
+    await settings.api.deleteRingtone()
+    toast.info('Мелодия сброшена на дефолт')
+    await loadRingtoneInfo()
+    if (ringtonePreviewUrl.value) {
+      URL.revokeObjectURL(ringtonePreviewUrl.value)
+      ringtonePreviewUrl.value = null
+    }
+  } catch (e: any) {
+    toast.error(e.message)
+  } finally {
+    ringtoneBusy.value = false
+  }
+}
+function playRingtonePreview() {
+  const url = ringtoneInfo.value?.exists ? (settings.api as any).ringtoneUrlWithToken?.() || settings.api.ringtoneUrl() : 'sounds/zvonok.mp3'
+  if (ringtonePreviewUrl.value && ringtonePreviewUrl.value.startsWith('blob:')) {
+    try { URL.revokeObjectURL(ringtonePreviewUrl.value) } catch {}
+  }
+  ringtonePreviewUrl.value = url
+  // Автоплей после рендера
+  setTimeout(() => {
+    const a = document.querySelector('audio[src="' + CSS.escape(url) + '"]') as HTMLAudioElement | null
+    a?.play().catch(() => {})
+  }, 50)
+}
+
 onMounted(() => {
   if (useAuthStore().isServerAdmin) {
     void loadStats()
     void loadRegistrationStatus()
+    void loadRingtoneInfo()
     statsTimer = window.setInterval(() => void loadStats(), 2000)
   }
 })
 onUnmounted(() => {
   if (statsTimer !== null) clearInterval(statsTimer)
+  if (ringtonePreviewUrl.value) {
+    try { URL.revokeObjectURL(ringtonePreviewUrl.value) } catch {}
+  }
 })
 
 const auth = useAuthStore()
@@ -347,6 +418,23 @@ function copyId(u: any) {
             </label>
           </div>
           <p v-if="busy" class="muted small">Выполняется…</p>
+        </div>
+
+        <div class="frame">
+          <p class="section-title">Мелодия звонка (серверная)</p>
+          <p class="muted small">Загрузите mp3/wav/ogg/m4a до 5 МБ — будет играть у всех пользователей при входящем вызове. Изменения применяются мгновенно.</p>
+          <div class="row" style="align-items: center; flex-wrap: wrap">
+            <label class="btn-file">
+              🎵 Загрузить мелодию
+              <input type="file" accept="audio/*,.mp3,.wav,.ogg,.m4a" :disabled="ringtoneBusy" @change="uploadRingtone" />
+            </label>
+            <button class="tiny" :disabled="!ringtoneInfo?.exists || ringtoneBusy" @click="playRingtonePreview">▶️ Прослушать</button>
+            <button class="tiny danger" :disabled="!ringtoneInfo?.exists || ringtoneBusy" @click="deleteRingtone">Сбросить на дефолт</button>
+            <span v-if="ringtoneInfo?.exists" class="muted small">Текущая: {{ ringtoneInfo?.content_type || 'audio' }}, {{ fmtBytes(ringtoneInfo?.size) }}, {{ ringtoneInfo?.hash?.slice(0, 8) }}</span>
+            <span v-else class="muted small">Сейчас: дефолт (zvonok.mp3)</span>
+          </div>
+          <p v-if="ringtoneBusy" class="muted small">Загрузка…</p>
+          <audio v-if="ringtonePreviewUrl" :src="ringtonePreviewUrl" controls style="width: 100%; margin-top: 8px" />
         </div>
       </div>
 
