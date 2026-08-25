@@ -1,7 +1,7 @@
 {
   "name": "golosloom-desktop",
   "private": true,
-  "version": "2.5.9",
+  "version": "2.5.10",
   "description": "Golosloom — голосовой сервер с чатом, звонками и демонстрацией экрана",
   "author": {
     "name": "grendervilll",
@@ -37,7 +37,7 @@
     "files": [
       "electron/**/*",
       "app/**/*",
-      "!node_modules"
+      "package.json"
     ],
     "mac": {
       "category": "public.app-category.social-networking",
