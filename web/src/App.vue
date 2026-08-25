@@ -164,7 +164,7 @@ function wireWs() {
     c.on('key.needed', (d: any) => void channels.handleKeyNeeded(d)),
     c.on('key.granted', (d: any) => void channels.handleKeyGranted(d.channel_id)),
     c.on('ringtone.updated', (d: any) => {
-      sounds.handleRingtoneUpdated(d)
+      sounds.handleRingtoneUpdated(d, settings.api as any)
       // Также показываем тост, если не Electron
       if (!isElectron()) toast.info('Мелодия звонка обновлена')
     }),
@@ -198,7 +198,7 @@ onMounted(async () => {
       settings.api.setToken(auth.token)
       settings.api.startFileTokenRefresh()
       // Загружаем кастомный рингтон сервера (если админ установил) и подписываемся на обновления
-      void sounds.loadCustomRingtone()
+      void sounds.loadCustomRingtone(settings.api as any)
       void subscribeRingtone()
     } catch {
       auth.logout()

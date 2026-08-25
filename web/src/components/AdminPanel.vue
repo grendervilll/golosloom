@@ -6,6 +6,7 @@ import { useAuthStore } from '../stores/auth'
 import { useSettingsStore } from '../stores/settings'
 import { toast } from 'vue-sonner'
 import { roleIcon } from '../utils/roles'
+import { sounds } from '../audio/sounds'
 import { Button } from './ui/button'
 import {
   Dialog,
@@ -128,6 +129,7 @@ async function uploadRingtone(e: Event) {
     await settings.api.uploadRingtone(file)
     toast.info('Мелодия обновлена — у всех заиграет новая')
     await loadRingtoneInfo()
+    void sounds.loadCustomRingtone(settings.api as any)
     // Сбросим превью, чтобы подхватил новый
     if (ringtonePreviewUrl.value) {
       URL.revokeObjectURL(ringtonePreviewUrl.value)
@@ -147,6 +149,7 @@ async function deleteRingtone() {
     await settings.api.deleteRingtone()
     toast.info('Мелодия сброшена на дефолт')
     await loadRingtoneInfo()
+    sounds.clearCustomRingtone()
     if (ringtonePreviewUrl.value) {
       URL.revokeObjectURL(ringtonePreviewUrl.value)
       ringtonePreviewUrl.value = null

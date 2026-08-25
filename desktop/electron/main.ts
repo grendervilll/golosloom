@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, safeStorage, nativeTheme, Menu, Tray, nativeImage, Notification } from 'electron'
+import { app, BrowserWindow, ipcMain, safeStorage, nativeTheme, Menu, Tray, nativeImage, Notification, desktopCapturer } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
 import * as updater from './updater'
@@ -61,6 +61,47 @@ function createWindow() {
   mainWindow.on('minimize', () => {
     if (tray) mainWindow?.hide()
   })
+
+  // Screen sharing: handle getDisplayMedia via desktopCapturer (Electron)
+  // This allows setScreenShareEnabled() from livekit-client to work in Electron.
+  // Use session handler (works for all windows) with system picker on macOS/Windows.
+  try {
+    const ses = mainWindow.webContents.session
+    // @ts-ignore — setDisplayMediaRequestHandler exists on session in Electron 33, but types may be outdated
+    if (typeof (ses as any).setDisplayMediaRequestHandler === 'function') {
+      ;(ses as any).setDisplayMediaRequestHandler(
+        async (_request: any, callback: (response: any) => void) => {
+          try {
+            const sources = await desktopCapturer.getSources({ types: ['screen', 'window'] })
+            const screenSource = sources.find((s: any) => s.display_id !== '') || sources[0]
+            if (screenSource) {
+              callback({ video: screenSource, audio: 'loopback' as any })
+            } else {
+              callback({})
+            }
+          } catch {
+            callback({})
+          }
+        },
+        { useSystemPicker: true } as any,
+      )
+    } else if (typeof (mainWindow.webContents as any).setDisplayMediaRequestHandler === 'function') {
+      // Fallback for older Electron
+      ;(mainWindow.webContents as any).setDisplayMediaRequestHandler(
+        async (_request: any, callback: (response: any) => void) => {
+          try {
+            const sources = await desktopCapturer.getSources({ types: ['screen', 'window'] })
+            const screenSource = sources.find((s: any) => s.display_id !== '') || sources[0]
+            if (screenSource) callback({ video: screenSource, audio: 'loopback' as any })
+            else callback({})
+          } catch {
+            callback({})
+          }
+        },
+        { useSystemPicker: true } as any,
+      )
+    }
+  } catch {}
 }
 
 function createTray() {

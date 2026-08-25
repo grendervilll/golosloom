@@ -36,15 +36,35 @@ class SoundManager {
 
   // Загрузка кастомного рингтона сервера (если админ установил).
   // Вызывается при старте приложения и при событии ringtone.updated.
-  async loadCustomRingtone(): Promise<void> {
+  // Принимает ApiClient для корректного baseUrl/token в Electron (file://).
+  async loadCustomRingtone(api?: any): Promise<void> {
     try {
-      // Пытаемся получить токен и baseUrl из localStorage (как в auth store)
-      const token = localStorage.getItem('golosloom-token') || ''
-      if (!token) return
-      const base = (window as any).__GOLOSLOOM_API_BASE__ || ''
-      const baseUrl = base || window.location.origin
+      // Пытаемся получить токен и baseUrl из ApiClient или localStorage
+      let token = ''
+      let baseUrl = ''
+      if (api && typeof api.getToken === 'function' && typeof api.baseUrl === 'string') {
+        token = api.getToken() || ''
+        baseUrl = api.baseUrl || ''
+      } else {
+        token = localStorage.getItem('golosloom-token') || ''
+        const base = (window as any).__GOLOSLOOM_API_BASE__ || ''
+        baseUrl = base || window.location.origin
+        // В Electron window.location.origin === "null" или "file://"
+        if (!baseUrl || baseUrl === 'null' || baseUrl.startsWith('file')) {
+          // Пробуем взять из localStorage настроек
+          try {
+            const s = localStorage.getItem('golosloom-settings')
+            if (s) {
+              const j = JSON.parse(s)
+              if (j.serverUrl) baseUrl = j.serverUrl
+            }
+          } catch {}
+          if (!baseUrl || baseUrl.startsWith('file')) baseUrl = window.location.origin
+        }
+      }
+      if (!token || !baseUrl || baseUrl.startsWith('file')) return
       // Сначала info — проверяем хеш
-      const infoRes = await fetch(`${baseUrl}/api/ringtone/info`, {
+      const infoRes = await fetch(`${baseUrl.replace(/\/+$/, '')}/api/ringtone/info`, {
         headers: { Authorization: `Bearer ${token}` },
       })
       if (!infoRes.ok) {
@@ -59,7 +79,7 @@ class SoundManager {
       }
       if (info.hash === this.customRingtoneHash && this.customRingtoneUrl) return
       // Скачиваем файл
-      const fileRes = await fetch(`${baseUrl}/api/ringtone`, {
+      const fileRes = await fetch(`${baseUrl.replace(/\/+$/, '')}/api/ringtone`, {
         headers: { Authorization: `Bearer ${token}` },
       })
       if (!fileRes.ok) {
@@ -89,7 +109,7 @@ class SoundManager {
     try { localStorage.removeItem('golosloom-ringtone-hash') } catch {}
   }
 
-  handleRingtoneUpdated(data: any): void {
+  handleRingtoneUpdated(data: any, api?: any): void {
     const hash = data?.hash || ''
     if (!hash) {
       this.clearCustomRingtone()
@@ -97,7 +117,7 @@ class SoundManager {
     }
     // Если хеш совпадает — ничего не делаем
     if (hash === this.customRingtoneHash) return
-    void this.loadCustomRingtone()
+    void this.loadCustomRingtone(api)
   }
 
   private beep(freq: number, duration: number, gain = 0.05, type: OscillatorType = 'sine'): void {
