@@ -515,6 +515,21 @@ clone_repo() {
   fi
 }
 
+ensure_default_ringtone() {
+  # Eclipso (Slowed) из web/public/sounds/zvonok.mp3 — дефолт для свежей установки.
+  # Если админ уже загружал свою мелодию (/data/ringtone.mp3), не трогаем.
+  if [ -f "$DATA_DIR/ringtone.mp3" ]; then
+    log "Рингтон уже есть: $DATA_DIR/ringtone.mp3 — не перезаписываем"
+    return
+  fi
+  local src="$REPO_DIR/web/public/sounds/zvonok.mp3"
+  if [ -f "$src" ]; then
+    cp "$src" "$DATA_DIR/ringtone.mp3"
+    chmod 644 "$DATA_DIR/ringtone.mp3"
+    log "Установлен дефолтный рингтон Eclipso (Slowed) → $DATA_DIR/ringtone.mp3"
+  fi
+}
+
 install_fresh() {
   check_os
   install_deps
@@ -527,6 +542,7 @@ install_fresh() {
   gen_livekit_config
   gen_centrifugo_config
   gen_certs
+  ensure_default_ringtone
   check_ports
   open_ports
   setup_cron
@@ -628,6 +644,7 @@ do_update() {
   gen_livekit_config
   gen_centrifugo_config
   gen_certs
+  ensure_default_ringtone
   log "Пересобираю контейнеры (база данных и порты не изменяются)..."
   docker compose -f "$DEPLOY_DIR/docker-compose.yml" up -d --build
   # Кэш сборки растёт на ~1-2 ГБ при каждом обновлении и может съесть весь
