@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"golosloom/server/internal/auth"
 )
 
 func ringtonePath(s *Server) string {
@@ -46,7 +48,36 @@ func ringtoneMeta(s *Server) (exists bool, hash string, size int64, updatedAt ti
 	return true, hash, n, fi.ModTime(), ct
 }
 
+func userIDFromRingtoneRequest(s *Server, r *http.Request) (int64, bool) {
+	// 1. Пробуем Authorization: Bearer (JWT)
+	if h := r.Header.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
+		if uid, err := s.authenticate(r); err == nil {
+			return uid, true
+		}
+	}
+	// 2. Пробуем ?token= — может быть JWT или файловый токен
+	if token := r.URL.Query().Get("token"); token != "" {
+		// Сначала как JWT
+		if uid, ver, err := auth.ParseToken(token, s.Cfg.JWTSecret); err == nil {
+			if u, err := s.Store.GetUserByID(uid); err == nil && u.TokenVersion == ver {
+				return uid, true
+			}
+		}
+		// Затем как файловый токен
+		if uid, ver, err := auth.ParseFileToken(token, s.Cfg.JWTSecret); err == nil {
+			if u, err := s.Store.GetUserByID(uid); err == nil && u.TokenVersion == ver {
+				return uid, true
+			}
+		}
+	}
+	return 0, false
+}
+
 func (s *Server) handleRingtoneInfo(w http.ResponseWriter, r *http.Request) {
+	if _, ok := userIDFromRingtoneRequest(s, r); !ok {
+		writeErr(w, http.StatusUnauthorized, "требуется авторизация")
+		return
+	}
 	exists, hash, size, updatedAt, ct := ringtoneMeta(s)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"exists":       exists,
@@ -58,6 +89,10 @@ func (s *Server) handleRingtoneInfo(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRingtoneGet(w http.ResponseWriter, r *http.Request) {
+	if _, ok := userIDFromRingtoneRequest(s, r); !ok {
+		writeErr(w, http.StatusUnauthorized, "требуется авторизация")
+		return
+	}
 	p := ringtonePath(s)
 	if _, err := os.Stat(p); err != nil {
 		writeErr(w, http.StatusNotFound, "рингтон не установлен")
